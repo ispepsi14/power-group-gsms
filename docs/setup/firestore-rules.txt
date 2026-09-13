@@ -1,0 +1,146 @@
+rules_version = '2';
+
+// ===================================================================
+// POWER GROUP GSMS — Firestore Security Rules
+//
+// วิธีใช้:
+//   Firebase Console -> Firestore Database -> แท็บ Rules
+//   -> ลบของเดิมทั้งหมด -> วางไฟล์นี้แทน -> กด Publish
+//
+// กฎพวกนี้บังคับที่เซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนปุ่มในแอป
+// ต่อให้มีคนแก้โค้ดหน้าเว็บ ก็ยังทำเกินสิทธิ์ไม่ได้
+// ===================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- ตัวช่วย ----------
+
+    // บัญชีผู้ดูแลตั้งต้น (ของคุณ) — ฝังไว้ตรงนี้เพื่อ 2 เหตุผล:
+    //  1. ตอนเริ่มระบบยังไม่มีเอกสารใน users/ เลยสักอัน ถ้าไม่มีบรรทัดนี้
+    //     จะไม่มีใครมีสิทธิ์สร้างคนแรกได้ (ไก่กับไข่)
+    //  2. เป็นกันเหนียว — เผลอลบสิทธิ์ตัวเองก็ยังเข้าระบบได้เสมอ
+    function bootstrapAdmin() {
+      return request.auth != null
+        && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // ต้องมีเอกสารใน users/{uid} ถึงจะใช้ระบบได้
+    // (สร้างบัญชีใน Authentication เฉยๆ ยังเข้าไม่ได้ จนกว่า Admin จะให้สิทธิ์)
+    function hasAccess() {
+      return bootstrapAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+
+    function isAdmin() {
+      return bootstrapAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && profile().role == 'admin');
+    }
+
+    // ---------- ผู้ใช้และสิทธิ์ ----------
+    // ทุกคนอ่านโปรไฟล์ตัวเองได้ (แอปต้องอ่านเพื่อรู้ว่าเป็น admin หรือ staff)
+    // แต่สร้าง/แก้/ลบสิทธิ์ ทำได้เฉพาะ Admin
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- งานประจำวัน — พนักงานทำได้ ----------
+    // รับรถ สร้างงาน แก้ไขงาน เปลี่ยนสถานะ ใส่ราคา
+    // แต่ "ลบ" สงวนไว้ให้ Admin เท่านั้น
+    match /jobs/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    match /vehicles/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    match /customers/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    // รูปภาพหน้างาน — แยกเอกสารละรูป เพื่อไม่ให้เอกสารงานใหญ่เกินลิมิต
+    match /jobPhotos/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if hasAccess();
+    }
+
+    // บันทึกประวัติการแก้ไข/ลบ — เขียนเพิ่มได้ แต่ห้ามแก้ย้อนหลัง
+    match /editLog/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- แคตตาล็อก / ข้อมูลหลัก — Admin เท่านั้น ----------
+    // พนักงานอ่านได้ (ต้องใช้ตอนเลือกอะไหล่และดูราคา) แต่แก้ไม่ได้
+    match /models/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /masterParts/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /partBrandOptions/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /complaintTypes/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    // ตั้งค่าร้าน / ธีม / API key — Admin เท่านั้น
+    match /config/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    // ---------- กระดานสถานะสำหรับลูกค้า (เปิดสาธารณะ) ----------
+    // หน้านี้ลูกค้าสแกน QR ดูได้โดยไม่ต้องล็อกอิน จึงเป็น "อ่านได้ทุกคน"
+    //
+    // เหตุผลที่ต้องแยกเป็นคอลเลกชันใหม่ ไม่ใช้ jobs ตรงๆ:
+    // กฎของ Firestore เลือกซ่อนเป็นรายช่องไม่ได้ ถ้าเปิดให้อ่าน jobs ได้
+    // ก็จะเห็นทั้งเอกสาร รวมถึงชื่อลูกค้า เบอร์โทร อาการ และราคา
+    // เอกสารใน board/ จึงเก็บเฉพาะข้อมูลที่เปิดเผยได้ (คิว รุ่นรถ สี ทะเบียนบางส่วน สถานะ)
+    // และแอปเป็นคนสร้างให้อัตโนมัติ
+    match /board/{docId} {
+      allow read:  if true;        // ลูกค้าสแกนดูได้เลย ไม่ต้องล็อกอิน
+      allow write: if hasAccess(); // เขียนได้เฉพาะพนักงานที่ล็อกอินแล้ว
+    }
+
+    // ---------- ปิดทุกอย่างที่ไม่ได้ระบุไว้ข้างบน ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
