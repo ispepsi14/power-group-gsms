@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.1.1";
+  const APP_VERSION = "4.1.5";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -4642,10 +4642,14 @@
            ด้วย margin-top:auto — ที่ว่างที่เหลือจึงไปกองอยู่เหนือเส้นลายเซ็น
            ซึ่งเป็นที่ที่คนเขียนโน้ตเพิ่มอยู่แล้ว ไม่ใช่ช่องว่างเปล่า ๆ กลางใบ
 
-       ความสูง 273mm = A4 297mm ลบ margin บน-ล่างอย่างละ 12mm ตามที่ @page ตั้งไว้
-       ถ้าเปลี่ยน margin ใน @page ต้องแก้ตรงนี้ให้ตรงกันด้วย ไม่งั้นใบจะล้นไปหน้าสอง */
+       v4.1.2 — 273mm เป็นเลขค้างจากตอน @page margin ยังเป็น 12mm (297-24=273)
+       แต่ pageRule()/PRINT_PAGE_MARGIN เปลี่ยนเป็น 8mm ไปแล้วตั้งแต่ v3.27.0 โดยไม่ได้
+       แก้เลขนี้ตาม ของจริงคือ 297-16=281mm — พื้นที่ที่หายไป 8mm นี้คือส่วนหนึ่งที่ทำให้
+       ใบที่มีอาการแจ้งมากกว่า 2-3 รายการล้นไปหน้าสอง (ดูสาเหตุเต็มในรายงานที่ให้ผู้ใช้)
+       ความสูง 281mm = A4 297mm ลบ margin บน-ล่างอย่างละ 8mm ตามที่ PRINT_PAGE_MARGIN ตั้งไว้จริง
+       ถ้าเปลี่ยน PRINT_PAGE_MARGIN ต้องแก้ตรงนี้ให้ตรงกันด้วย ไม่งั้นใบจะล้นไปหน้าสอง */
     .job-print-page{
-      min-height:273mm;
+      min-height:281mm;
       display:flex; flex-direction:column;
     }
     .job-print-page > .pv-body{ flex:1 1 auto; display:flex; flex-direction:column; }
@@ -14653,7 +14657,17 @@ function renderJobDetail(jobId){
 
   html += `</div>`; // close .no-print wrapper
 
-  html += (view.printMode === 'quote') ? renderJobQuotePage(job) : renderJobPrintPage(job);
+  /* v4.1.5 — เอาใบพิมพ์ (renderJobQuotePage/renderJobPrintPage) ที่เคยฝังไว้ท้ายหน้า
+     รายละเอียดงานตรงนี้ออก — เดิมทำไว้ตั้งแต่ก่อน v3.26.0 ตอนพิมพ์ยังใช้วิธี
+     window.print() ตรงบนหน้าแอปเอง (ต้องมีเอกสารซ่อนอยู่ในหน้าให้ @media print
+     ดึงมาโชว์ตอนพิมพ์) ตั้งแต่เปลี่ยนมาใช้ระบบ iframe พรีวิว (printJobCheckin /
+     printJobQuote สร้างเอกสารของตัวเองแยกต่างหากไปเลย ไม่ยุ่งกับหน้านี้) จุดนี้
+     กลายเป็นโค้ดที่ไม่มีใครใช้แล้ว — แต่ยังเป็นอันตรายอยู่ เพราะ .job-print-page
+     ตั้งใจให้ display:none บนจอปกติ (โผล่เฉพาะตอนพิมพ์) แต่ชนกับกฎ .ci-form
+     {display:flex} ที่มาทีหลังในไฟล์ (specificity เท่ากัน กฎหลังชนะ) เอกสารทั้งใบ
+     เลยโผล่มาโชว์ท้ายหน้ารายละเอียดงานแบบเงียบ ๆ ไม่ได้ตั้งใจ — เช็คแล้วว่าไม่มี
+     ปุ่มไหนเรียก doPrint() แบบเดิมจากหน้านี้ (ปุ่มพิมพ์ทั้งหมดเรียก printJobCheckin/
+     printJobQuote ตรง ๆ) จึงลบบรรทัดนี้ออกได้เลยโดยไม่กระทบการพิมพ์จริง */
 
   return html;
 }
@@ -14691,7 +14705,14 @@ function renderJobDetail(jobId){
    ตอนพรีวิว ควรเป็นสิ่งเดียวกับที่จะออกกระดาษ ไม่ใช่คนละหน้าตา
    ========================================================================= */
 
-const PRINT_FONT_STACK = "'Sarabun','TH Sarabun New','Noto Sans Thai','Tahoma',sans-serif";
+/* v4.1.2 — 'Sarabun'/'TH Sarabun New' ไม่เคยถูกโหลดที่ไหนเลยในแอป (ตัวที่โหลดจริง
+   ผ่าน @import คือ 'Noto Sans Thai' เท่านั้น) จึงสลับให้ตัวที่มีจริงมาก่อน อีกสองชื่อ
+   เก็บไว้เป็น fallback เผื่อเครื่องผู้ใช้มีติดตั้งเองอยู่แล้ว — ปัญหานี้ยิ่งสำคัญตอนพิมพ์
+   เพราะ collectDocCss() ก็อปกฎ @font-face จากฟอนต์ข้ามโดเมนอย่าง Google Fonts ไม่ได้
+   (อ่าน cssRules ข้ามโดเมนไม่ได้ตาม browser security) เอกสารพิมพ์เลยตกไปใช้ฟอนต์
+   ตัวอื่นของเครื่องนั้น ๆ แทนแบบเงียบ ๆ มาตลอด — ดู buildPrintDoc() ที่แก้คู่กัน
+   ซึ่งใส่ <link> โหลดฟอนต์ตรงเข้าไปในเอกสารพิมพ์เองแทน เพื่อไม่ต้องพึ่ง collectDocCss */
+const PRINT_FONT_STACK = "'Noto Sans Thai','Sarabun','TH Sarabun New','Tahoma',sans-serif";
 
 /* ค่าตั้งค่าการพิมพ์ของร้าน — รองรับข้อมูลเก่าที่ยังไม่มีช่องนี้ */
 function printCfg(){
@@ -14806,14 +14827,76 @@ function buildPrintDoc(fragmentHtml, opts){
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .no-print{display:none !important;}`;
 
+  /* v4.1.2 — โหลดฟอนต์ไทยตรงเข้าเอกสารพิมพ์เอง แทนที่จะหวังพึ่ง collectDocCss()
+     คัดลอกกฎ @font-face มาจากสไตล์ชีตของ Google Fonts ซึ่งเป็นคนละโดเมน อ่าน
+     cssRules ข้ามโดเมนไม่ได้ (เบราว์เซอร์บล็อกไว้เพื่อความปลอดภัย) ผลคือเอกสาร
+     พิมพ์ไม่เคยได้ฟอนต์ 'Noto Sans Thai' จริงเลยตั้งแต่แรก แล้วตกไปใช้ฟอนต์อื่น
+     ของเครื่องนั้น ๆ แทนแบบเงียบ ๆ — บางเครื่องพอมีฟอนต์ทดแทนที่ระยะบรรทัด/ความกว้าง
+     ตัวอักษรกว้างกว่านิดหน่อย สะสมหลายบรรทัดก็ดันความสูงจนล้นไปหน้าสองได้ */
+  const fontLink = `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap">`;
+
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(o.title || 'เอกสาร')}</title>
+${fontLink}
 <style>
 ${pageRule(o.orient, o.margin, o.size)}
 ${base}
 ${docCss}
 </style></head><body>${fragmentHtml}</body></html>`;
+}
+
+/* v4.1.2 — เอกสารที่ตั้งใจ "พอดี 1 หน้าเป๊ะ" (job-print-page, pb-model-block ฯลฯ:
+   มี min-height + display:flex; flex-direction:column ร่วมกัน) เดิมหวังให้ CSS
+   บีบแถวตารางลงเองผ่าน flex-shrink — พิสูจน์แล้วว่าใช้ไม่ได้จริงตอนเบราว์เซอร์
+   ตัดหน้าพิมพ์จริง (ใช้ได้แค่ตอน preview บนจอ) พองานมีอาการแจ้งแค่ 3 รายการก็ล้น
+   ฟังก์ชันนี้แก้ด้วยการวัดความสูงจริงแล้วย่อทั้งบล็อกด้วย transform:scale() ให้
+   พอดีงบที่มี แทนที่จะหวังให้ CSS บีบเอง — เหมือน "Fit to page" ใน Excel
+   เรียกจาก openPrint() สองรอบ: ทันทีหลังเขียนเอกสาร (เผื่อฟอนต์โหลดจาก cache ทัน)
+   และอีกรอบตอน document.fonts.ready (กันกรณีฟอนต์โหลดช้า วัดผิดรอบแรก) */
+function autoFitPrintPages(doc){
+  try{
+    const win = doc.defaultView;
+    if(!win) return;
+    const all = doc.body ? doc.body.querySelectorAll('*') : [];
+    for(let i = 0; i < all.length; i++){
+      const el = all[i];
+      const cs = win.getComputedStyle(el);
+      if(cs.display !== 'flex' || cs.flexDirection !== 'column') continue;
+      const budgetPx = parseFloat(cs.minHeight);
+      // 500px กันชนต่ำสุด กรองไม่ให้ไปโดน flex-column เล็ก ๆ ที่ไม่ได้ตั้งใจให้เป็น "1 หน้า"
+      if(!(budgetPx > 500)) continue;
+
+      const prevTransform = el.style.transform, prevWidth = el.style.width;
+      const prevMinHeight = el.style.minHeight;
+      el.style.transform = 'none'; el.style.width = ''; el.style.minHeight = '0';
+      const naturalPx = el.scrollHeight;
+      el.style.minHeight = prevMinHeight;
+
+      if(naturalPx <= budgetPx + 0.5){
+        el.style.transform = prevTransform; el.style.width = prevWidth;
+        continue;                                    // พอดีอยู่แล้ว ไม่ต้องย่อ
+      }
+      const scale = budgetPx / naturalPx;
+      el.style.transform = `scale(${scale})`;
+      el.style.transformOrigin = 'top left';
+      el.style.width = (100 / scale) + '%';
+
+      // ห่อด้วย wrapper สูงเท่าที่ควรเป็นหลังย่อ กันพื้นที่ส่วนเกิน (ที่มองไม่เห็นแต่ยัง
+      // กินที่อยู่ในโฟลว์เอกสารจริง) ไปเลื่อนหน้าถัดไปผิดตำแหน่งตอนพิมพ์หลายใบ/หลายรุ่น
+      // เรียกซ้ำได้ปลอดภัย (รอบสองตอนฟอนต์โหลดเสร็จ) — ใช้ wrap เดิมถ้ามีอยู่แล้ว
+      // แทนที่จะห่อซ้อนกันหลายชั้น
+      let wrap = el.parentNode && el.parentNode.getAttribute &&
+                 el.parentNode.getAttribute('data-pg-fit-wrap') === '1' ? el.parentNode : null;
+      if(!wrap){
+        wrap = doc.createElement('div');
+        wrap.setAttribute('data-pg-fit-wrap', '1');
+        el.parentNode.insertBefore(wrap, el);
+        wrap.appendChild(el);
+      }
+      wrap.style.cssText = `height:${naturalPx * scale}px; overflow:hidden;`;
+    }
+  }catch(err){ console.error('autoFitPrintPages', err); }
 }
 
 /* ---- overlay ---- */
@@ -14915,6 +14998,13 @@ function openPrint(html){
   try{
     const d = f.contentWindow.document;
     d.open(); d.write(html); d.close();
+    /* v4.1.2 — ย่อเอกสารให้พอดี 1 หน้าจริง (ดูคอมเมนต์ที่ autoFitPrintPages())
+       เรียกทันทีเผื่อฟอนต์มาจาก cache ทัน แล้วเรียกซ้ำตอนฟอนต์โหลดเสร็จจริง
+       (document.fonts.ready) เพราะรอบแรกอาจวัดพลาดถ้าฟอนต์ยังไม่มา — ผู้ใช้
+       กว่าจะกดปุ่ม "พิมพ์" ก็มีเวลาให้รอบสองทำงานเสร็จก่อนอยู่แล้วตามธรรมชาติ */
+    autoFitPrintPages(d);
+    const fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready : Promise.resolve();
+    fontsReady.then(() => { try{ autoFitPrintPages(d); }catch(e){ console.error('autoFit(fonts.ready)', e); } });
   }catch(err){
     console.error('openPrint write', err);
     closePrintOverlay();
@@ -14999,23 +15089,17 @@ function doPrint(){
        กาแล้วใส่ราคาได้เลย เร็วกว่าเมื่องานเข้าทางร้านตามปกติ
    ทั้งสองแบบยังเป็นฟังก์ชันคนละตัว (renderJobPrintPage / renderJobEstimateForm)
    เผื่อร้านอยากได้แบบใดแบบหนึ่งเป็นค่าเริ่มต้นทีหลัง แค่เปลี่ยนว่าจะข้ามตัวเลือกนี้
-   ไปเรียกฟังก์ชันไหนตรง ๆ */
+   ไปเรียกฟังก์ชันไหนตรง ๆ
+
+   v4.1.3 — ร้านเลือกใช้แบบเดียว (ตารางเปล่า) ตัดตัวเลือกออก ข้ามไปเรียก
+   renderJobPrintPage ตรง ๆ ตามที่คอมเมนต์ข้างบนบอกไว้ตั้งแต่ต้น — ไม่ได้ลบ
+   renderJobEstimateForm/QUICK_ESTIMATE_GROUPS ทิ้ง ปล่อยเป็นโค้ดที่ไม่ถูกเรียก
+   ใช้ไว้เฉย ๆ เผื่อร้านอยากกลับมาใช้ตัวเลือกนี้อีกทีในอนาคต */
 function printJobCheckin(jobId){
   const job = getJob(jobId);
   if(!job){ flashToast('ไม่พบรายการรถคันนี้'); return; }
-  uiChoice('พิมพ์ใบรับรถ — เลือกรูปแบบ', [
-    { value:'blank', label:'ตารางเปล่า', sub:'เขียนรายการเอง — เหมาะกับงานทั่วไป', icon:'list' },
-    { value:'quick', label:'ตรวจเช็คด่วน', sub:'รายการสำเร็จรูป แร็ค/ช่วงล่าง/เพลาขับ — กาแล้วใส่ราคาได้เลย', icon:'checkbox' }
-  ], choice => {
-    if(choice === 'quick'){
-      openPrintFragment(renderJobEstimateForm(job), {
-        title: 'ใบรับรถ (ตรวจเช็คด่วน) ' + (job.jobNumber || ''), orient: 'portrait', margin: '12mm 10mm'
-      });
-      return;
-    }
-    openPrintFragment(renderJobPrintPage(job), {
-      title: 'ใบรับรถ ' + (job.jobNumber || ''), orient: 'portrait', margin: '12mm 10mm'
-    });
+  openPrintFragment(renderJobPrintPage(job), {
+    title: 'ใบรับรถ ' + (job.jobNumber || ''), orient: 'portrait', margin: '12mm 10mm'
   });
 }
 function printJobQuote(jobId){

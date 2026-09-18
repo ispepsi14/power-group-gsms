@@ -1,0 +1,233 @@
+rules_version = '2';
+
+// ===================================================================
+// POWER GROUP GSMS — Firestore Security Rules  (v4.0.0)
+//
+// วิธีใช้:
+//   Firebase Console -> Firestore Database -> แท็บ Rules
+//   -> ลบของเดิมทั้งหมด -> วางไฟล์นี้แทน -> กด Publish
+//
+// กฎพวกนี้บังคับที่เซิร์ฟเวอร์ ไม่ใช่แค่ซ่อนปุ่มในแอป
+// ต่อให้มีคนแก้โค้ดหน้าเว็บ ก็ยังทำเกินสิทธิ์ไม่ได้
+//
+// เปลี่ยนจากฉบับก่อนหน้า 4 จุด (ดูคอมเมนต์ "[แก้]" ที่จุดนั้น ๆ):
+//   1. feedback/        — คอลเลกชันใหม่ทั้งหมด (หน้า ?feedback ใช้งานไม่ได้เลยถ้าไม่มี)
+//   2. config/          — เดิมล็อก isAdmin() ทั้งคอลเลกชัน ทั้งที่พนักงานทั่วไปต้อง
+//                         เขียน pushTokens/queueCounter/technicians ทุกวัน
+//   3. chatThreads/     — เดิม allow read ครอบทั้ง get และ list ทำให้ลูกค้าคนไหนก็
+//                         เปิด console แล้ว list ทั้งคอลเลกชันดูห้องแชทคันอื่นได้
+//   4. presence/        — คอลเลกชันใหม่ทั้งหมด (แถบ "ใครใช้แอปอยู่ตอนนี้" v4.0.0)
+//   5. boardPublic/     — คอลเลกชันใหม่ (ยังไม่มีอะไรเขียนจริง แต่โค้ดแอปอ่านอยู่แล้ว
+//                         เผื่อไว้ล่วงหน้า กันต้องกลับมาแก้ rules อีกรอบทีหลัง)
+// ===================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- ตัวช่วย ----------
+
+    // บัญชีผู้ดูแลตั้งต้น (ของคุณ) — ฝังไว้ตรงนี้เพื่อ 2 เหตุผล:
+    //  1. ตอนเริ่มระบบยังไม่มีเอกสารใน users/ เลยสักอัน ถ้าไม่มีบรรทัดนี้
+    //     จะไม่มีใครมีสิทธิ์สร้างคนแรกได้ (ไก่กับไข่)
+    //  2. เป็นกันเหนียว — เผลอลบสิทธิ์ตัวเองก็ยังเข้าระบบได้เสมอ
+    function bootstrapAdmin() {
+      return request.auth != null
+        && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // ต้องมีเอกสารใน users/{uid} ถึงจะใช้ระบบได้
+    // (สร้างบัญชีใน Authentication เฉยๆ ยังเข้าไม่ได้ จนกว่า Admin จะให้สิทธิ์)
+    function hasAccess() {
+      return bootstrapAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    }
+
+    function isAdmin() {
+      return bootstrapAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && profile().role == 'admin');
+    }
+
+    // ---------- ผู้ใช้และสิทธิ์ ----------
+    // ทุกคนอ่านโปรไฟล์ตัวเองได้ (แอปต้องอ่านเพื่อรู้ว่าเป็น admin หรือ staff)
+    // แต่สร้าง/แก้/ลบสิทธิ์ ทำได้เฉพาะ Admin
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---------- งานประจำวัน — พนักงานทำได้ ----------
+    // รับรถ สร้างงาน แก้ไขงาน เปลี่ยนสถานะ ใส่ราคา
+    // แต่ "ลบ" สงวนไว้ให้ Admin เท่านั้น
+    match /jobs/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    match /vehicles/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    match /customers/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
+    }
+
+    // รูปภาพหน้างาน — แยกเอกสารละรูป เพื่อไม่ให้เอกสารงานใหญ่เกินลิมิต
+    match /jobPhotos/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if hasAccess();
+    }
+
+    // บันทึกประวัติการแก้ไข/ลบ — เขียนเพิ่มได้ แต่ห้ามแก้ย้อนหลัง
+    match /editLog/{docId} {
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- แคตตาล็อก / ข้อมูลหลัก — Admin เท่านั้น ----------
+    // พนักงานอ่านได้ (ต้องใช้ตอนเลือกอะไหล่และดูราคา) แต่แก้ไม่ได้
+    match /models/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /masterParts/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /partBrandOptions/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    match /complaintTypes/{docId} {
+      allow read:  if hasAccess();
+      allow write: if isAdmin();
+    }
+
+    // ---------- ตั้งค่าร้าน / ธีม / API key ----------
+    // [แก้] เดิม write: if isAdmin() ทั้งคอลเลกชัน แต่พนักงานทั่วไปต้องเขียน 3 จุดนี้
+    // ทุกวัน: pushTokens (เปิดแจ้งเตือนบนเครื่องตัวเอง), queueCounter (ออกเลขคิว
+    // อัตโนมัติตอนรับรถ), และช่อง technicians ที่ฝังอยู่ใน config/main (มอบหมายช่าง
+    // จากหน้าจอที่ไม่ได้ล็อกแอดมินไว้) — ที่เหลือ (โลโก้ร้าน, ธีมสี, API key ของ AI ฯลฯ)
+    // ยังเป็น Admin เท่านั้นเหมือนเดิม
+    //
+    // เหตุผลที่ต้องแก้จริงจัง ไม่ใช่แค่ไม่สะดวก: saveState()/flushState() ยิงเป็น
+    // batch เดียว ถ้าเอกสารไหนในแบตช์โดนปฏิเสธ ทั้งแบตช์ล้มหมด — พนักงานมอบหมายช่าง
+    // จะเห็น toast "มอบหมายแล้ว" ขึ้นก่อน แล้วตามด้วย "ไม่มีสิทธิ์แก้ไขส่วนนี้" และ
+    // การมอบหมายงานจริงก็หายไปด้วย ไม่ใช่แค่ config เขียนไม่ผ่านเฉย ๆ
+    match /config/{docId} {
+      allow read: if hasAccess();
+      allow create: if isAdmin()
+        || (docId in ['pushTokens','queueCounter'] && hasAccess());
+      allow update: if isAdmin()
+        || (docId in ['pushTokens','queueCounter'] && hasAccess())
+        || (docId == 'main' && hasAccess()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['technicians']));
+      allow delete: if isAdmin();
+    }
+
+    // ---------- กระดานสถานะสำหรับลูกค้า (เปิดสาธารณะ) ----------
+    // หน้านี้ลูกค้าสแกน QR ดูได้โดยไม่ต้องล็อกอิน จึงเป็น "อ่านได้ทุกคน"
+    //
+    // เหตุผลที่ต้องแยกเป็นคอลเลกชันใหม่ ไม่ใช้ jobs ตรงๆ:
+    // กฎของ Firestore เลือกซ่อนเป็นรายช่องไม่ได้ ถ้าเปิดให้อ่าน jobs ได้
+    // ก็จะเห็นทั้งเอกสาร รวมถึงชื่อลูกค้า เบอร์โทร อาการ และราคา
+    // เอกสารใน board/ จึงเก็บเฉพาะข้อมูลที่เปิดเผยได้ (คิว รุ่นรถ สี ทะเบียนบางส่วน สถานะ)
+    // และแอปเป็นคนสร้างให้อัตโนมัติ
+    match /board/{docId} {
+      allow read:  if true;        // ลูกค้าสแกนดูได้เลย ไม่ต้องล็อกอิน
+      allow write: if hasAccess(); // เขียนได้เฉพาะพนักงานที่ล็อกอินแล้ว
+    }
+
+    // [ใหม่] กระจกสำเนาของ board/ ที่ไม่มีอะไรเขียนจริงตอนนี้ (โค้ดแอปคอมเมนต์ไว้ว่า
+    // จะให้ Cloud Function trigger คอยอัปเดตแทนในอนาคต เพื่อเปิดเผยข้อมูลน้อยกว่า
+    // board/ อีกขั้น) เพิ่มไว้ล่วงหน้าเฉย ๆ เผื่อวันที่ trigger นั้นถูกสร้างขึ้นจริง
+    // จะได้ไม่ต้องกลับมาแก้ rules อีกรอบ — เขียนได้เฉพาะฝั่งเซิร์ฟเวอร์ (Admin SDK
+    // ของ Cloud Function ข้าม security rules อยู่แล้ว) ฝั่งไคลเอนต์จึงห้ามเขียนเด็ดขาด
+    match /boardPublic/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---------- แชทลูกค้า กับ แอดมิน ----------
+    // ลูกค้าล็อกอินแบบ anonymous หลังค้นเจอรถ จึงเป็น signedIn() แต่ไม่มีเอกสารใน
+    // users/ ฉะนั้น hasAccess() และ isAdmin() ยังเป็นเท็จ เข้าถึงได้แค่ห้องแชทเท่านั้น
+    match /chatThreads/{jobId} {
+      // [แก้] เดิม allow read ครอบทั้ง get (อ่านทีละห้อง) และ list (query ทั้งคอลเลกชัน)
+      // ลูกค้าคนไหนก็เดา jobId ได้อยู่แล้วจาก board/ ที่เปิดสาธารณะ เท่ากับเปิด
+      // ทางให้เปิด console แล้วรัน query แบบเดียวกับที่แอดมินใช้ (orderBy('lastAt')
+      // .limit(60)) เห็นห้องแชททุกคันในร้านพร้อมข้อความล่าสุด ไม่ใช่แค่ห้องตัวเอง
+      // แยกเป็น get/list: ลูกค้าอ่านห้องตัวเองได้ถ้ารู้ jobId (.doc(id) เท่านั้น)
+      // ส่วน list (แอดมินใช้ query จริง) สงวนไว้ให้คนที่มีสิทธิ์เท่านั้น
+      allow get: if signedIn();
+      allow list: if isAdmin();
+      allow create, update: if signedIn();
+      allow delete: if false;
+      match /messages/{msgId} {
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['text','from','at','name'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------- คะแนนจากลูกค้า (หน้า ?feedback) ----------
+    // [ใหม่] ไม่มี rule ให้คอลเลกชันนี้มาก่อนเลย ถูก catch-all ท้ายไฟล์ปฏิเสธหมด
+    // ลูกค้าให้ดาวไม่ได้ แอดมินก็ดูคะแนนไม่ได้ ทั้งที่โค้ดแอปสร้างไว้ครบแล้ว
+    // ลูกค้า anonymous สร้างได้ครั้งเดียวต่อ jobId (เอกสารใช้ jobId เป็น doc id เอง
+    // ในโค้ดแอป — สร้างซ้ำเท่ากับเขียนทับ ไม่ใช่เพิ่มแถวใหม่ จึงไม่ต้องกันสแปมเพิ่ม)
+    // แก้ไม่ได้แม้แต่แอดมิน ให้เป็นคะแนนดิบที่ลูกค้าให้จริง ณ ตอนนั้น
+    match /feedback/{jobId} {
+      allow read: if hasAccess();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['stars','comment','queueNo','plate','at'])
+        && request.resource.data.stars is int
+        && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
+        && request.resource.data.comment is string
+        && request.resource.data.comment.size() <= 500;
+      allow update, delete: if false;
+    }
+
+    // ---------- ใครใช้แอปอยู่ตอนนี้ (v4.0.0) ----------
+    // [ใหม่] heartbeat ทุก 45 วิ เขียนตรงจาก presenceStripHtml()/startPresenceHeartbeat()
+    // ในโค้ดแอป — เขียนได้เฉพาะเอกสารของ uid ตัวเอง (คนอื่นปลอมสถานะคนอื่นไม่ได้)
+    // อ่านได้เฉพาะคนที่มีสิทธิ์ในระบบ (ไม่ใช่ข้อมูลสาธารณะเหมือน board/)
+    match /presence/{uid} {
+      allow read: if hasAccess();
+      allow write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ---------- ปิดทุกอย่างที่ไม่ได้ระบุไว้ข้างบน ----------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
