@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.1.5";
+  const APP_VERSION = "4.1.6";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -20624,11 +20624,18 @@ function startBoard(){
   } catch(e){}
   window.addEventListener('resize', () => fitBoardToScreen(true));
   renderBoard();   // paint the shell immediately so the screen isn't blank
-  // boardPublic is the redacted mirror a trigger keeps in step with `board`: queue,
-  // plate, car, status, ETA — no prices, no free text, no phone digits. `board`
-  // itself is no longer world-readable, so this is the collection the TV reads.
-  // The fallback keeps an un-migrated shop working until the backend is deployed.
-  subscribeBoard('boardPublic', () => subscribeBoard('board', null));
+  /* v4.1.6 — จอลูกค้าโชว์ "0/12 ว่างหมด" ตลอด ทั้งที่ในอู่มีรถจริง — สาเหตุ: โค้ดนี้
+     ลองอ่าน 'boardPublic' (กระจกสำเนาที่ต้องมี Cloud Function trigger คอยเขียนให้)
+     ก่อนเสมอ แล้วค่อย fallback ไป 'board' เฉพาะตอนโดน permission-denied เท่านั้น
+     แต่ตอนนี้ยังไม่มี trigger ตัวนั้นจริง — 'boardPublic' เลยไม่มีใครเขียนอะไรลงไปเลย
+     คอลเลกชันว่างเปล่าแต่ "อ่านได้" (ไม่ error) onSnapshot เลยได้ 0 แถวมาตลอด แบบ
+     ไม่มี error ให้ fallback จับได้สักที ในขณะที่ 'board' (พนักงานเขียนตรงจากแอปทุกครั้ง
+     ที่มีงานใหม่) มีข้อมูลจริงอยู่แล้ว แต่ไม่เคยถูกอ่านเลยเพราะรอบแรกไม่เคย error
+     สลับให้ลอง 'board' ก่อน (ที่มีข้อมูลจริงตอนนี้) แล้วค่อย fallback ไป 'boardPublic'
+     เฉพาะตอน 'board' โดนปิดสิทธิ์ — วันไหนสร้าง Cloud Function trigger เสร็จแล้วค่อย
+     ปิดสิทธิ์อ่าน 'board' สาธารณะในกฎ Firestore โค้ดจุดนี้จะสลับไปใช้ 'boardPublic'
+     เองอัตโนมัติโดยไม่ต้องแก้อะไรเพิ่ม */
+  subscribeBoard('board', () => subscribeBoard('boardPublic', null));
   /* The clock ticks every second, but only the clock element is rewritten — redrawing
      the whole board once a second would be wasteful on a screen that sits on all day.
      The slower full redraw stays so the "today only" filter rolls over at midnight;
