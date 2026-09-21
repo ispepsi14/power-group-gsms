@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.1.7";
+  const APP_VERSION = "4.1.9";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1753,40 +1753,6 @@
               Without it the strip just never appears - blocked reads/writes fail
               silently here on purpose, since a missing "online now" indicator
               isn't worth surfacing as an error to every device.
-
-     v4.1.7 - One word. The presence listener called render() instead of
-              safeRender(), and that is why typing in the back-office parts table
-              kept dying mid-word.
-
-              safeRender() exists precisely to stop a background repaint from
-              destroying a field someone is typing in: if the active element is an
-              input/textarea/select it raises pendingRender and waits for focusout.
-              Every main data listener (jobs, models, masterParts, ...) goes through it.
-              The presence listener, added in 4.0.0, did not - it called render()
-              directly. Presence is a heartbeat: each device writes its own doc
-              every 45s, so with the shop's 7 devices a snapshot lands roughly every
-              6-7 seconds, all day. Each one repainted the whole page, the focused
-              input was rebuilt from state, focus was lost silently, and every
-              keystroke after that went nowhere. To the shop that reads as "I was
-              typing and the box closed itself and went back to what it was" - the
-              characters they kept typing were simply dropped. Worst on the 42-row
-              parts table, which is where the most typing happens.
-
-              Reproduced against the real 4.1.6 file before changing anything:
-              typing ลูกหมาก, firing a presence snapshot, then typing แร็ค leaves
-              ลูกหมาก and no focus; the same test through a models snapshot
-              (safeRender) leaves ลูกหมากแร็ค with focus intact. All 207 render()
-              call sites were checked - this was the only one on a path that fires
-              on its own schedule rather than from a click, so this is the whole
-              bug, not one instance of a pattern.
-
-              Why it only started hurting recently: the presence rules were not
-              published until Sep 17. Before that the listener was denied and its
-              error branch ran, so it never repainted anything.
-
-              The visible cost of the fix is that the presence dots update a moment
-              later while someone is typing. That strip is decoration; the field
-              someone is typing in is not.
 
      v4.1.0 - Two development lines, branched at v3.37.0, merged back into one file.
               Line A (v3.38.0 - v3.48.0) and line B (its own v3.38.0 - v4.0.0) were
@@ -8891,24 +8857,18 @@ function startPresenceHeartbeat(){
   writePresenceOnce();
   stopPresenceHeartbeat();
   presenceHeartbeatTimer = setInterval(writePresenceOnce, PRESENCE_HEARTBEAT_MS);
+  /* v4.1.7 — presence heartbeat (ทุก 45 วิ/เครื่อง) ยิง onSnapshot เข้ามาเรื่อย ๆ
+     แม้ผู้ใช้ไม่ได้ทำอะไร เดิมเรียก render() ตรง ๆ ซึ่งวาดทั้งหน้าใหม่ทุกครั้ง —
+     ถ้าตอนนั้นกำลัง focus พิมพ์อยู่ในช่อง input/textarea/select (เจอชัดสุดที่ตาราง
+     อะไหล่หลังบ้าน 42 แถว) ช่องจะถูกสร้างใหม่ focus หลุด ค่าเด้งกลับตาม state เดิม
+     ตัวอักษรที่พิมพ์ต่อหลัง redraw หายไปเงียบ ๆ ไม่มี warning ใด ๆ
+     แก้โดยเปลี่ยนไปเรียก safeRender() แทน — ฟังก์ชันนี้มีอยู่แล้วในไฟล์ เช็คเองว่า
+     กำลัง focus ช่องกรอกอยู่ไหม ถ้าใช่จะเลื่อนการ redraw ไปรอจน focusout ก่อน
+     ผลข้างเคียงที่ยอมรับได้: จุดแสดงคนใช้งานอาจอัปเดตช้าลงนิดหน่อยเฉพาะตอนกำลังพิมพ์ */
   const unsub = db.collection('presence').onSnapshot(snap => {
     const rows = {};
     snap.forEach(doc => { rows[doc.id] = doc.data(); });
     presenceRows = rows;
-    /* v4.1.7 — ต้องเป็น safeRender() ไม่ใช่ render()
-
-       ตัวฟังนี้ทำงานเองเป็นระยะโดยไม่มีใครกด: ทุกเครื่องเขียน heartbeat ทุก 45 วิ
-       ร้านมี 7 เครื่อง เฉลี่ยแล้วมีสัญญาณเข้ามาทุก 6-7 วินาทีตลอดเวลาทำการ
-       render() วาดหน้าใหม่ทั้งหน้าทันที ช่องที่คนกำลังพิมพ์อยู่จึงถูกสร้างใหม่
-       โฟกัสหลุด แล้วตัวอักษรที่พิมพ์ต่อจากนั้นตกหายหมดโดยไม่มีอะไรบอก —
-       คนใช้เห็นเป็น "พิมพ์อยู่ดี ๆ ช่องปิดเอง แล้วกลับไปเป็นค่าเดิม"
-       เจอหนักสุดที่ตารางอะไหล่หลังบ้าน (42 แถว) เพราะเป็นหน้าที่ต้องพิมพ์นานที่สุด
-
-       safeRender() มีตัวกันอยู่แล้ว: ถ้ามีใครโฟกัสอยู่ใน input/textarea/select
-       มันจะตั้งธง pendingRender ไว้แล้วรอจนคลิกออก ค่อยวาด — ข้อมูลหลักทุกตัว
-       (ใบงาน/รุ่นรถ/อะไหล่) ใช้ทางนี้มาตั้งแต่แรก มีแต่ presence ที่หลุดไป
-       ผลที่ต่างออกไปคือแถบจุดสีจะอัปเดตช้ากว่าเดิมนิดเดียวระหว่างที่มีคนพิมพ์อยู่
-       ซึ่งไม่มีผลกับงาน — แถบนี้เป็นข้อมูลประดับ ไม่ใช่ข้อมูลที่ต้องตรงวินาที */
     safeRender();
   }, () => { /* ยังไม่ได้เพิ่มกฎ หรือหลุดเน็ต — แค่ไม่โชว์แถบ ไม่ต้องแจ้งเตือน */ });
   listeners.push(unsub);   // เก็บไว้ในชุดเดียวกับ listener อื่น ๆ เลิกใช้อัตโนมัติตอน detachListeners()
@@ -12833,12 +12793,16 @@ async function callClaude(apiKey, prompt){
   throw lastErr;
 }
 
-// Gemini — for everyday/general use. Uses 2.5 Flash-Lite: current stable model with
-// the most generous free-tier quota (gemini-2.0-flash was retired by Google).
+// Gemini — for everyday/general use. Uses 3.5 Flash-Lite: current stable model with
+// the most generous free-tier quota (gemini-2.0-flash and gemini-2.5-flash-lite were
+// both retired by Google — 2.5-flash-lite ให้ error 404 "no longer available to new
+// users" ตั้งแต่ ~ก.ย. 2026 บอกให้ย้ายไป 3.5-flash-lite ตรง ๆ — v4.1.9 เปลี่ยนตาม
+// (เดิมเข้าใจผิดว่าเป็น v4.1.7 — เลขนั้นชนกับ fix ของอีกสายงาน (presence/safeRender)
+// ที่ทำคู่ขนานกันจากฐาน v4.1.5 เดียวกัน แก้ไขให้ตรงตามที่ codex ตรวจพบแล้ว)
 async function callGemini(apiKey, prompt){
   let lastErr;
   for(let attempt = 0; attempt <= MAX_AI_RETRIES; attempt++){
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=' + encodeURIComponent(apiKey), {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=' + encodeURIComponent(apiKey), {
       method:'POST',
       headers:{ 'content-type':'application/json' },
       body: JSON.stringify({ contents:[{ parts:[{ text: prompt }] }] })
@@ -13306,8 +13270,6 @@ function render(){
     html += renderJobDetail(view.jobId);
   } else if(view.tab === 'checkin'){
     html += renderCheckin();
-  } else if(view.tab === 'blankform'){
-    html += settingsBackLink('ใบเปล่า') + renderBlankForm();
   } else if(view.tab === 'models'){
     html += settingsBackLink('รุ่นรถ') + renderModelsTab();
   } else if(view.tab === 'master'){
@@ -17499,13 +17461,15 @@ function renderSettingsTab(){
   const C = {};      // การ์ดแต่ละใบ สร้างไว้ก่อน ค่อยจัดลงหมวดตอนท้าย
   /* การ์ดนี้ไม่มีหัวข้อของตัวเองแล้ว — ชื่อเดิมคือ "แคตตาล็อก / ข้อมูลหลัก" ซึ่งซ้ำกับ
      ชื่อหมวดที่ครอบมันอยู่พอดี เหลือไว้ทั้งคู่จะอ่านเป็นหัวข้อซ้อนหัวข้อเปล่า ๆ */
+  /* v4.1.8 — เอาปุ่ม "ใบเปล่า" ออกจากหน้าตั้งค่าตามที่ร้านสั่ง (ไม่มีใครใช้ฟอร์ม
+     เขียนมือแบบนี้แล้ว) ตัดทั้งปุ่มและเส้นทาง goTab('blankform') ออก
+     renderBlankForm() ยังอยู่ในไฟล์เฉย ๆ ไม่ได้ลบ เผื่ออยากกลับมาใช้อีกทีในอนาคต */
   C.nav = `<div class="card">
     <div class="settings-nav">
       <button class="settings-nav-btn" onclick="goTab('models')">${icon('open',18)}<span>รุ่นรถ</span><small>${state.models.length} รุ่น</small></button>
       <button class="settings-nav-btn" onclick="goTab('master')">${icon('plus',18)}<span>สินค้า</span><small>${state.masterParts.length} รายการ</small></button>
       <button class="settings-nav-btn" onclick="goTab('technicians')">${icon('wrench',18)}<span>ชื่อช่าง</span><small>${(state.technicians||[]).length} คน</small></button>
       <button class="settings-nav-btn" onclick="goTab('pricebook')">${icon('book',18)}<span>ตำราราคา</span><small>ดู/พิมพ์ราคา</small></button>
-      <button class="settings-nav-btn" onclick="goTab('blankform')">${icon('printer',18)}<span>ใบเปล่า</span><small>พิมพ์ไว้เขียนมือ</small></button>
     </div>
   </div>`;
 
