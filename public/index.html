@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.1.9";
+  const APP_VERSION = "4.2.0";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1790,7 +1790,67 @@
               Version numbered 4.1.0 so it reads as ahead of both parents.
               Firestore rules ship separately (Console -> Firestore -> Rules) and
               the presence strip stays invisible until the presence/{uid} rule is
-              published. -->
+              published.
+
+     v4.2.0 - Duplicate model cards: the quote was reading prices off the wrong one.
+
+              The shop has model cards whose brand+name are identical - the list
+              already flagged them with a red "ซ้ำ" tag and a warning banner since
+              an earlier version. What nobody had checked was what getJobModel()
+              does when it finds two: it returned byName[0], the first one in
+              state.models order, without looking at whether that card holds any
+              data. If the empty duplicate sorted first, the price the mechanic
+              typed yesterday was invisible on today's quotation while still
+              sitting in the database, and the model's promotions vanished with it.
+
+              Measured, not reasoned about: shot52.py builds two TOYOTA CAMRY cards
+              (empty one first, priced one second) and calls recallPartPrice() -
+              the real path the quotation screen uses. On v4.1.9 it picks the empty
+              card and returns '' for a part whose lastPrice is 8,500. 5/19 on
+              v4.1.9, 19/19 here.
+
+              Two parts to the fix:
+
+              1. richestModel() / modelDataScore() - when several cards share a
+                 name, pick the one with real data: newest mechanic-typed price
+                 first, then priced items, then promotions, then part count. The
+                 brand-mismatch rule from v3.40.0 is untouched - a name match
+                 across brands still returns null, because guessing wrong sends a
+                 price across marques silently.
+
+              2. A merge page (goTab('dupmerge')), reached from the warning banner
+                 or Settings. It does NOT merge on its own: identical names do not
+                 always mean the same car, so it lays the cards side by side with
+                 part counts, promotions, the newest price with who typed it and
+                 when, and the same service chips the model list shows, and lets
+                 the person who knows press the button.
+
+              Price rules in mergeDuplicateModels(), which is the whole point of
+              the feature and the part that must not be clever:
+                - lastPrice: newer 'at' wins, both directions. Same rule as v3.41.0
+                  uses when learning prices from old quotations. An older card can
+                  never overwrite a price typed this morning.
+                - brands[].price (the shop's own set price): fills empty slots
+                  only, never overwrites. When both cards price the same brand
+                  differently the system does not choose - it keeps the kept card's
+                  number and reports the disagreement in a table for a human.
+                - Nothing is averaged, rounded, recalculated or sourced from
+                  outside the app. Every number still comes from what staff typed.
+
+              Promotions move with their itemIds remapped onto the merged parts, so
+              no promo is left pointing at an id that no longer exists. Duplicate
+              promos (same name, same price) are dropped rather than doubled. Year
+              range, bizKey, seedKey and cantDo fill only where the kept card is
+              empty. Everything lands in the edit log.
+
+              Jobs were checked first: they reference models by vehicle brand/name
+              through getJobModel(), never by model id, so removing a card orphans
+              nothing and old quotations are not rewritten.
+
+              Also: shot51's B-4 asserted APP_VERSION == "4.1.7" exactly, which
+              went red the moment 4.1.8 shipped while the fix it guards was still
+              in place. A test that is red by default is a test nobody reads, so it
+              now asserts the version is not older than 4.1.7. -->
 
 
 
@@ -3846,6 +3906,22 @@
     display:inline-block; background:var(--red); color:#fff; font-size:10px; font-weight:800;
     padding:2px 7px; border-radius:5px; vertical-align:middle; letter-spacing:.3px;
   }
+  /* ===== หน้ารวมรุ่นซ้ำ (v4.2.0) ===== */
+  .dup-compare{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px;}
+  .dup-panel{
+    border:1.5px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer;
+    background:var(--card-bg); transition:border-color .12s, background .12s;
+  }
+  .dup-panel:hover{border-color:var(--navy);}
+  .dup-panel.keep{border-color:var(--navy); background:var(--surface); border-width:2px;}
+  .dup-pick{display:flex; align-items:center; gap:7px; font-size:13px; cursor:pointer;}
+  .dup-pick input{width:16px; height:16px; accent-color:var(--navy); cursor:pointer;}
+  .dup-panel .dup-year{color:var(--text-2); font-size:12.5px; margin:7px 0 9px;}
+  .dup-nums{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--text-2);}
+  .dup-nums b{color:var(--text); font-size:15px; font-weight:800;}
+  .dup-panel .dup-last{font-size:11.5px; color:var(--text-2); margin-top:8px;}
+  .dup-panel .svc-chips{margin-top:9px;}
+  .dup-panel .btn{margin-top:11px; width:100%;}
   .model-card .year{color:var(--text-2); font-size:13px;}
   .model-card .count{color:var(--navy); font-size:12px; margin-top:8px; font-weight:600;}
   .model-card .del{
@@ -6654,6 +6730,44 @@ function jobVehicleTag(job){
    ตอนนี้เทียบแบบไม่สนตัวพิมพ์และเว้นวรรค แต่ "ไม่เดา" เกินกว่านั้น
    ชื่อรุ่นซ้ำกันข้ามยี่ห้อมีจริง (และตำรามีรุ่นซ้ำอยู่ 35 กลุ่ม) ถ้าจับผิดคัน
    ราคาจะข้ามค่ายไปโผล่ในใบเสนอราคาโดยไม่มีใครรู้ — จับไม่ได้ ดีกว่าจับผิด */
+/* v4.2.0 — การ์ดรุ่นรถใบไหน "มีของจริง" มากกว่ากัน
+
+   ใช้ตอนรุ่นชื่อซ้ำกันหลายใบแล้วต้องเลือกใบเดียวมาอ่านราคา
+   เดิม getJobModel() คืนใบแรกที่เจอตามลำดับใน state.models เฉย ๆ ซึ่งแปลว่า
+   ถ้าใบเปล่ามาก่อนใบที่มีราคา ราคาที่ช่างคีย์ไว้เมื่อวานจะหายไปจากใบเสนอราคา
+   ทั้งที่ยังอยู่ในระบบ — วัดแล้วเกิดจริงกับ v4.1.9 (shot52 A-4/A-5/A-6)
+
+   เรียงลำดับความสำคัญ: ราคาล่าสุดที่ช่างคีย์ (ใหม่กว่าชนะ) -> จำนวนรายการที่มีราคา
+   -> จำนวนชุดโปรที่มีราคา -> จำนวนอะไหล่ -> ลำดับเดิมในลิสต์
+   ไม่ตัดสินจากชื่อหรือช่วงปี เพราะสองอย่างนั้นบอกไม่ได้ว่าใบไหนคือใบที่ร้านใช้จริง */
+function modelDataScore(m){
+  const parts  = (m && m.parts) || [];
+  const promos = (m && m.promotions) || [];
+  let newest = '';
+  parts.forEach(p => {
+    const at = (p.lastPrice && p.lastPrice.price) ? String(p.lastPrice.at || '') : '';
+    if(at > newest) newest = at;
+  });
+  return { newest: newest,
+           priced: parts.filter(p => partPriceOf(p)).length,
+           promos: promos.filter(p => p.price).length,
+           parts:  parts.length };
+}
+
+function richestModel(list){
+  if(!list || !list.length) return null;
+  let best = list[0], bs = modelDataScore(best);
+  for(let i = 1; i < list.length; i++){
+    const s = modelDataScore(list[i]);
+    const better = (s.newest !== bs.newest) ? (s.newest > bs.newest)
+                 : (s.priced !== bs.priced) ? (s.priced > bs.priced)
+                 : (s.promos !== bs.promos) ? (s.promos > bs.promos)
+                 : (s.parts  >  bs.parts);
+    if(better){ best = list[i]; bs = s; }
+  }
+  return best;
+}
+
 function getJobModel(job){
   const v = getVehicle(job && job.vehicleId);
   if(!v || !v.model) return null;
@@ -6662,13 +6776,13 @@ function getJobModel(job){
   if(!byName.length) return null;
   const wantBrand = mmNorm(v.brand);
   if(wantBrand){
-    const same = byName.find(m => mmNorm(m.brand) === wantBrand);
-    if(same) return same;
-    const noBrand = byName.find(m => !mmNorm(m.brand));
-    if(noBrand) return noBrand;
+    const same = byName.filter(m => mmNorm(m.brand) === wantBrand);
+    if(same.length) return richestModel(same);
+    const noBrand = byName.filter(m => !mmNorm(m.brand));
+    if(noBrand.length) return richestModel(noBrand);
     return null;              // ชื่อรุ่นตรงแต่คนละยี่ห้อ — ไม่ใช่คันเดียวกัน
   }
-  return byName[0];
+  return richestModel(byName);
 }
 
 function findMasterPart(name){
@@ -13278,6 +13392,8 @@ function render(){
     html += settingsBackLink('ชื่อช่าง') + renderTechniciansTab();
   } else if(view.tab === 'pricebook'){
     html += settingsBackLink('ตำราราคา') + renderPriceBookTab();
+  } else if(view.tab === 'dupmerge'){
+    html += settingsBackLink('รวมรุ่นซ้ำ') + renderDupMergeTab();
   } else if(view.tab === 'users'){
     html += settingsBackLink('ผู้ใช้งาน') + renderUsersTab();
   } else if(view.tab === 'delivered'){
@@ -15785,6 +15901,234 @@ function findDuplicateModelGroups(){
   return Object.values(map).filter(group => group.length > 1);
 }
 
+function dupGroupKey(m){
+  return (m.brand||'').trim().toUpperCase() + '|' + (m.name||'').trim().toUpperCase();
+}
+
+/* ---------------------------------------------------------------------------
+   v4.2.0 — รวมการ์ดรุ่นรถที่ชื่อซ้ำกัน
+
+   กฎเรื่องราคา (ตามที่ร้านสั่ง: ห้ามแก้ราคาเอง ให้ระบบซิงค์กับพนักงาน)
+
+   1. ราคาล่าสุดที่ช่างคีย์ (part.lastPrice) — เทียบเวลา at ของใหม่กว่าชนะเสมอ
+      ใบเก่าห้ามทับใบใหม่ ใช้กฎเดียวกับ v3.41.0 ตอนเรียนราคาย้อนหลัง
+   2. ราคาที่ร้านตั้งเอง (brands[].price) — เติมเฉพาะช่องที่ว่าง ห้ามทับของเดิม
+      ถ้าสองใบตั้งราคาแบรนด์เดียวกันไว้ไม่เท่ากัน ระบบ "ไม่ตัดสินให้"
+      เก็บของใบที่พนักงานเลือกไว้ แล้วรายงานกลับเป็น conflicts ให้คนดูเอง
+   3. ไม่มีการคิดราคาใหม่ ไม่เฉลี่ย ไม่ปัดเศษ — ตัวเลขทุกตัวมาจากที่คีย์ไว้เท่านั้น
+
+   อะไหล่จับคู่กันด้วย ชื่อ + variant (กฎเดียวกับ mergeModelParts ที่ใช้อยู่แล้ว)
+   ชุดโปรย้ายมาทั้งชุด พร้อมชี้ itemIds ไปที่อะไหล่ตัวที่รวมแล้ว ไม่ให้ชุดโปรชี้ลอย
+
+   คืนสรุปว่าทำอะไรไปบ้าง เอาไปขึ้น toast และลง editLog
+   --------------------------------------------------------------------------- */
+function mergeDuplicateModels(keepId, dropId){
+  const out = { ok:false, moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[] };
+  const keep = getModel(keepId), drop = getModel(dropId);
+  if(!keep || !drop || keepId === dropId) return out;
+
+  keep.parts = keep.parts || [];
+  keep.promotions = keep.promotions || [];
+  const idMap = {};                    // id เดิมในใบที่ทิ้ง -> id ที่ใช้จริงหลังรวม
+
+  (drop.parts || []).forEach(dp => {
+    const twin = keep.parts.find(p =>
+      p.partName === dp.partName && (p.variant || '') === (dp.variant || ''));
+    if(!twin){
+      keep.parts.push(dp);             // ยกมาทั้งรายการ ราคาทุกช่องติดมาด้วย
+      idMap[dp.id] = dp.id;
+      out.moved++;
+      return;
+    }
+    idMap[dp.id] = twin.id;
+    out.merged++;
+
+    // (1) ราคาล่าสุดที่ช่างคีย์ — ใหม่กว่าชนะ
+    const mine = twin.lastPrice, theirs = dp.lastPrice;
+    if(theirs && theirs.price &&
+       (!mine || !mine.price || String(theirs.at || '') > String(mine.at || '')))
+      twin.lastPrice = theirs;
+
+    // (2) ราคาที่ร้านตั้งเอง — เติมช่องว่าง ไม่ทับ ต่างกันก็รายงาน ไม่ตัดสิน
+    twin.brands = twin.brands || [];
+    (dp.brands || []).forEach(bb => {
+      if(!bb || !bb.price) return;
+      const slot = twin.brands.find(x => mmNorm(x.brand) === mmNorm(bb.brand));
+      if(!slot){ twin.brands.push(bb); return; }
+      if(!slot.price){ slot.price = bb.price; return; }
+      if(String(slot.price) !== String(bb.price))
+        out.conflicts.push({ part: twin.partName, brand: bb.brand || '(ไม่ระบุแบรนด์)',
+                             keep: String(slot.price), drop: String(bb.price) });
+    });
+
+    if(!twin.qty  && dp.qty)  twin.qty  = dp.qty;
+    if(!twin.unit && dp.unit) twin.unit = dp.unit;
+  });
+
+  (drop.promotions || []).forEach(pr => {
+    const seen = {};
+    pr.itemIds = (pr.itemIds || [])
+      .map(x => idMap[x] || x)
+      .filter(x => { if(seen[x]) return false; seen[x] = true; return true; });
+    const same = keep.promotions.find(q =>
+      mmNorm(q.name) === mmNorm(pr.name) && String(q.price || '') === String(pr.price || ''));
+    if(same){ out.promosSkipped++; return; }   // ชื่อเดียวกันราคาเดียวกัน = ชุดเดียวกัน
+    keep.promotions.push(pr);
+    out.promos++;
+  });
+
+  // ข้อมูลรุ่นที่ใบที่เก็บยังว่างอยู่ เอาของอีกใบมาเติม — ไม่ทับของที่มีอยู่แล้ว
+  if(!String(keep.yearRange || '').trim() && drop.yearRange) keep.yearRange = drop.yearRange;
+  if(!keep.bizKey  && drop.bizKey)  keep.bizKey  = drop.bizKey;
+  if(!keep.seedKey && drop.seedKey) keep.seedKey = drop.seedKey;
+  if(drop.cantDo){
+    keep.cantDo = keep.cantDo || {};
+    Object.keys(drop.cantDo).forEach(k => { if(!keep.cantDo[k]) keep.cantDo[k] = drop.cantDo[k]; });
+  }
+
+  state.models = (state.models || []).filter(m => m.id !== dropId);
+  out.ok = true;
+  return out;
+}
+
+/* ---------------------------------------------------------------------------
+   หน้ารวมรุ่นซ้ำ — ระบบไม่รวมให้เอง
+
+   ชื่อซ้ำไม่ได้แปลว่าเป็นรุ่นเดียวกันเสมอ (AVANZA F650 กับ AVANZA 1.5 อาจคนละตัวถัง)
+   หน้านี้จึงแค่วางการ์ดทุกใบในกลุ่มเทียบกันให้เห็นครบ — จำนวนอะไหล่ ชุดโปร
+   ราคาล่าสุดที่คีย์ไว้ ใครคีย์ วันไหน และป้ายงานที่ทำได้แบบเดียวกับหน้ารายการรุ่นรถ
+   แล้วให้คนที่รู้ว่าใบไหนคือของจริงเป็นคนกดเลือกและกดรวม
+   --------------------------------------------------------------------------- */
+function pickDupKeep(key, modelId){
+  view.dupKeep = view.dupKeep || {};
+  view.dupKeep[key] = modelId;
+  render();
+}
+
+function dupKeepIdFor(key, group){
+  const picked = (view.dupKeep || {})[key];
+  if(picked && group.some(m => m.id === picked)) return picked;
+  const best = richestModel(group);
+  return best ? best.id : group[0].id;
+}
+
+function doMergeDupGroup(key){
+  const group = findDuplicateModelGroups().find(g => dupGroupKey(g[0]) === key);
+  if(!group || group.length < 2){ flashToast('ไม่พบกลุ่มนี้แล้ว'); render(); return; }
+  const keepId = dupKeepIdFor(key, group);
+  const keep = getModel(keepId);
+  const drops = group.filter(m => m.id !== keepId);
+  const label = `${keep.brand || ''} ${keep.name}`.trim();
+
+  uiConfirm(
+    `รวม ${group.length} ใบของ "${label}" เป็นใบเดียว?\n\n`
+    + `เก็บใบที่มี ${(keep.parts||[]).length} อะไหล่ · ${(keep.promotions||[]).length} โปรโมชั่น`
+    + (keep.yearRange ? ` · ปี ${keep.yearRange}` : '') + '\n\n'
+    + 'อะไหล่และชุดโปรของใบที่เหลือจะถูกย้ายมารวม\n'
+    + 'ราคาล่าสุดที่ช่างคีย์ ระบบเก็บอันที่ใหม่กว่าเสมอ\n'
+    + 'ราคาที่ร้านตั้งเองจะไม่ถูกทับ ถ้าตั้งไว้ไม่เท่ากันระบบจะบอกให้ดูเอง\n\n'
+    + 'ใบเสนอราคาที่เคยออกไปแล้วไม่ถูกแก้',
+    () => {
+      const sum = { moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[] };
+      drops.forEach(d => {
+        const r = mergeDuplicateModels(keepId, d.id);
+        if(!r.ok) return;
+        sum.moved += r.moved; sum.merged += r.merged;
+        sum.promos += r.promos; sum.promosSkipped += r.promosSkipped;
+        sum.conflicts = sum.conflicts.concat(r.conflicts);
+      });
+      if(view.dupKeep) delete view.dupKeep[key];
+      view.dupConflicts = sum.conflicts;
+      saveState(true);
+      pushEditLog('รวมรุ่นรถที่ซ้ำกัน', '', '',
+        `${label} — รวม ${drops.length + 1} ใบเป็นใบเดียว · ย้ายอะไหล่ ${sum.moved} รายการ`
+        + ` · รวมรายการซ้ำ ${sum.merged} รายการ · ย้ายชุดโปร ${sum.promos} ชุด`
+        + (sum.conflicts.length ? ` · ราคาที่ร้านตั้งไว้ไม่ตรงกัน ${sum.conflicts.length} จุด` : ''));
+      flashToast(`รวมเป็นใบเดียวแล้ว · ย้ายอะไหล่ ${sum.moved} · รวมที่ซ้ำ ${sum.merged}`
+        + (sum.conflicts.length ? ` · มีราคาไม่ตรงกัน ${sum.conflicts.length} จุด ดูด้านล่าง` : ''));
+      render();
+    }, 'รวมเป็นใบเดียว');
+}
+
+function dupCardPanel(m, key, keepId){
+  const s = modelDataScore(m);
+  const isKeep = m.id === keepId;
+  let newestLine = '<span class="muted">ยังไม่มีราคาที่ช่างคีย์</span>';
+  if(s.newest){
+    let who = '', job = '';
+    (m.parts || []).forEach(p => {
+      if(p.lastPrice && p.lastPrice.price && String(p.lastPrice.at || '') === s.newest){
+        who = p.lastPrice.by || ''; job = p.lastPrice.job || '';
+      }
+    });
+    newestLine = `ราคาล่าสุด ${fmtDateBE(s.newest)}`
+      + (who ? ` · ${escapeHtml(who)}` : '')
+      + (job ? ` · งาน ${escapeHtml(job)}` : '');
+  }
+  return `<div class="dup-panel ${isKeep ? 'keep' : ''}" onclick="pickDupKeep('${escapeAttr(key)}','${m.id}')">
+    <label class="dup-pick">
+      <input type="radio" name="dup-${escapeAttr(key)}" ${isKeep ? 'checked' : ''}
+             onclick="event.stopPropagation(); pickDupKeep('${escapeAttr(key)}','${m.id}')">
+      <b>${isKeep ? 'เก็บใบนี้' : 'รวมเข้าใบที่เลือก'}</b>
+    </label>
+    <div class="dup-year">${escapeHtml(m.yearRange || '') || '<span class="muted">ไม่ได้ระบุปี</span>'}</div>
+    <div class="dup-nums">
+      <span><b>${(m.parts || []).length}</b> อะไหล่</span>
+      <span><b>${s.priced}</b> มีราคา</span>
+      <span><b>${(m.promotions || []).length}</b> โปรโมชั่น</span>
+    </div>
+    <div class="dup-last">${newestLine}</div>
+    ${modelServiceChips(m)}
+    <button class="btn secondary small" onclick="event.stopPropagation(); openModel('${m.id}')">เปิดดูใบนี้</button>
+  </div>`;
+}
+
+function renderDupMergeTab(){
+  const groups = findDuplicateModelGroups();
+  let html = `<div class="card no-print">
+    <h3>${icon('wrench',15)} รวมรุ่นรถที่ชื่อซ้ำกัน</h3>
+    <p class="muted">
+      ระบบไม่รวมให้เอง เพราะชื่อซ้ำไม่ได้แปลว่าเป็นรุ่นเดียวกันเสมอ —
+      ดูทั้งสองใบแล้วเลือกใบที่เป็นของจริง จากนั้นกดรวม<br>
+      <b>ราคาไม่ถูกแก้</b> ราคาล่าสุดที่ช่างคีย์ ระบบเก็บอันที่ใหม่กว่า
+      ส่วนราคาที่ร้านตั้งเองจะไม่ถูกทับ ถ้าตั้งไว้ไม่ตรงกันระบบจะบอกให้ดูเอง
+    </p>
+  </div>`;
+
+  const cf = view.dupConflicts || [];
+  if(cf.length){
+    html += `<div class="card no-print">
+      <h3>ราคาที่ร้านตั้งไว้ไม่ตรงกัน ${cf.length} จุด — ระบบไม่ได้เลือกให้</h3>
+      <p class="muted">ระบบเก็บราคาของใบที่คุณเลือกไว้ ถ้าอีกใบถูกกว่า/แพงกว่าและอยากใช้อันนั้น ต้องเข้าไปแก้เองในหน้ารุ่นรถ</p>
+      <div class="table-wrap"><table class="parts-table"><thead><tr><th>รายการ</th><th>แบรนด์</th><th style="text-align:right;">ที่เก็บไว้</th><th style="text-align:right;">ของอีกใบ</th></tr></thead><tbody>
+      ${cf.map(c => `<tr><td>${escapeHtml(c.part)}</td><td>${escapeHtml(c.brand)}</td>
+        <td class="mono" style="text-align:right;">฿${escapeHtml(fmtMoney(parseMoney(c.keep)))}</td>
+        <td class="mono" style="text-align:right;">฿${escapeHtml(fmtMoney(parseMoney(c.drop)))}</td></tr>`).join('')}
+      </tbody></table></div>
+      <button class="btn secondary small" style="margin-top:10px;" onclick="view.dupConflicts=[]; render();">รับทราบแล้ว</button>
+    </div>`;
+  }
+
+  if(!groups.length){
+    html += `<div class="card"><div class="empty-state">ไม่มีรุ่นรถที่ชื่อซ้ำกันแล้ว</div></div>`;
+    return html;
+  }
+
+  groups.forEach(g => {
+    const key = dupGroupKey(g[0]);
+    const keepId = dupKeepIdFor(key, g);
+    html += `<div class="card no-print">
+      <h3>${escapeHtml(g[0].brand || '')} ${escapeHtml(g[0].name)} <span class="dup-tag">ซ้ำ ${g.length} ใบ</span></h3>
+      <div class="dup-compare">${g.map(m => dupCardPanel(m, key, keepId)).join('')}</div>
+      <div class="row-flex" style="margin-top:12px;">
+        <button class="btn" onclick="doMergeDupGroup('${escapeAttr(key)}')">${icon('check',14)} รวมเป็นใบเดียว</button>
+        <span class="muted" style="font-size:12px;">เก็บใบที่เลือกไว้ ที่เหลือย้ายอะไหล่และชุดโปรมารวม แล้วเอาการ์ดออก</span>
+      </div>
+    </div>`;
+  });
+  return html;
+}
+
 function renderModelsTab(){
   const selecting = !!view.selectMode;
   const selectedIds = view.selectedModelIds || [];
@@ -15797,8 +16141,11 @@ function renderModelsTab(){
 
   let html = '';
   if(dupGroups.length > 0){
-    html += `<div class="dup-warning-banner no-print">
-      ${icon('x',15)} พบรุ่นรถที่ชื่อซ้ำกัน ${dupGroups.length} กลุ่ม (รวม ${dupIds.size} รายการ) — ลองเปิดดูแล้วรวม/ลบรายการที่ซ้ำออก เพื่อกันอะไหล่แยกกันคนละชุดโดยไม่ตั้งใจ
+    /* v4.2.0 — แถบนี้เคยบอกเฉย ๆ ว่ามีรุ่นซ้ำ แล้วปล่อยให้ไปหาเอาเองว่าอยู่ใบไหน
+       ตอนนี้กดแล้วไปหน้ารวมรุ่นซ้ำได้เลย เพราะรุ่นซ้ำไม่ใช่แค่เรื่องรก —
+       ใบเสนอราคาจะอ่านราคามาจากการ์ดผิดใบได้ ถ้าปล่อยทิ้งไว้ */
+    html += `<div class="dup-warning-banner no-print" style="cursor:pointer;" onclick="goTab('dupmerge')">
+      ${icon('x',15)} พบรุ่นรถที่ชื่อซ้ำกัน ${dupGroups.length} กลุ่ม (รวม ${dupIds.size} รายการ) — กดตรงนี้เพื่อเทียบทีละคู่แล้วรวมเป็นใบเดียว
     </div>`;
   }
 
@@ -17470,6 +17817,8 @@ function renderSettingsTab(){
       <button class="settings-nav-btn" onclick="goTab('master')">${icon('plus',18)}<span>สินค้า</span><small>${state.masterParts.length} รายการ</small></button>
       <button class="settings-nav-btn" onclick="goTab('technicians')">${icon('wrench',18)}<span>ชื่อช่าง</span><small>${(state.technicians||[]).length} คน</small></button>
       <button class="settings-nav-btn" onclick="goTab('pricebook')">${icon('book',18)}<span>ตำราราคา</span><small>ดู/พิมพ์ราคา</small></button>
+      ${(function(){ const g = findDuplicateModelGroups();
+        return g.length ? `<button class="settings-nav-btn" onclick="goTab('dupmerge')">${icon('wrench',18)}<span>รวมรุ่นซ้ำ</span><small>${g.length} กลุ่มรอรวม</small></button>` : ''; })()}
     </div>
   </div>`;
 
