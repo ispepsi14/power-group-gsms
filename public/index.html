@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.0";
+  const APP_VERSION = "4.2.1";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1850,7 +1850,43 @@
               Also: shot51's B-4 asserted APP_VERSION == "4.1.7" exactly, which
               went red the moment 4.1.8 shipped while the fix it guards was still
               in place. A test that is red by default is a test nobody reads, so it
-              now asserts the version is not older than 4.1.7. -->
+              now asserts the version is not older than 4.1.7.
+
+     v4.2.1 - A loading screen, because the old one was a blank page and a line of
+              grey text.
+
+              The shop asked for the kind of screen a banking app shows while it
+              opens. The design is this app's own - the CHAMP POWER wordmark from
+              --logo-knockout, the carbon ground and the crimson hazard edge the app
+              bar already uses - not a copy of anyone else's.
+
+              The one decision that matters is WHERE the markup lives. A splash
+              drawn by render() cannot appear until 810KB of script has compiled,
+              which is exactly the slow part it is meant to cover; it would arrive
+              at the moment it stops being useful. So it is static markup at the top
+              of <body>, ahead of the <script>, with its own small <style> block: the
+              browser paints it as soon as the file lands.
+
+              The bar is not a spinner. Boot waits on nine things - the eight
+              SYNC_COLLECTIONS plus config/main - and oneReady() already counts them
+              down, so it now takes the collection name and reports real progress
+              ("โหลดใบงาน · 3/9"). On a slow shop connection that names what is
+              actually being waited on, so nobody assumes the tablet has frozen.
+
+              A splash that will not go away is worse than no splash, so three
+              things remove it: every path that paints real content calls
+              hideSplash() (render, renderLogin, renderHubScreen, renderHomePage,
+              renderReceptionPage, renderBoard, renderFeedbackPage - seven in all,
+              and deliberately NOT renderAuthStatus, which means "still loading"); a
+              10-second timer fires regardless; and any uncaught error or rejected
+              promise drops it immediately so whatever is behind it becomes visible.
+              It also hides itself for print.
+
+              shot54.py covers all of that, including that the markup sits before
+              the <script> rather than after it. 15/15 here, 4/15 on v4.2.0.
+
+              This does nothing for the iPhone that cannot open the app. That is a
+              memory problem; this only makes the wait legible. -->
 
 
 
@@ -5974,9 +6010,89 @@ body.dark .lf-skip{color:#fbbf24;}
 .ai-book-stat b{font-size:15px;color:#1f9d55;}
 body.dark .ai-book-stat b{color:#8ee5b0;}
 </style>
+
+<style>
+/* ===========================================================================
+   v4.2.1 — หน้าโหลดแอป
+
+   ทำไมต้องเป็น HTML นิ่ง ๆ ใน <body> ไม่ใช่ให้ render() วาด:
+   สคริปต์ของแอปยาว 810 KB เบราว์เซอร์ต้องคอมไพล์ให้เสร็จก่อนถึงจะสั่งวาดอะไรได้
+   ถ้าหน้าโหลดรอ JavaScript มันจะโผล่ตอนที่ช้าที่สุดพอดี ซึ่งไม่ช่วยอะไรเลย
+   วางเป็น markup ตรงนี้ = ขึ้นทันทีที่ไฟล์ถึงเครื่อง ไม่ต้องรอสคริปต์
+
+   กันแอปค้างอยู่ที่หน้านี้ไว้ 3 ชั้น (ดู hideSplash ในสคริปต์):
+     1. ทุกหน้าที่วาดของจริงเรียก hideSplash() ตอนท้าย — 7 จุด
+     2. ตั้งเวลาปิดทิ้งที่ 10 วินาที ไม่ว่าจะเกิดอะไรขึ้น
+     3. เจอ JavaScript error เมื่อไหร่ ปิดทันที
+   หน้าโหลดที่ไม่ยอมหายไป แย่กว่าไม่มีหน้าโหลดเลย
+   =========================================================================== */
+  #gsms-splash{
+    position:fixed; inset:0; z-index:9999;
+    background:radial-gradient(120% 78% at 50% 24%, #22262B 0%, #16181B 62%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:0 26px;
+    transition:opacity .42s ease, visibility .42s;
+  }
+  #gsms-splash::before{
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background:linear-gradient(90deg,#E11B22 0 34%,#7d1015 34% 50%,#E11B22 50% 84%,#7d1015 84%);
+  }
+  #gsms-splash.sp-gone{opacity:0; visibility:hidden; pointer-events:none;}
+  #gsms-splash .sp-logo{
+    width:186px; height:52px; max-width:74%;
+    background:var(--logo-knockout) no-repeat center/contain;
+    opacity:0; transform:translateY(8px);
+    animation:sp-rise .62s cubic-bezier(.22,.9,.3,1) .06s forwards;
+  }
+  #gsms-splash .sp-tag{
+    font-family:var(--font-display); font-weight:600; font-size:11.5px;
+    letter-spacing:.14em; text-transform:uppercase; color:#8A9199; margin-top:13px;
+    opacity:0; animation:sp-rise .62s cubic-bezier(.22,.9,.3,1) .2s forwards;
+  }
+  #gsms-splash .sp-meter{
+    position:absolute; left:0; right:0; bottom:calc(74px + env(safe-area-inset-bottom,0px));
+    display:flex; flex-direction:column; align-items:center; gap:11px; padding:0 34px;
+    opacity:0; animation:sp-rise .5s ease .34s forwards;
+  }
+  #gsms-splash .sp-track{
+    width:100%; max-width:420px; height:3px; border-radius:99px;
+    background:rgba(255,255,255,.12); overflow:hidden;
+  }
+  #gsms-splash .sp-bar{
+    height:100%; width:0%; border-radius:99px; background:#E11B22;
+    transition:width .34s cubic-bezier(.3,.8,.4,1);
+  }
+  #gsms-splash .sp-step{
+    font-size:12px; color:#8A9199; min-height:1.2em; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  #gsms-splash .sp-ver{
+    position:absolute; bottom:calc(28px + env(safe-area-inset-bottom,0px));
+    left:0; right:0; text-align:center; color:#4E5257;
+    font-family:var(--font-display); font-size:12px; letter-spacing:.09em;
+    opacity:0; animation:sp-rise .5s ease .44s forwards;
+  }
+  @keyframes sp-rise{to{opacity:1; transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    #gsms-splash .sp-logo,#gsms-splash .sp-tag,#gsms-splash .sp-meter,#gsms-splash .sp-ver{
+      animation:none; opacity:1; transform:none;
+    }
+    #gsms-splash,#gsms-splash .sp-bar{transition:none;}
+  }
+  @media print{ #gsms-splash{display:none !important;} }
+</style>
 </head>
 <body>
-<div id="app"><div style="padding:40px;text-align:center;color:#777;">กำลังโหลด...</div></div>
+<div id="gsms-splash">
+  <div class="sp-logo"></div>
+  <div class="sp-tag">ระบบจัดการอู่บริการ</div>
+  <div class="sp-meter">
+    <div class="sp-track"><div class="sp-bar" id="gsms-splash-bar"></div></div>
+    <div class="sp-step" id="gsms-splash-step">กำลังเชื่อมต่อ…</div>
+  </div>
+  <div class="sp-ver" id="gsms-splash-ver"></div>
+</div>
+<div id="app"></div>
 <div class="toast" id="toast"></div>
 <div class="undo-toast" id="undo-toast">
   <span id="undo-toast-msg"></span>
@@ -5984,6 +6100,45 @@ body.dark .ai-book-stat b{color:#8ee5b0;}
 </div>
 
 <script>
+/* ---------------------------------------------------------------------------
+   v4.2.1 — ตัวคุมหน้าโหลด
+
+   ตัว markup อยู่ใน <body> แล้ว (ขึ้นก่อนสคริปต์นี้จะคอมไพล์เสร็จด้วยซ้ำ)
+   ตรงนี้มีหน้าที่เดียวคือ "เดินตัวเลข" กับ "ปิดให้ตรงเวลา"
+
+   หน้าโหลดที่ไม่ยอมหายไป แย่กว่าไม่มีหน้าโหลดเลย จึงกันไว้สามชั้น:
+     1. ทุกหน้าที่วาดของจริงเรียก hideSplash() ตอนท้าย (render, renderLogin,
+        renderHubScreen, renderHomePage, renderReceptionPage, renderBoard,
+        renderFeedbackPage) — renderAuthStatus ไม่เรียก เพราะนั่นคือ "ยังโหลดอยู่"
+     2. ตั้งเวลาปิดทิ้งที่ 10 วินาที ไม่ว่าจะเกิดอะไรขึ้น
+     3. เจอ JavaScript error เมื่อไหร่ ปิดทันที จะได้เห็นว่าข้างหลังเป็นอะไร
+   --------------------------------------------------------------------------- */
+let splashHidden = false;
+function hideSplash(){
+  if(splashHidden) return;
+  splashHidden = true;
+  const el = document.getElementById('gsms-splash');
+  if(!el) return;
+  el.classList.add('sp-gone');
+  // เอาออกจาก DOM หลังจางจบ ไม่ปล่อยให้ค้างทับอะไรไว้
+  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 600);
+}
+/* done = โหลดเสร็จไปกี่อย่างจากทั้งหมด total · label = กำลังทำอะไรอยู่ */
+function splashStep(label, done, total){
+  if(splashHidden) return;
+  const bar  = document.getElementById('gsms-splash-bar');
+  const step = document.getElementById('gsms-splash-step');
+  if(step && label) step.textContent = label;
+  if(bar && total)  bar.style.width = Math.max(0, Math.min(100, Math.round(done / total * 100))) + '%';
+}
+setTimeout(hideSplash, 10000);
+window.addEventListener('error', hideSplash);
+window.addEventListener('unhandledrejection', hideSplash);
+try{
+  const v = document.getElementById('gsms-splash-ver');
+  if(v) v.textContent = 'v' + APP_VERSION;
+}catch(e){}
+
 const STORAGE_KEY = 'gsms-power-group-v1';
 
 /* Status flow. Not a straight line any more — after เสนอราคา the customer decides,
@@ -9125,8 +9280,20 @@ function startSync(){
   SYNC_COLLECTIONS.forEach(col => { shadow[col] = {}; });
 
   let pending = SYNC_COLLECTIONS.length + 1;
-  const oneReady = () => {
+  /* v4.2.1 — ชื่อไทยของแต่ละคอลเลกชัน ไว้บอกบนหน้าโหลดว่ากำลังรออะไรอยู่
+     ตอนเน็ตร้านอืด คนหน้าร้านจะได้รู้ว่าไม่ใช่เครื่องแฮงก์ */
+  const SPLASH_LABEL = {
+    jobs:'ใบงาน', vehicles:'ข้อมูลรถ', customers:'ลูกค้า', models:'รุ่นรถ',
+    masterParts:'อะไหล่กลาง', partBrandOptions:'แบรนด์อะไหล่',
+    complaintTypes:'อาการ', editLog:'ประวัติแก้ไข', config:'ตั้งค่าร้าน'
+  };
+  const totalReady = pending;
+
+  const oneReady = (col) => {
     pending--;
+    splashStep(pending > 0
+      ? ('โหลด' + (SPLASH_LABEL[col] || 'ข้อมูล') + ' · ' + (totalReady - pending) + '/' + totalReady)
+      : 'พร้อมใช้งาน', totalReady - pending, totalReady);
     if(pending === 0){
       dataReady = true;
       runSafeMigrations();
@@ -9164,11 +9331,11 @@ function startSync(){
       const incoming = [];
       snap.forEach(doc => incoming.push(Object.assign({}, doc.data(), { id: doc.id })));
       mergeSnapshotRows(col, incoming);
-      if(first){ first = false; oneReady(); }
+      if(first){ first = false; oneReady(col); }
       else if(dataReady){ safeRender(); }
     }, err => {
       console.error('sync ' + col, err);
-      if(first){ first = false; oneReady(); }
+      if(first){ first = false; oneReady(col); }
       flashToast('ซิงค์ ' + col + ' ไม่สำเร็จ');
     });
     listeners.push(unsub);
@@ -9191,11 +9358,11 @@ function startSync(){
       state.technicians = d.technicians || [];
       shadowConfig = JSON.stringify({ shop: state.shop, settings: state.settings, deletedMasterPartNames: state.deletedMasterPartNames, technicians: state.technicians });
     }
-    if(firstCfg){ firstCfg = false; oneReady(); }
+    if(firstCfg){ firstCfg = false; oneReady('config'); }
     else if(dataReady){ applyTheme(state.settings && state.settings.themeId); applyDarkMode(state.settings && state.settings.darkMode); safeRender(); }
   }, err => {
     console.error('sync config', err);
-    if(firstCfg){ firstCfg = false; oneReady(); }
+    if(firstCfg){ firstCfg = false; oneReady('config'); }
   });
   listeners.push(unsubCfg);
 }
@@ -13256,6 +13423,7 @@ function renderHubScreen(){
       <div class="hub-foot"><span class="hub-ver">v${APP_VERSION}</span></div>
     </div>
   </div>`;
+  hideSplash();                      // v4.2.1
 }
 
 /* The one thing a person stuck on this screen might actually need: who to call.
@@ -13427,6 +13595,7 @@ function render(){
 
   // The QR canvas has to be drawn into the DOM after innerHTML is replaced.
   if(view.tab === 'shop' && canManageCatalog()) drawBoardQr();
+  hideSplash();                      // v4.2.1 — มีของจริงบนจอแล้ว
 }
 
 /* ---------------- แถบคิว (เขียนใหม่ทั้งแถบ v3.27.0) ----------------
@@ -20185,6 +20354,7 @@ function renderLogin(errorMsg, showUid){
   if(pass) pass.onkeydown = e => { if(e.key === 'Enter') doLogin(); };
   const email = document.getElementById('login-email');
   if(email) email.onkeydown = e => { if(e.key === 'Enter'){ const p = document.getElementById('login-pass'); if(p) p.focus(); } };
+  hideSplash();                      // v4.2.1
 }
 
 function renderAuthStatus(msg){
@@ -20242,6 +20412,7 @@ function renderHomePage(){
       </div>
     </div>
   </div>`;
+  hideSplash();                      // v4.2.1
 }
 
 // ?reception — a self-serve "type the last 4 digits of your phone" lookup for the
@@ -20313,6 +20484,7 @@ function renderReceptionPage(){
       resultEl.innerHTML = `<div class="reception-status-msg error">เชื่อมต่อระบบไม่สำเร็จ (${escapeHtml(err.message || String(err))})<br>กรุณารีเฟรชหน้าใหม่อีกครั้ง</div>`;
     }
   }
+  hideSplash();                      // v4.2.1
 }
 
 let receptionUnsub = null;
@@ -21292,6 +21464,7 @@ function renderBoard(errorMsg){
 
   app.innerHTML = html;
   fitBoardToScreen();
+  hideSplash();                      // v4.2.1
 }
 
 /* Shrinks the whole board to fit the viewport height with no scrolling — this is what
@@ -22102,6 +22275,7 @@ function renderFeedbackPage(){
     console.error('feedback firebase init', err);
     fbMsg('เชื่อมต่อระบบไม่สำเร็จ กรุณารีเฟรชหน้าใหม่อีกครั้ง', 'error');
   }
+  hideSplash();                      // v4.2.1
 }
 
 function fbMsg(html, cls){
