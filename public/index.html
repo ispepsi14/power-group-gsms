@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.3";
+  const APP_VERSION = "4.2.4";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1952,7 +1952,30 @@
 
               shot58.py: 19/19 here, 0/14 on v4.2.2. It checks the non-cascade with
               two models that share a part name, and that a blank name or a name
-              already in that model is refused rather than saved. -->
+              already in that model is refused rather than saved.
+
+     v4.2.4 - Delete, from the same place. Edit mode gains a third column holding one
+              44px button per row; the column is no-print, so printing the price book
+              while still in edit mode does not put it on the paper.
+
+              The confirm says what is actually about to be lost, which is not the
+              name - a name can be retyped. It is the prices: how many ราคาที่ร้านตั้งไว้
+              rows go with it, the ราคาล่าสุด a technician keyed from a real job (shown
+              with its amount), and which promotions this part belongs to. It also
+              states what is NOT touched, because that is the question somebody
+              hesitating over this button is actually asking: other models that carry
+              the same part name, and quotes that already selected it.
+
+              Deletion itself goes through deletePartFromModel, the existing function,
+              because it strips the part id out of promotion.itemIds as well. That
+              cascade is the v3.45.0 fix: an id left behind makes a promotion count a
+              part it cannot find, and the line then vanishes silently from the
+              printed quote. A second delete path that forgot it would reintroduce the
+              bug in a new place.
+
+              shot58.py grows to 32/32 (0/14 on v4.2.3), asserting the promotion is
+              cleaned, the OTHER part in that promotion is left alone, the twin model
+              keeps its copy, and masterParts is untouched. -->
 
 
 
@@ -5996,6 +6019,8 @@ body.dark .cdw-head{color:#fca5a5;}
 .pb-add-row .btn{min-height:40px;}
 .pb-add-foot{padding:8px 10px 12px;}
 .pb-add-foot .btn{min-height:40px;}
+.pb-del-btn{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
+.pb-del-btn:hover{color:var(--danger);}
 body.dark .pb-name-input{background:#1c2530;border-color:#374151;}
 body.dark .pb-missing{color:#fbbf24;}
 @media print{
@@ -16957,6 +16982,42 @@ function pbAddPart(modelId, category){
   else promptCategory(`หมวดหมู่ของอะไหล่ใหม่ใน ${modelLabel}`, ask);
 }
 
+/* ลบอะไหล่ออกจากรุ่นนี้ — บอกให้ครบก่อนว่าจะเสียอะไรไปบ้าง
+   เพราะสิ่งที่หายไปจริง ๆ ไม่ใช่แค่ชื่อ แต่คือราคาที่ร้านตั้งไว้ และราคาล่าสุด
+   ที่ช่างเคยคีย์จากงานจริง ซึ่งเอากลับคืนไม่ได้ ต่างจากชื่อที่พิมพ์ใหม่ได้
+   ตัวลบใช้ deletePartFromModel ตัวเดิม เพราะมันถอด id ออกจากชุดโปรให้ด้วย
+   (v3.45.0 — ถ้าลืมถอด ชุดโปรจะนับว่ามีของชิ้นนั้นแต่หาไม่เจอ แล้วบรรทัดนั้น
+   จะหายเงียบ ๆ ตอนออกใบเสนอราคา) */
+function pbDeletePart(modelId, partId){
+  if(!isAdmin()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  const model = getModel(modelId);
+  if(!model) return;
+  const part = (model.parts || []).find(p => p.id === partId);
+  if(!part) return;
+
+  const label = part.partName + (part.variant ? ' (' + part.variant + ')' : '');
+  const shopPrices = (part.brands || []).filter(b => b.price && parseMoney(b.price) > 0);
+  const lp = (part.lastPrice && part.lastPrice.price) ? part.lastPrice : null;
+  const inPromos = (model.promotions || [])
+    .filter(pr => (pr.itemIds || []).indexOf(partId) >= 0)
+    .map(pr => pr.name || '(ชุดโปรไม่มีชื่อ)');
+
+  const lines = [];
+  if(shopPrices.length) lines.push(`• ราคาที่ร้านตั้งไว้ ${shopPrices.length} รายการจะหายไปด้วย`);
+  if(lp) lines.push(`• ราคาล่าสุดที่ช่างคีย์ไว้ ฿${fmtMoney(parseMoney(lp.price))} จะหายไปด้วย`);
+  if(inPromos.length) lines.push(`• อยู่ในชุดโปร: ${inPromos.join(', ')} — จะถูกถอดออกจากชุดให้ด้วย`);
+  if(!lines.length) lines.push('• อะไหล่ตัวนี้ยังไม่มีราคาใด ๆ ผูกอยู่');
+
+  uiConfirm(
+    `ลบ "${label}" ออกจาก ${model.brand || ''} ${model.name}?\n\n` + lines.join('\n') +
+    `\n\nรุ่นอื่นที่มีอะไหล่ชื่อเดียวกัน และใบงานที่เคยเลือกไว้แล้ว จะไม่ถูกแก้ไข\nยกเลิกไม่ได้`,
+    () => {
+      deletePartFromModel(modelId, partId);   // ถอดออกจากชุดโปร + บันทึก + วาดใหม่ ให้เสร็จในตัว
+      flashToast(`ลบ "${label}" แล้ว`);
+    },
+    'ลบออกจากรุ่นนี้', 'ไม่ลบ');
+}
+
 function renderPriceBookTab(){
   const printFilterActive = Array.isArray(view.pb_printFilterIds);
   const selecting = !!view.pb_selectMode;
@@ -17064,15 +17125,21 @@ function renderPriceBookTab(){
       if(!m.parts || m.parts.length === 0){
         html += `<div class="empty-state" style="padding:12px 14px;">ยังไม่มีรายการอะไหล่</div>`;
       } else {
+        /* โหมดแก้ไขได้คอลัมน์ลบเพิ่มมาอีกหนึ่ง — ทั้งหัวตารางและช่องลบติด no-print
+           ถ้าเผลอสั่งพิมพ์ทั้งที่ยังไม่ออกจากโหมดแก้ไข คอลัมน์นี้จะยุบหายไปเอง */
+        const cols = view.pb_edit ? 3 : 2;
         html += `<table class="pb-table">
-          <colgroup><col style="width:55%"><col style="width:45%"></colgroup>
-          <thead><tr><th>รายการอะไหล่</th><th>ราคา</th></tr></thead><tbody>`;
+          ${view.pb_edit
+            ? `<colgroup><col style="width:48%"><col style="width:40%"><col style="width:12%"></colgroup>`
+            : `<colgroup><col style="width:55%"><col style="width:45%"></colgroup>`}
+          <thead><tr><th>รายการอะไหล่</th><th>ราคา</th>${
+            view.pb_edit ? '<th class="center no-print">ลบ</th>' : ''}</tr></thead><tbody>`;
         groupByCategory(m.parts).forEach(group => {
           // ในโหมด "เฉพาะที่ยังไม่มีราคา" หมวดที่ตั้งราคาครบแล้วไม่ต้องแสดงหัวหมวด
           const items = (view.pb_edit && view.pb_onlyUnpriced)
             ? group.items.filter(p => !partHasPrice(p)) : group.items;
           if(items.length === 0) return;
-          html += `<tr class="pb-cat-row"><td colspan="2" class="pb-cat-header">${escapeHtml(group.category)}</td></tr>`;
+          html += `<tr class="pb-cat-row"><td colspan="${cols}" class="pb-cat-header">${escapeHtml(group.category)}</td></tr>`;
           items.forEach(part => {
             const nameCell = view.pb_edit
               ? `<input type="text" class="pb-name-input" value="${escapeAttr(part.partName)}"
@@ -17083,10 +17150,15 @@ function renderPriceBookTab(){
             html += `<tr>
               <td>${nameCell}</td>
               <td>${view.pb_edit ? renderPbPriceCellEdit(m, part) : renderPbPriceCell(part)}</td>
+              ${view.pb_edit ? `<td class="center no-print">
+                <button class="icon-btn pb-del-btn" title="ลบอะไหล่นี้ออกจากรุ่นนี้"
+                  data-model="${escapeAttr(m.id)}" data-part="${escapeAttr(part.id)}"
+                  onclick="pbDeletePart(this.dataset.model, this.dataset.part)">${icon('trash',14)}</button>
+              </td>` : ''}
             </tr>`;
           });
           if(view.pb_edit){
-            html += `<tr class="pb-add-row no-print"><td colspan="2">
+            html += `<tr class="pb-add-row no-print"><td colspan="${cols}">
               <button class="btn secondary small" data-model="${escapeAttr(m.id)}" data-cat="${escapeAttr(group.category)}"
                 onclick="pbAddPart(this.dataset.model, this.dataset.cat)">${icon('plus',13)} เพิ่มอะไหล่ในหมวด "${escapeHtml(group.category)}"</button>
             </td></tr>`;
