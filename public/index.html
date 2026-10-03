@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.1";
+  const APP_VERSION = "4.2.3";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1886,7 +1886,73 @@
               the <script> rather than after it. 15/15 here, 4/15 on v4.2.0.
 
               This does nothing for the iPhone that cannot open the app. That is a
-              memory problem; this only makes the wait legible. -->
+              memory problem; this only makes the wait legible.
+
+     v4.2.2 - Warn when a part name is already in the system under a slightly
+              different spelling, and let the shop decide.
+
+              MG ZS alone carries ปีกนก, ปีกนก (L+R), ปีกนก (ตัวตรง), ปีกนก (ตัวงอ),
+              ปีกนกบน (L+R), ลูกหมากปีกนก, ลูกหมากปีกนก (บน), ลูกหมากปีกนก (ล่าง) and
+              ลูกหมากปีกนก (L+R) - plus กันโคลง next to กันโครง, which is a typo that
+              became a second part. Each spelling collects its own lastPrice, so the
+              price a technician keyed yesterday sits under a name the quote does not
+              look at today. Same failure as the duplicate models in v4.2.0, one level
+              down.
+
+              So: typing a new name now compares it against every name already known -
+              this model's parts first, then masterParts - and if anything matches it
+              shows them, says where each one lives, and asks ตกลง / ไม่ตกลง. It does
+              not block and it does not merge anything on its own. Which two spellings
+              mean the same part is a question only the shop can answer.
+
+              Matching strips what does not change WHICH part it is - bracketed
+              suffixes, L+R / L/R / LR, ซ้าย ขวา คู่, spaces and punctuation - then
+              compares the remaining core three ways: equal, edit distance <= 2 on
+              cores of 5+ characters (this is what catches กันโคลง vs กันโครง), or one
+              core wholly inside the other with the shorter at 4+ characters.
+
+              The false-positive half matters as much: ผ้าเบรคหน้า and โช๊คอัพหลัง share
+              a word with existing parts and must stay silent, or the dialog becomes
+              something staff click through without reading. shot57.py asserts both
+              directions using the shop's real part names, and asserts that ไม่ตกลง
+              adds nothing. 25/25 here, 0/18 on v4.2.1.
+
+              uiModal gained an optional cancelLabel (so the button can read ไม่ตกลง
+              rather than ยกเลิก); every existing caller is untouched and still says
+              ยกเลิก. This dialog deliberately does NOT use uiConfirm, because that
+              paints the confirm button red - red is for deleting, and adding a part
+              is not dangerous.
+
+     v4.2.3 - The ตำราราคา edit mode now edits part names and adds parts, not just
+              prices.
+
+              v3.36.0 put price entry on this page for one reason: a model like AUDI
+              Q5 reading "— ยังไม่ตั้งราคา —" on every row meant leaving the page for
+              every single fix. The same reason applies to the name beside the price.
+              A typo, or a part the model is missing, still sent you to รุ่นรถ, and
+              coming back lost however far you had scrolled down a page that is
+              hundreds of rows long.
+
+              So in edit mode each name is an input, each category ends with a button
+              that adds a part into THAT category, and each model block ends with one
+              that asks for the category first (which is also what an empty model
+              gets). Adding goes through the v4.2.2 similar-name gate like every other
+              path that can type a new name, and files the name into masterParts so
+              other models can pick it.
+
+              Renaming here changes that model only - the same rule as renaming inside
+              รุ่นรถ; only the สินค้า page cascades. The toolbar says so, because
+              nobody should have to guess which of the two they just did.
+
+              Renaming does NOT call render(), for the same reason price entry does
+              not: the page would jump back to the top on every field exit. Adding
+              does, because a new row genuinely has to appear. The add controls carry
+              no-print, so pressing พิมพ์ตำรา while still in edit mode does not put
+              buttons on the paper.
+
+              shot58.py: 19/19 here, 0/14 on v4.2.2. It checks the non-cascade with
+              two models that share a part name, and that a blank name or a name
+              already in that model is refused rather than saved. -->
 
 
 
@@ -5921,7 +5987,16 @@ body.dark .cdw-head{color:#fca5a5;}
 .pb-edit-line{display:flex;align-items:center;gap:7px;padding:2px 0;}
 .pb-edit-line .pb-price-brand{font-size:11px;color:var(--muted,#6b7280);min-width:62px;}
 .pb-missing{color:#b45309;font-weight:700;}
-body.dark .pb-price-input{background:#1c2530;border-color:#374151;}
+/* v4.2.3 — แก้ชื่ออะไหล่และเพิ่มอะไหล่ได้จากหน้าตำราราคาเลย */
+.pb-name-input{width:100%;padding:5px 8px;border:1px solid var(--line,#d1d5db);
+  border-radius:6px;font-family:inherit;font-size:13.5px;background:#fff;color:inherit;}
+.pb-name-input:focus{outline:none;border-color:#1f9d55;box-shadow:0 0 0 2px rgba(31,157,85,.18);}
+.pb-variant{font-size:11.5px;color:var(--muted,#6b7280);margin-left:6px;}
+.pb-add-row td{padding:6px 10px 10px;}
+.pb-add-row .btn{min-height:40px;}
+.pb-add-foot{padding:8px 10px 12px;}
+.pb-add-foot .btn{min-height:40px;}
+body.dark .pb-name-input{background:#1c2530;border-color:#374151;}
 body.dark .pb-missing{color:#fbbf24;}
 @media print{
   .pb-price-input{border:none;box-shadow:none;background:none;text-align:left;padding:0;max-width:none;}
@@ -9536,7 +9611,7 @@ function uiModal(opts){
       <div class="ui-modal-msg">${escapeHtml(opts.message || '')}</div>
       ${hasInput ? `<input type="text" id="ui-modal-input" class="ui-modal-input" value="${escapeAttr(opts.defaultValue || '')}" placeholder="${escapeAttr(opts.placeholder || '')}">` : ''}
       <div class="ui-modal-btns">
-        <button type="button" class="btn secondary" id="ui-modal-cancel">ยกเลิก</button>
+        <button type="button" class="btn secondary" id="ui-modal-cancel">${escapeHtml(opts.cancelLabel || 'ยกเลิก')}</button>
         <button type="button" class="btn ${opts.danger ? 'danger-solid' : ''}" id="ui-modal-ok">${escapeHtml(opts.okLabel || 'ตกลง')}</button>
       </div>
     </div>`;
@@ -9558,8 +9633,9 @@ function uiModal(opts){
 }
 
 // uiConfirm('ลบไหม?', () => { ...ทำจริง... })
-function uiConfirm(message, onOk, okLabel){
-  uiModal({ message, danger:true, okLabel: okLabel || 'ยืนยัน', onOk: () => onOk() });
+/* v4.2.2 — รับชื่อปุ่ม "ไม่ตกลง" ได้ด้วย (ไม่ส่งมาก็ยังเป็น "ยกเลิก" เหมือนเดิมทุกที่) */
+function uiConfirm(message, onOk, okLabel, cancelLabel){
+  uiModal({ message, danger:true, okLabel: okLabel || 'ยืนยัน', cancelLabel: cancelLabel, onOk: () => onOk() });
 }
 
 // uiPrompt('ชื่อใหม่', 'ค่าเดิม', value => { ... })  — cancel simply never fires onOk.
@@ -12430,11 +12506,13 @@ function addMasterPartPrompt(){
     const trimmed = name.trim();
     if(!trimmed) return;
     if(state.masterParts.some(p => p.name.trim() === trimmed)){ flashToast('มีชื่อนี้อยู่แล้ว'); return; }
-    promptCategory('หมวดหมู่ของ "' + trimmed + '"', category => {
-      state.masterParts.push({ id: uid(), name: trimmed, category });
-      saveState(true);
-      flashToast('เพิ่มอะไหล่แล้ว');
-      render();
+    confirmIfSimilarPartName(trimmed, partNamePool(null), 'รายการกลาง', () => {
+      promptCategory('หมวดหมู่ของ "' + trimmed + '"', category => {
+        state.masterParts.push({ id: uid(), name: trimmed, category });
+        saveState(true);
+        flashToast('เพิ่มอะไหล่แล้ว');
+        render();
+      });
     });
   });
 }
@@ -12513,6 +12591,108 @@ function onMasterPartNameChange(id, value){
   render();
 }
 
+/* ================= ชื่อซ้ำ / ชื่อคล้าย (v4.2.2) =================
+   รายการอะไหล่ของร้านโตมาจากการพิมพ์สด ๆ หน้างาน ของชิ้นเดียวกันจึงมีหลายชื่อ:
+   "ปีกนก" "ปีกนก (L+R)" "ปีกนก (ตัวตรง)" "ลูกหมากปีกนก" "ลูกหมากปีกนก (ล่าง)"
+   พอมีหลายชื่อ ราคาที่ช่างเคยคีย์ไว้ก็กระจายไปคนละชื่อ แล้วใบเสนอราคาก็หยิบผิดใบ
+   — ปัญหาเดียวกับรุ่นรถชื่อซ้ำที่แก้ไปใน v4.2.0 แต่คราวนี้เป็นระดับอะไหล่
+
+   ตรงนี้ไม่ได้ "ห้าม" และไม่ได้รวมชื่อให้เอง เพราะคนที่รู้ว่าสองชื่อนี้คือของชิ้น
+   เดียวกันหรือไม่ คือช่าง ไม่ใช่ระบบ หน้าที่ของโค้ดคือเอาของที่มีอยู่แล้วมาวางให้ดู
+   ตรงจังหวะที่กำลังจะพิมพ์ชื่อใหม่ แล้วให้คนกดตัดสิน */
+
+/* ตัดสิ่งที่ไม่ได้เปลี่ยนว่า "มันคือของชิ้นไหน" ออก เหลือแก่นไว้เทียบ
+   วงเล็บทั้งก้อน · ช่องว่างและเครื่องหมาย · คำบอกข้าง/จำนวน (L+R ซ้าย ขวา คู่) */
+function partNameCore(s){
+  return String(s == null ? '' : s)
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/l\s*[+\/]\s*r/gi, ' ')
+    .replace(/\b(lr|rh|lh)\b/gi, ' ')
+    .replace(/(ซ้าย|ขวา|คู่)/g, ' ')
+    .replace(/[\s\-_.·,/]+/g, '')
+    .toLowerCase();
+}
+
+/* ระยะแก้ไข แบบตัดจบเร็วเมื่อเกินเพดาน — ไม่ต้องคำนวณเต็มตารางให้เปลือง */
+function editDistanceWithin(a, b, max){
+  if(Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = [];
+  for(let j = 0; j <= b.length; j++) prev[j] = j;
+  for(let i = 1; i <= a.length; i++){
+    const cur = [i];
+    let best = i;
+    for(let j = 1; j <= b.length; j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      if(cur[j] < best) best = cur[j];
+    }
+    if(best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/* pool = [{name, where}] — where คือคำบอกว่าชื่อนั้นอยู่ตรงไหน ("อยู่ในรุ่นนี้แล้ว" ฯลฯ)
+   คืนรายการที่ชนกัน เรียงจากชนแรงสุดไปเบาสุด */
+const SIMILAR_MIN_CORE = 4;   // แก่นสั้นกว่านี้ไม่เอามาเทียบแบบ "คำหนึ่งอยู่ในอีกคำ"
+function similarPartNames(name, pool, limit){
+  const core = partNameCore(name);
+  if(!core) return [];
+  const seen = {};
+  const out = [];
+  (pool || []).forEach(entry => {
+    const other = (entry && entry.name != null) ? String(entry.name) : String(entry || '');
+    if(!other || seen[other]) return;
+    const oc = partNameCore(other);
+    if(!oc) return;
+    let why = '';
+    if(oc === core) why = 'same';
+    else if(Math.min(core.length, oc.length) >= 5 && editDistanceWithin(core, oc, 2) <= 2) why = 'close';
+    else if(core.length >= SIMILAR_MIN_CORE && oc.indexOf(core) >= 0) why = 'contains';
+    else if(oc.length >= SIMILAR_MIN_CORE && core.indexOf(oc) >= 0) why = 'contains';
+    if(!why) return;
+    seen[other] = true;
+    out.push({ name: other, where: (entry && entry.where) || '', why: why });
+  });
+  const rank = { same: 0, close: 1, contains: 2 };
+  out.sort((a, b) => rank[a.why] - rank[b.why] || a.name.localeCompare(b.name, 'th'));
+  return out.slice(0, limit || 8);
+}
+
+/* ด่านถาม — ไม่เจออะไรคล้ายก็ผ่านไปเงียบ ๆ ไม่ขัดจังหวะคนทำงาน */
+function confirmIfSimilarPartName(name, pool, scopeLabel, onYes){
+  const hits = similarPartNames(name, pool, 8);
+  if(hits.length === 0){ onYes(); return; }
+  const exact = hits.filter(h => h.why === 'same').length;
+  const head = exact
+    ? `"${name}" มีชื่อเดียวกันอยู่ในระบบแล้ว`
+    : `"${name}" มีชื่อคล้ายกันอยู่ในระบบแล้ว ${hits.length} รายการ`;
+  const lines = hits.map(h =>
+    '  • ' + h.name + (h.where ? '  — ' + h.where : '') + (h.why === 'same' ? '  (ชื่อเดียวกัน)' : ''));
+  /* ไม่ใช้ uiConfirm เพราะอันนั้นย้อมปุ่มยืนยันเป็นสีแดง (danger) ซึ่งเอาไว้ใช้กับ
+     "ลบ" การเพิ่มอะไหล่ไม่ใช่เรื่องอันตราย ปุ่มแดงตรงนี้จะสอนให้คนกลัวผิดที่ */
+  uiModal({
+    message: head + ':\n\n' + lines.join('\n') +
+             `\n\nจะเพิ่ม "${name}" เข้า${scopeLabel} อีกรายการหรือไม่?`,
+    okLabel: 'ตกลง เพิ่มเลย',
+    cancelLabel: 'ไม่ตกลง',
+    onOk: onYes
+  });
+}
+
+/* ชื่อทั้งหมดที่ระบบรู้จัก พร้อมบอกว่ามันอยู่ตรงไหน
+   ใส่ของในรุ่นนี้ก่อนเสมอ เพราะนั่นคือสิ่งที่คนกำลังมองอยู่ตรงหน้า */
+function partNamePool(model){
+  const pool = [];
+  if(model){
+    (model.parts || []).forEach(p => pool.push({
+      name: p.variant ? `${p.partName} (${p.variant})` : p.partName,
+      where: 'อยู่ในรุ่นนี้แล้ว'
+    }));
+  }
+  (state.masterParts || []).forEach(mp => pool.push({ name: mp.name, where: 'อยู่ในรายการกลาง' }));
+  return pool;
+}
+
 /* ================= Catalog: parts within a model ================= */
 function addExistingPartsToModel(modelId){
   const model = getModel(modelId);
@@ -12534,13 +12714,21 @@ function addCustomPartToModel(modelId){
   if(!name) return;
   const category = (catSelect && PART_CATEGORIES.includes(catSelect.value)) ? catSelect.value : 'ทั่วไป';
   const model = getModel(modelId);
-  model.parts.push({ id: uid(), partName: name, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
-  if(!state.masterParts.some(p => p.name === name)){
-    state.masterParts.push({ id: uid(), name, category });
+  if(!model) return;
+  if((model.parts || []).some(p => p.partName === name && !p.variant)){
+    flashToast(`"${name}" อยู่ในรุ่นนี้แล้ว`);
+    return;
   }
-  input.value = '';
-  saveState(true);
-  render();
+  confirmIfSimilarPartName(name, partNamePool(model), `รุ่น ${model.brand} ${model.name}`, () => {
+    model.parts.push({ id: uid(), partName: name, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
+    if(!state.masterParts.some(p => p.name === name)){
+      state.masterParts.push({ id: uid(), name, category });
+    }
+    const el = document.getElementById('custom-part-input');
+    if(el) el.value = '';
+    saveState(true);
+    render();
+  });
 }
 
 function deletePartFromModel(modelId, partId){
@@ -14513,9 +14701,13 @@ function addCustomJobPart(jobId){
   uiPrompt('ชื่อรายการที่ต้องการเพิ่ม (เช่น ค่าแรง, อะไหล่นอกรายการ)', '', name => {
     const trimmed = name.trim();
     if(!trimmed) return;
-    job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'1', unit:'ชิ้น', brand:'', price:'', note:'' });
-    saveState(true);
-    render();
+    // แถวนี้ลงเฉพาะใบนี้ ไม่เข้าแคตตาล็อก แต่ยังเตือนให้เห็นว่ามีชิปชื่อคล้ายกันให้กดอยู่แล้ว
+    // — ถ้ากดชิปแทน ราคาที่เคยคีย์ไว้จะตามมาด้วย ถ้าพิมพ์เองจะต้องกรอกราคาใหม่ทุกครั้ง
+    confirmIfSimilarPartName(trimmed, partNamePool(getJobModel(job)), 'ใบนี้', () => {
+      job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'1', unit:'ชิ้น', brand:'', price:'', note:'' });
+      saveState(true);
+      render();
+    });
   });
 }
 
@@ -14531,27 +14723,33 @@ function addQuickPartToCategory(jobId, category){
     const trimmed = name.trim();
     if(!trimmed) return;
     const picker = jobPickableParts(job);
-    if(picker.source === 'model'){
-      const model = getJobModel(job);
-      if(!model) return;
-      model.parts = model.parts || [];
-      if(model.parts.some(p => p.partName === trimmed && !p.variant)){
-        flashToast('มีรายการนี้อยู่แล้วในรุ่นรถ');
-        return;
-      }
-      model.parts.push({ id: uid(), partName: trimmed, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
-    } else {
-      state.masterParts = state.masterParts || [];
-      if(state.masterParts.some(p => p.name === trimmed)){
-        flashToast('มีรายการนี้อยู่แล้วในรายการกลาง');
-        return;
-      }
-      state.masterParts.push({ id: uid(), name: trimmed, category });
+    const model = (picker.source === 'model') ? getJobModel(job) : null;
+    if(picker.source === 'model' && !model) return;
+
+    // ชื่อซ้ำเป๊ะในที่เดียวกัน = เพิ่มไปก็ได้แถวหน้าตาเหมือนกันสองแถว ไม่มีประโยชน์
+    if(model && (model.parts || []).some(p => p.partName === trimmed && !p.variant)){
+      flashToast(`"${trimmed}" อยู่ในรุ่นนี้แล้ว`);
+      return;
     }
-    job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'', unit:'ชิ้น', brand:'', price:'', note:'' });
-    saveState(true);
-    flashToast('เพิ่มรายการแล้ว');
-    render();
+    if(!model && (state.masterParts || []).some(p => p.name === trimmed)){
+      flashToast(`"${trimmed}" อยู่ในรายการกลางแล้ว`);
+      return;
+    }
+
+    const scopeLabel = model ? `รุ่น ${model.brand} ${model.name}` : 'รายการกลาง';
+    confirmIfSimilarPartName(trimmed, partNamePool(model), scopeLabel, () => {
+      if(model){
+        model.parts = model.parts || [];
+        model.parts.push({ id: uid(), partName: trimmed, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
+      } else {
+        state.masterParts = state.masterParts || [];
+        state.masterParts.push({ id: uid(), name: trimmed, category });
+      }
+      job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'', unit:'ชิ้น', brand:'', price:'', note:'' });
+      saveState(true);
+      flashToast('เพิ่มรายการแล้ว');
+      render();
+    });
   });
 }
 
@@ -16688,6 +16886,77 @@ function renderPbPriceCellEdit(model, part){
     `<div class="pb-edit-line">${box(null)}</div>`;
 }
 
+/* ---------------------------------------------------------------------------
+   v4.2.3 — โหมดแก้ไขบนหน้าตำราราคา ทำได้มากกว่าราคาแล้ว
+
+   เดิมโหมดนี้แก้ได้แค่ตัวเลขราคา ถ้าชื่ออะไหล่พิมพ์ผิด หรือรุ่นนั้นยังขาดอะไหล่
+   ไปหนึ่งตัว ต้องออกจากหน้านี้ ไปหน้ารุ่นรถ หารุ่นให้เจอ เปิด แล้วค่อยแก้ —
+   แล้วกลับมาไล่ใส่ราคาต่อ ซึ่งตำแหน่งที่เลื่อนค้างไว้ก็หายไปแล้ว
+
+   ตอนนี้ชื่ออะไหล่กลายเป็นช่องกรอก และท้ายทุกหมวดมีปุ่มเพิ่มอะไหล่เข้าหมวดนั้น
+
+   สองข้อที่ตั้งใจทำแบบนี้:
+   - แก้ชื่อตรงนี้ "เปลี่ยนเฉพาะรุ่นนี้" ไม่ลามไปรุ่นอื่น เหมือนการแก้ชื่อในหน้า
+     รุ่นรถทุกประการ (ที่ลามทั้งระบบคือการแก้ในหน้า "สินค้า" เท่านั้น) มีคำบอกไว้
+     บนแถบเครื่องมือด้วย เพราะคนที่กดแก้ตรงนี้ไม่ควรต้องเดา
+   - ไม่เรียก render() ตอนเปลี่ยนชื่อ ด้วยเหตุผลเดียวกับช่องราคา: หน้านี้ยาวเป็น
+     ร้อยแถว ถ้าวาดใหม่ทุกครั้งที่ออกจากช่อง หน้าจะเด้งกลับไปบนสุดทุกที
+     (การ "เพิ่ม" อะไหล่เรียก render() เพราะมีแถวใหม่โผล่จริง ๆ)
+   --------------------------------------------------------------------------- */
+function pbRenamePart(modelId, partId, value, el){
+  if(!isAdmin()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  const model = getModel(modelId);
+  if(!model) return;
+  const part = (model.parts || []).find(p => p.id === partId);
+  if(!part) return;
+  const trimmed = String(value == null ? '' : value).trim();
+  // ชื่อว่าง = พลาด ไม่ใช่เจตนา — คืนชื่อเดิมให้ ไม่บันทึกทับของจริง
+  if(!trimmed){ if(el) el.value = part.partName; flashToast('ชื่ออะไหล่ว่างไม่ได้'); return; }
+  if(trimmed === part.partName){ if(el) el.value = trimmed; return; }
+  if((model.parts || []).some(p => p.id !== partId && p.partName === trimmed
+       && (p.variant || '') === (part.variant || ''))){
+    if(el) el.value = part.partName;
+    flashToast(`"${trimmed}" มีอยู่ในรุ่นนี้แล้ว`);
+    return;
+  }
+  part.partName = trimmed;
+  if(el) el.value = trimmed;
+  saveState(true);
+}
+
+/* เพิ่มอะไหล่เข้ารุ่นนี้ — ส่ง category มาด้วยถ้ากดจากท้ายหมวด ไม่ส่งมาก็ถามเอา
+   ผ่านด่านชื่อซ้ำ/ชื่อคล้ายของ v4.2.2 เหมือนทุกทางที่พิมพ์ชื่อใหม่ได้ */
+function pbAddPart(modelId, category){
+  if(!isAdmin()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  const model = getModel(modelId);
+  if(!model) return;
+  const modelLabel = `${model.brand || ''} ${model.name}`.trim();
+  const ask = (cat) => {
+    uiPrompt(`เพิ่มอะไหล่ในหมวด "${cat}" ของ ${modelLabel}`, '', name => {
+      const trimmed = (name || '').trim();
+      if(!trimmed) return;
+      if((model.parts || []).some(p => p.partName === trimmed && !p.variant)){
+        flashToast(`"${trimmed}" อยู่ในรุ่นนี้แล้ว`);
+        return;
+      }
+      confirmIfSimilarPartName(trimmed, partNamePool(model), `รุ่น ${modelLabel}`, () => {
+        model.parts = model.parts || [];
+        model.parts.push({ id: uid(), partName: trimmed, category: cat,
+                           qty:'', unit:'ชิ้น', brands: [], variant:'' });
+        if(!(state.masterParts || []).some(p => p.name === trimmed)){
+          state.masterParts = state.masterParts || [];
+          state.masterParts.push({ id: uid(), name: trimmed, category: cat });
+        }
+        saveState(true);
+        flashToast('เพิ่มอะไหล่แล้ว — ใส่ราคาได้เลย');
+        render();
+      });
+    });
+  };
+  if(category) ask(category);
+  else promptCategory(`หมวดหมู่ของอะไหล่ใหม่ใน ${modelLabel}`, ask);
+}
+
 function renderPriceBookTab(){
   const printFilterActive = Array.isArray(view.pb_printFilterIds);
   const selecting = !!view.pb_selectMode;
@@ -16719,9 +16988,10 @@ function renderPriceBookTab(){
       ${hasActiveFilter ? `<button class="btn secondary small" onclick="clearPbFilter()">ล้างตัวกรอง</button>` : ''}
       <span class="select-hint">แสดง ${filtered.length} จาก ${state.models.length} รุ่น</span>
       ${isAdmin() ? `<button class="btn ${view.pb_edit?'':'secondary'} small" onclick="togglePbEdit()">
-        ${icon('edit',13)} ${view.pb_edit ? 'เสร็จแล้ว — ออกจากโหมดแก้ราคา' : 'แก้ราคา'}</button>` : ''}
+        ${icon('edit',13)} ${view.pb_edit ? 'เสร็จแล้ว — ออกจากโหมดแก้ไข' : 'แก้ราคา / แก้ชื่อ / เพิ่มอะไหล่'}</button>` : ''}
       ${view.pb_edit ? `<button class="btn secondary small" onclick="togglePbOnlyUnpriced()">
-        ${view.pb_onlyUnpriced ? '✓ ' : ''}เฉพาะที่ยังไม่มีราคา</button>` : ''}
+        ${view.pb_onlyUnpriced ? '✓ ' : ''}เฉพาะที่ยังไม่มีราคา</button>
+      <span class="select-hint">แก้ชื่อตรงนี้เปลี่ยนเฉพาะรุ่นนั้นรุ่นเดียว ไม่ลามไปรุ่นอื่น</span>` : ''}
       ${(() => { const st = pbPriceStats(filtered);
           return `<span id="pb-progress" class="select-hint${st.missing>0?' pb-missing':''}">${
             st.missing > 0 ? `ตั้งราคาแล้ว ${st.priced} / ${st.total} · ยังขาด ${st.missing}`
@@ -16804,13 +17074,31 @@ function renderPriceBookTab(){
           if(items.length === 0) return;
           html += `<tr class="pb-cat-row"><td colspan="2" class="pb-cat-header">${escapeHtml(group.category)}</td></tr>`;
           items.forEach(part => {
+            const nameCell = view.pb_edit
+              ? `<input type="text" class="pb-name-input" value="${escapeAttr(part.partName)}"
+                    data-model="${escapeAttr(m.id)}" data-part="${escapeAttr(part.id)}"
+                    onchange="pbRenamePart(this.dataset.model, this.dataset.part, this.value, this)">
+                 ${part.variant ? `<span class="pb-variant">(${escapeHtml(part.variant)})</span>` : ''}`
+              : escapeHtml(part.partName) + (part.variant ? ' ('+escapeHtml(part.variant)+')' : '');
             html += `<tr>
-              <td>${escapeHtml(part.partName)}${part.variant ? ' ('+escapeHtml(part.variant)+')' : ''}</td>
+              <td>${nameCell}</td>
               <td>${view.pb_edit ? renderPbPriceCellEdit(m, part) : renderPbPriceCell(part)}</td>
             </tr>`;
           });
+          if(view.pb_edit){
+            html += `<tr class="pb-add-row no-print"><td colspan="2">
+              <button class="btn secondary small" data-model="${escapeAttr(m.id)}" data-cat="${escapeAttr(group.category)}"
+                onclick="pbAddPart(this.dataset.model, this.dataset.cat)">${icon('plus',13)} เพิ่มอะไหล่ในหมวด "${escapeHtml(group.category)}"</button>
+            </td></tr>`;
+          }
         });
         html += `</tbody></table>`;
+      }
+      if(view.pb_edit){
+        html += `<div class="pb-add-foot no-print">
+          <button class="btn secondary small" data-model="${escapeAttr(m.id)}"
+            onclick="pbAddPart(this.dataset.model, '')">${icon('plus',13)} เพิ่มอะไหล่เข้า ${escapeHtml((m.brand||'') + ' ' + m.name)} (เลือกหมวดเอง)</button>
+        </div>`;
       }
       html += `</div>`;
     });
