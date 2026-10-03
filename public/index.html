@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.4";
+  const APP_VERSION = "4.2.5";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -1975,7 +1975,40 @@
 
               shot58.py grows to 32/32 (0/14 on v4.2.3), asserting the promotion is
               cleaned, the OTHER part in that promotion is left alone, the twin model
-              keeps its copy, and masterParts is untouched. -->
+              keeps its copy, and masterParts is untouched.
+
+     v4.2.5 - Same name, typed differently: use the one already in the system.
+
+              ALTIS holds "แร็คพวงมาลัย oem" in lower case. A technician types
+              "แร็คพวงมาลัย OEM", or "แร็คพวงมาลัย (OEM)". v4.2.2 would ask - but
+              there is nothing to ask about: it is the same part. Worse, answering
+              ตกลง created a second name, and the ฿5,500 the shop had set stayed
+              attached to the first one. The quote then showed a blank price for a
+              part whose price the system had known all along.
+
+              So this is a tier ABOVE the similar-name question, and it does not ask.
+              A match here means the typed name resolves to the one in the system, and
+              the row is added through the same path as tapping the chip - so the
+              price and the brand come with it. The toast says ใช้ชื่อตามระบบ with the
+              name it used, because silently changing what someone typed is not on.
+
+              partNameKey is deliberately NARROWER than partNameCore: case, brackets,
+              spaces, punctuation, and the L+R / L/R / LR spelling - and that is all.
+              The text INSIDE brackets is kept, because "แร็คพวงมาลัย" and
+              "แร็คพวงมาลัย (OEM)" are two real, separately priced items in this shop,
+              and "(ซ่อม)แร็คพวงมาลัย" is a repair, not a part. "ปีกนก" vs
+              "ลูกหมากปีกนก" stays in the v4.2.2 tier that asks first. Getting this
+              boundary wrong in the generous direction would silently merge parts that
+              carry different prices, which is worse than any duplicate name.
+
+              Applied to all five paths that can type a part name: the picker's
+              + เพิ่ม, + เพิ่มรายการเอง, the รุ่นรถ input, ตำราราคา's add, and สินค้า.
+              The first two resolve into the quote with the price; the catalog ones
+              file the row under the existing spelling instead of a new one.
+
+              shot59.py: 15/15 here, 0/16 on v4.2.4. Half of it is the negative half -
+              five pairs that must NOT merge - and it checks the ฿5,500 actually
+              lands on the quote line rather than only the name matching. -->
 
 
 
@@ -12530,7 +12563,12 @@ function addMasterPartPrompt(){
   uiPrompt('ชื่ออะไหล่ใหม่', '', name => {
     const trimmed = name.trim();
     if(!trimmed) return;
-    if(state.masterParts.some(p => p.name.trim() === trimmed)){ flashToast('มีชื่อนี้อยู่แล้ว'); return; }
+    // v4.2.5 — ชื่อเดียวกันต่างแค่วิธีพิมพ์ ถือว่ามีอยู่แล้ว ไม่ต้องเพิ่มซ้ำ
+    const canon = canonicalPartName(trimmed, null);
+    if(canon.from === 'master'){
+      flashToast(canon.name === trimmed ? 'มีชื่อนี้อยู่แล้ว' : `มีอยู่แล้วในชื่อ "${canon.name}"`);
+      return;
+    }
     confirmIfSimilarPartName(trimmed, partNamePool(null), 'รายการกลาง', () => {
       promptCategory('หมวดหมู่ของ "' + trimmed + '"', category => {
         state.masterParts.push({ id: uid(), name: trimmed, category });
@@ -12638,6 +12676,50 @@ function partNameCore(s){
     .toLowerCase();
 }
 
+/* v4.2.5 — "ชื่อเดียวกัน แต่พิมพ์คนละแบบ" คนละชั้นกับ "ชื่อคล้ายกัน" ข้างบน
+
+   ในระบบมี "แร็คพวงมาลัย oem" อยู่แล้ว ช่างคีย์ "แร็คพวงมาลัย OEM" หรือ
+   "แร็คพวงมาลัย (OEM)" — สามอันนี้คือของชิ้นเดียวกันแน่ ๆ ไม่ต้องถามใคร
+   ชั้นนี้จึงไม่ถาม แต่ "ใช้ชื่อตามที่มีอยู่ในระบบ" แล้วดึงขึ้นใบเสนอราคาให้เลย
+   พร้อมราคาและแบรนด์ที่ผูกกับชื่อนั้นอยู่ ซึ่งคือเหตุผลทั้งหมดของเรื่องนี้:
+   ถ้าปล่อยให้ชื่อใหม่เกิด ราคาที่ช่างเคยคีย์ไว้จะไปอยู่คนละชื่อกับที่ใบเสนอราคาอ่าน
+
+   กติกาแคบกว่า partNameCore โดยตั้งใจ — ตัดแค่ตัวพิมพ์เล็ก/ใหญ่ วงเล็บ ช่องว่าง
+   เครื่องหมาย และวิธีเขียน L+R / L/R เท่านั้น "ข้อความข้างในวงเล็บยังอยู่"
+   เพราะ "แร็คพวงมาลัย" กับ "แร็คพวงมาลัย (OEM)" เป็นคนละรายการจริง ๆ ในร้านนี้
+   ส่วน "ปีกนก" กับ "ลูกหมากปีกนก" ไม่เข้าชั้นนี้ ตกไปอยู่ชั้น "คล้าย" ที่ถามก่อน */
+function partNameKey(s){
+  return String(s == null ? '' : s)
+    .toLowerCase()
+    .replace(/l\s*[+\/]\s*r/g, 'lr')
+    .replace(/[()\[\]{}«»"'`.,\-_/\\|+·\s]/g, '');
+}
+function partLabelOf(p){
+  return p.variant ? `${p.partName} (${p.variant})` : p.partName;
+}
+/* ชื่อที่ควรใช้จริง — ถ้าระบบมีชื่อเดียวกันอยู่แล้วแต่พิมพ์คนละแบบ ใช้ของระบบ
+   from บอกว่าไปเจอที่ไหน ผู้เรียกจะได้บอกผู้ใช้ได้ว่าทำไมชื่อถึงไม่ตรงที่พิมพ์ */
+function canonicalPartName(typed, model){
+  const key = partNameKey(typed);
+  if(!key) return { name: typed, from: '' };
+  const inModel = model && (model.parts || []).find(p =>
+    partNameKey(partLabelOf(p)) === key || partNameKey(p.partName) === key);
+  if(inModel) return { name: inModel.partName, from: 'model', part: inModel };
+  const inMaster = (state.masterParts || []).find(mp => partNameKey(mp.name) === key);
+  if(inMaster) return { name: inMaster.name, from: 'master', master: inMaster };
+  return { name: typed, from: '' };
+}
+
+/* หาตัวที่ "ชื่อเดียวกัน" ในรายการที่ job นี้เลือกได้ (รุ่นรถ หรือรายการกลาง) */
+function findPickerTwin(job, typed){
+  const key = partNameKey(typed);
+  if(!key) return null;
+  const items = jobPickableParts(job).items || [];
+  return items.find(p => partNameKey(partLabelOf(p)) === key)
+      || items.find(p => partNameKey(p.partName) === key)
+      || null;
+}
+
 /* ระยะแก้ไข แบบตัดจบเร็วเมื่อเกินเพดาน — ไม่ต้องคำนวณเต็มตารางให้เปลือง */
 function editDistanceWithin(a, b, max){
   if(Math.abs(a.length - b.length) > max) return max + 1;
@@ -12740,20 +12822,25 @@ function addCustomPartToModel(modelId){
   const category = (catSelect && PART_CATEGORIES.includes(catSelect.value)) ? catSelect.value : 'ทั่วไป';
   const model = getModel(modelId);
   if(!model) return;
-  if((model.parts || []).some(p => p.partName === name && !p.variant)){
-    flashToast(`"${name}" อยู่ในรุ่นนี้แล้ว`);
+  // v4.2.5 — ชื่อเดียวกันต่างแค่วิธีพิมพ์ ให้ถือว่าเป็นตัวเดียวกัน และใช้ชื่อตามระบบ
+  const canon = canonicalPartName(name, model);
+  if(canon.from === 'model'){
+    flashToast(`"${canon.name}" อยู่ในรุ่นนี้แล้ว`);
     return;
   }
-  confirmIfSimilarPartName(name, partNamePool(model), `รุ่น ${model.brand} ${model.name}`, () => {
-    model.parts.push({ id: uid(), partName: name, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
-    if(!state.masterParts.some(p => p.name === name)){
-      state.masterParts.push({ id: uid(), name, category });
+  const addIt = (useName) => {
+    model.parts.push({ id: uid(), partName: useName, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
+    if(!state.masterParts.some(p => p.name === useName)){
+      state.masterParts.push({ id: uid(), name: useName, category });
     }
     const el = document.getElementById('custom-part-input');
     if(el) el.value = '';
     saveState(true);
+    if(useName !== name) flashToast(`ใช้ชื่อตามระบบ: "${useName}"`);
     render();
-  });
+  };
+  if(canon.from === 'master'){ addIt(canon.name); return; }
+  confirmIfSimilarPartName(name, partNamePool(model), `รุ่น ${model.brand} ${model.name}`, () => addIt(name));
 }
 
 function deletePartFromModel(modelId, partId){
@@ -14726,8 +14813,20 @@ function addCustomJobPart(jobId){
   uiPrompt('ชื่อรายการที่ต้องการเพิ่ม (เช่น ค่าแรง, อะไหล่นอกรายการ)', '', name => {
     const trimmed = name.trim();
     if(!trimmed) return;
+    /* v4.2.5 — ถ้าชื่อนี้มีอยู่ในรายการที่เลือกได้อยู่แล้ว (ต่างแค่วิธีพิมพ์)
+       ให้ดึงตัวนั้นขึ้นใบแทนการสร้างบรรทัดลอย ๆ ราคาที่ผูกไว้จะได้ตามมาด้วย
+       — นี่คือจุดที่เคยหายไปบ่อยที่สุด: พิมพ์เองแล้วช่องราคาว่าง ทั้งที่ระบบจำราคาไว้แล้ว */
+    const twin = findPickerTwin(job, trimmed);
+    if(twin){
+      const label = partLabelOf(twin);
+      const onJob = job.partsNeeded.some(p => p.partName === twin.partName
+                      && (p.variant || '') === (twin.variant || ''));
+      if(onJob){ flashToast(`"${label}" อยู่ในใบนี้อยู่แล้ว`); return; }
+      toggleJobPartFromModel(jobId, twin.id);
+      flashToast(label === trimmed ? `เพิ่ม "${label}" แล้ว` : `ใช้ชื่อตามระบบ: "${label}"`);
+      return;
+    }
     // แถวนี้ลงเฉพาะใบนี้ ไม่เข้าแคตตาล็อก แต่ยังเตือนให้เห็นว่ามีชิปชื่อคล้ายกันให้กดอยู่แล้ว
-    // — ถ้ากดชิปแทน ราคาที่เคยคีย์ไว้จะตามมาด้วย ถ้าพิมพ์เองจะต้องกรอกราคาใหม่ทุกครั้ง
     confirmIfSimilarPartName(trimmed, partNamePool(getJobModel(job)), 'ใบนี้', () => {
       job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'1', unit:'ชิ้น', brand:'', price:'', note:'' });
       saveState(true);
@@ -14751,16 +14850,39 @@ function addQuickPartToCategory(jobId, category){
     const model = (picker.source === 'model') ? getJobModel(job) : null;
     if(picker.source === 'model' && !model) return;
 
-    // ชื่อซ้ำเป๊ะในที่เดียวกัน = เพิ่มไปก็ได้แถวหน้าตาเหมือนกันสองแถว ไม่มีประโยชน์
-    if(model && (model.parts || []).some(p => p.partName === trimmed && !p.variant)){
-      flashToast(`"${trimmed}" อยู่ในรุ่นนี้แล้ว`);
-      return;
-    }
-    if(!model && (state.masterParts || []).some(p => p.name === trimmed)){
-      flashToast(`"${trimmed}" อยู่ในรายการกลางแล้ว`);
+    /* v4.2.5 — ชั้นที่ 1: ชื่อเดียวกัน ต่างแค่วิธีพิมพ์ (oem / OEM / (OEM))
+       มีอยู่ในรายการที่เลือกได้อยู่แล้ว -> ไม่สร้างชื่อใหม่ ใช้ของเดิม
+       แล้วดึงขึ้นใบเสนอราคาผ่านทางเดียวกับการแตะชิป ราคาและแบรนด์จึงตามมาด้วย */
+    const twin = findPickerTwin(job, trimmed);
+    if(twin){
+      const label = partLabelOf(twin);
+      const onJob = job.partsNeeded.some(p => p.partName === twin.partName
+                      && (p.variant || '') === (twin.variant || ''));
+      if(onJob){ flashToast(`"${label}" อยู่ในใบนี้อยู่แล้ว`); return; }
+      toggleJobPartFromModel(jobId, twin.id);   // บันทึกและวาดใหม่ให้ในตัว
+      flashToast(label === trimmed ? `เพิ่ม "${label}" แล้ว`
+                                   : `ใช้ชื่อตามระบบ: "${label}"`);
       return;
     }
 
+    /* ชั้นที่ 1 (ต่อ): รุ่นนี้ยังไม่มี แต่รายการกลางมีชื่อนี้อยู่แล้วในอีกวิธีพิมพ์
+       -> เพิ่มเข้ารุ่นด้วย "ชื่อตามระบบ" ไม่ใช่ตามที่เพิ่งพิมพ์ */
+    const masterTwin = (state.masterParts || []).find(mp => partNameKey(mp.name) === partNameKey(trimmed));
+    if(masterTwin){
+      const name = masterTwin.name;
+      if(model){
+        model.parts = model.parts || [];
+        model.parts.push({ id: uid(), partName: name, category: masterTwin.category || category,
+                           qty:'', unit:'ชิ้น', brands: [], variant:'' });
+      }
+      job.partsNeeded.push({ id: uid(), partName: name, variant:'', qty:'', unit:'ชิ้น', brand:'', price:'', note:'' });
+      saveState(true);
+      flashToast(name === trimmed ? 'เพิ่มรายการแล้ว' : `ใช้ชื่อตามระบบ: "${name}"`);
+      render();
+      return;
+    }
+
+    // ชั้นที่ 2: ชื่อคล้ายกันแต่ไม่ใช่อันเดียวกันแน่ ๆ -> ถามก่อน (v4.2.2)
     const scopeLabel = model ? `รุ่น ${model.brand} ${model.name}` : 'รายการกลาง';
     confirmIfSimilarPartName(trimmed, partNamePool(model), scopeLabel, () => {
       if(model){
@@ -16960,22 +17082,29 @@ function pbAddPart(modelId, category){
     uiPrompt(`เพิ่มอะไหล่ในหมวด "${cat}" ของ ${modelLabel}`, '', name => {
       const trimmed = (name || '').trim();
       if(!trimmed) return;
-      if((model.parts || []).some(p => p.partName === trimmed && !p.variant)){
-        flashToast(`"${trimmed}" อยู่ในรุ่นนี้แล้ว`);
+      // v4.2.5 — ชื่อเดียวกันต่างแค่วิธีพิมพ์ ให้ถือว่าเป็นตัวเดียวกัน
+      const canon = canonicalPartName(trimmed, model);
+      if(canon.from === 'model'){
+        flashToast(`"${canon.name}" อยู่ในรุ่นนี้แล้ว`);
         return;
       }
-      confirmIfSimilarPartName(trimmed, partNamePool(model), `รุ่น ${modelLabel}`, () => {
+      const addIt = (useName, note) => {
         model.parts = model.parts || [];
-        model.parts.push({ id: uid(), partName: trimmed, category: cat,
+        model.parts.push({ id: uid(), partName: useName, category: cat,
                            qty:'', unit:'ชิ้น', brands: [], variant:'' });
-        if(!(state.masterParts || []).some(p => p.name === trimmed)){
+        if(!(state.masterParts || []).some(p => p.name === useName)){
           state.masterParts = state.masterParts || [];
-          state.masterParts.push({ id: uid(), name: trimmed, category: cat });
+          state.masterParts.push({ id: uid(), name: useName, category: cat });
         }
         saveState(true);
-        flashToast('เพิ่มอะไหล่แล้ว — ใส่ราคาได้เลย');
+        flashToast(note || 'เพิ่มอะไหล่แล้ว — ใส่ราคาได้เลย');
         render();
-      });
+      };
+      if(canon.from === 'master'){
+        addIt(canon.name, canon.name === trimmed ? null : `ใช้ชื่อตามระบบ: "${canon.name}"`);
+        return;
+      }
+      confirmIfSimilarPartName(trimmed, partNamePool(model), `รุ่น ${modelLabel}`, () => addIt(trimmed));
     });
   };
   if(category) ask(category);
