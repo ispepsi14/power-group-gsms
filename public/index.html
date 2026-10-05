@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.6";
+  const APP_VERSION = "4.2.8";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2038,7 +2038,71 @@
               shot60.py: 18/18 here, 0/15 on v4.2.5. Its first three checks are that
               config safety, not the dropdown; renaming or deleting a unit is also
               asserted NOT to rewrite parts that already use it, the same rule as
-              part brands. -->
+              part brands.
+
+     v4.2.7 - Switching a quote line from คู่ to ชิ้น halves the unit price.
+
+              Suspension parts are priced as a pair because both sides normally get
+              replaced, but customers do buy one side: เพลาขับ ฿7,000 a pair, ฿3,500 a
+              side. Until now the technician changed the unit and then had to clear
+              the price and retype it - so forgetting meant quoting a pair's price for
+              one side, and nothing on the screen said anything was wrong.
+
+              Quantity is deliberately NOT touched. The customer is buying one side,
+              not two pieces that add back up to the same money, so the line total has
+              to fall by half - which is the whole point.
+
+              It runs both directions, คู่->ชิ้น halving and ชิ้น->คู่ doubling. One
+              direction alone would mean a mis-click followed by changing it back
+              leaves the price permanently halved with nothing to show for it. ข้าง,
+              อัน and ตัว count as single units alongside ชิ้น (ขายข้างละ is the same
+              relationship); every other unit change leaves the price alone, including
+              ครั้ง on a ค่าแรง line, and a line with no price stays empty rather than
+              becoming a 0.
+
+              The shift is applied BEFORE handing the unit to onJobPartFieldChange,
+              because that function writes the price straight back into the model
+              (v3.38.0). Doing it after would file the pair price against the piece
+              unit, and the next car of that model would inherit the wrong number.
+
+              shot61.py: 13/13 here, 0/12 on v4.2.6. It drives the real dropdown as
+              well as the function, and checks the รวม column on screen actually
+              falls - not only that the stored field changed.
+
+     v4.2.8 - The learned price is now kept per BRAND.
+
+              แร็คพวงมาลัย OEM is ฿16,500 and รีบิ้ว is ฿9,500 - the same part, two
+              products, seven thousand baht apart. part.lastPrice was a single slot,
+              so keying รีบิ้ว on Tuesday erased the OEM figure learned on Monday, and
+              the next car that picked OEM was handed ฿9,500 without a word.
+
+              Exactly the shape of the v3.40.0 bug, where one slot could not hold two
+              models, so it takes the same shape of fix: part.lastPriceByBrand, one
+              slot per brand, with part.lastPrice kept as "newest of any brand" for
+              the case where no brand has been chosen yet. Staleness (the v3.41.0
+              backfill rule) is now judged against the SAME brand's slot, so learning
+              an old job's OEM price is not blocked by a newer รีบิ้ว entry.
+
+              Two recall holes closed alongside it. First: asking for a brand that has
+              no price of its own used to fall through and return another brand's
+              figure as an auto-fill; it now comes back same:false, offered as a
+              button rather than filled in. Second, and the one that actually bites:
+              recall only ran while the price box was EMPTY. The common order of work
+              is to tap the part first - which fills in the latest price, รีบิ้ว - and
+              pick the brand after, by which time the box is no longer empty and
+              nothing re-ran. Changing the brand now re-reads that brand's price and
+              says which brand it used.
+
+              หน้ารุ่นรถ lists one ราคาล่าสุด line per brand, each with its own
+              ใช้เป็นราคาตั้ง and ลบ, so deleting the รีบิ้ว figure no longer takes
+              OEM with it. The v4.2.0 duplicate-model merge folds the per-brand book
+              too, newest-wins per slot - without that, merging twins would have
+              swallowed whichever brand lived on the losing card.
+
+              Still one slot per model (not per brand) in the masterParts fallback,
+              which is only used for vehicles with no model in the system.
+
+              shot62.py: 15/15 here, 0/14 on v4.2.7. -->
 
 
 
@@ -6519,13 +6583,50 @@ function unitSelectOptions(current, canAdd){
    onAdded จะถูกเรียกพร้อมชื่อหน่วยใหม่ ให้ผู้เรียกเอาไปใส่ในช่องของตัวเอง */
 /* ตัวรับการเปลี่ยนหน่วยของทั้งสองหน้า — แยกออกมาเพื่อให้ "เพิ่มหน่วย…" ทำงาน
    เหมือนกันทั้งคู่ และหน่วยใหม่ถูกเลือกให้ช่องที่กดมาทันที ไม่ต้องกดซ้ำ */
+/* ================= คู่ ↔ ชิ้น (v4.2.7) =================
+   ของช่วงล่างตั้งราคากันเป็น "คู่" เพราะปกติเปลี่ยนทั้งสองข้าง แต่ลูกค้าซื้อข้างเดียว
+   ก็มี เช่น เพลาขับคู่ละ 7,000 ข้างละ 3,500 เดิมช่างต้องเปลี่ยนหน่วยแล้วลบราคา
+   ทิ้งแล้วคีย์ใหม่เอง ซึ่งแปลว่าถ้าลืม ใบเสนอราคาจะคิดราคาคู่สำหรับของข้างเดียว
+
+   จำนวนไม่ถูกแตะ โดยตั้งใจ — ลูกค้าซื้อ "1 ข้าง" ไม่ใช่ "2 ชิ้นที่รวมแล้วเท่าเดิม"
+   ยอดรวมของบรรทัดจึงลดลงครึ่งหนึ่ง ซึ่งคือสิ่งที่ต้องการ
+
+   ทำให้ทั้งสองทาง: คู่->ชิ้น หาร 2 และ ชิ้น->คู่ คูณ 2 ถ้าทำทางเดียว คนที่กดผิด
+   แล้วกดกลับจะเหลือราคาครึ่งเดียวค้างไว้ถาวรโดยไม่มีอะไรบอก */
+const PAIR_UNIT = 'คู่';
+const SINGLE_UNITS = ['ชิ้น','ข้าง','อัน','ตัว'];
+
+/* คืนรายละเอียดการแปลงถ้าทำจริง คืน null ถ้าไม่เข้าเงื่อนไข (ไม่แตะราคาเลย) */
+function pairUnitPriceShift(row, fromUnit, toUnit){
+  const price = parseMoney(row.price);
+  if(!price || price <= 0) return null;                 // ไม่มีราคา ก็ไม่มีอะไรให้หาร
+  const isPair   = u => u === PAIR_UNIT;
+  const isSingle = u => SINGLE_UNITS.indexOf(u) >= 0;
+  let factor = 0;
+  if(isPair(fromUnit)   && isSingle(toUnit)) factor = 0.5;
+  else if(isSingle(fromUnit) && isPair(toUnit)) factor = 2;
+  if(!factor) return null;
+  const after = Math.round(price * factor * 100) / 100;
+  row.price = after;
+  return { before: price, after: after, half: factor === 0.5 };
+}
+
 function onJobPartUnitChange(jobId, partRowId, value){
   if(handleUnitAddChoice(value, (unit) => {
     onJobPartFieldChange(jobId, partRowId, 'unit', unit);
     saveState(true);
     render();
   })) return;
+  const job = getJob(jobId);
+  const row = job ? job.partsNeeded.find(p => p.id === partRowId) : null;
+  /* ปรับราคา "ก่อน" ส่งต่อให้ onJobPartFieldChange เพราะตัวนั้นจะเอาราคาไปจำ
+     กลับเข้ารุ่นรถทันที (v3.38.0) — ถ้าปรับทีหลัง รุ่นรถจะจำราคาคู่ไว้คู่กับหน่วยชิ้น */
+  const shift = row ? pairUnitPriceShift(row, row.unit, value) : null;
   onJobPartFieldChange(jobId, partRowId, 'unit', value);
+  if(shift){
+    flashToast(`${shift.half ? 'คู่ → ' + value : value === PAIR_UNIT ? 'ต่อชิ้น → คู่' : ''}: ` +
+               `฿${fmtMoney(shift.before)} → ฿${fmtMoney(shift.after)} (${shift.half ? 'หาร 2' : 'คูณ 2'})`);
+  }
 }
 function onModelPartUnitChange(modelId, partId, value){
   if(handleUnitAddChoice(value, (unit) => {
@@ -6951,6 +7052,23 @@ function partLastPrice(part){
   return (lp && lp.price) ? String(lp.price) : '';
 }
 
+/* ================= ราคาที่จำไว้ แยกตามแบรนด์ (v4.2.8) =================
+   แร็คพวงมาลัย OEM กับ รีบิ้ว คนละราคากันคนละพัน แต่ part.lastPrice มีช่องเดียว
+   คีย์รีบิ้ว 9,500 วันนี้ = ราคา OEM 16,500 ที่จำไว้เมื่อวานหายทันที แล้วคันหน้า
+   ที่เลือก OEM ก็ได้ 9,500 มาแปะให้เงียบ ๆ ซึ่งผิดไปเกือบเท่าตัว
+
+   ปัญหาตัวเดียวกับที่ v3.40.0 เจอกับ "รุ่นรถ" แล้วแก้ด้วย lastPriceByModel —
+   ที่นี่ใช้รูปเดียวกัน: lastPriceByBrand ช่องละแบรนด์ ส่วน lastPrice เดิมยังอยู่
+   ในฐานะ "อันล่าสุดสุด ไม่สนแบรนด์" สำหรับตอนที่ยังไม่ได้เลือกแบรนด์ */
+function brandKeyOf(brand){ return mmNorm(brand || ''); }   // '' = ไม่ระบุแบรนด์ ก็มีช่องของตัวเอง
+function partBrandPrices(part){
+  const book = (part && part.lastPriceByBrand) || {};
+  return Object.keys(book)
+    .map(k => ({ key: k, stamp: book[k] }))
+    .filter(x => x.stamp && x.stamp.price)
+    .sort((a, b) => String(b.stamp.at || '').localeCompare(String(a.stamp.at || '')));
+}
+
 /* จำราคาหนึ่งบรรทัดบนใบเสนอราคา กลับเข้ารุ่นรถของคันนั้น
    คืน 'new' ถ้าต้องสร้างอะไหล่ใหม่เข้ารุ่น, 'update' ถ้าอัปเดตของเดิม, '' ถ้าไม่ได้ทำ */
 function rememberJobPartPrice(job, row, opts){
@@ -6993,6 +7111,13 @@ function rememberJobPartPrice(job, row, opts){
       model.parts.push(part);
       mode = 'new';
     }
+    /* v4.2.8 — เขียนช่องของแบรนด์นี้ก่อนเสมอ และตัดสินความเก่าเทียบกับ "ช่องของ
+       แบรนด์เดียวกัน" เท่านั้น ไม่ใช่ช่องรวม ไม่งั้นการที่เพิ่งคีย์รีบิ้วไปเมื่อเช้า
+       จะไปบล็อกการเรียนรู้ราคา OEM จากใบเก่า ทั้งที่คนละช่องกัน */
+    part.lastPriceByBrand = part.lastPriceByBrand || {};
+    const bkey = brandKeyOf(stamp.brand);
+    if(!tooOld(part.lastPriceByBrand[bkey])) part.lastPriceByBrand[bkey] = stamp;
+
     // จำนวน/หน่วยที่ช่างใช้จริง มีค่ากว่าที่ตำราเดาไว้ จึงอัปเดตตาม
     if(tooOld(part.lastPrice)) return 'skip';
     if(row.qty)  part.qty  = String(row.qty);
@@ -7025,53 +7150,78 @@ function rememberJobPartPrice(job, row, opts){
 }
 
 // ลบราคาที่จำไว้ของอะไหล่หนึ่งตัว — ใช้ตอนราคานั้นเป็นราคาลดครั้งเดียว ไม่อยากให้ติด
-function clearPartLastPrice(modelId, partId){
+function clearPartLastPrice(modelId, partId, brandKey){
   const model = getModel(modelId);
   const part = model && (model.parts || []).find(p => p.id === partId);
-  if(!part || !part.lastPrice) return;
-  delete part.lastPrice;
+  if(!part) return;
+  /* v4.2.8 — ลบทีละแบรนด์ได้ ลบราคารีบิ้วทิ้ง ราคา OEM ต้องไม่หายไปด้วย
+     ถ้าช่องที่ลบคือตัวเดียวกับที่อยู่ในช่องรวม ให้เลื่อนตัวที่เหลือใหม่สุดขึ้นมาแทน */
+  if(brandKey !== undefined && brandKey !== null){
+    const book = part.lastPriceByBrand || {};
+    if(!book[brandKey]) return;
+    delete book[brandKey];
+    const rest = partBrandPrices(part);
+    if(rest.length) part.lastPrice = rest[0].stamp;
+    else delete part.lastPrice;
+  } else {
+    if(!part.lastPrice && !partBrandPrices(part).length) return;
+    delete part.lastPrice;
+    delete part.lastPriceByBrand;
+  }
   saveState(true);
   flashToast('ลบราคาที่จำไว้แล้ว');
   render();
 }
 
 // ย้ายราคาที่จำไว้ ขึ้นไปเป็นราคาตั้งของรุ่น (ช่องแบรนด์) — ใช้ตอนยืนยันว่าเป็นราคาขายจริง
-function promotePartLastPrice(modelId, partId){
+function promotePartLastPrice(modelId, partId, brandKey){
   const model = getModel(modelId);
   const part = model && (model.parts || []).find(p => p.id === partId);
-  if(!part || !part.lastPrice) return;
+  if(!part) return;
+  // v4.2.8 — ตั้งทีละแบรนด์ได้ ไม่ใช่มีได้แค่ "อันล่าสุดสุด" อันเดียว
+  const lp = (brandKey !== undefined && brandKey !== null)
+    ? (part.lastPriceByBrand || {})[brandKey]
+    : part.lastPrice;
+  if(!lp || !lp.price) return;
   part.brands = part.brands || [];
-  let b = part.brands.find(x => (x.brand || '') === (part.lastPrice.brand || ''));
+  let b = part.brands.find(x => mmNorm(x.brand) === mmNorm(lp.brand || ''));
   if(!b){
-    b = { id: uid(), brand: part.lastPrice.brand || '', price: '', offered: false };
+    b = { id: uid(), brand: lp.brand || '', price: '', offered: false };
     part.brands.push(b);
   }
-  b.price = String(part.lastPrice.price);
+  b.price = String(lp.price);
   // ดันขึ้นหัวรายการ เพราะ partPriceOf หยิบแบรนด์แรกที่มีราคา
   // ไม่งั้นกดปุ่มแล้วราคายังเป็นของแบรนด์แรกเดิมอยู่ดี = ปุ่มไม่ได้ทำอะไร
   part.brands = [b].concat(part.brands.filter(x => x.id !== b.id));
   saveState(true);
   pushEditLog('ตั้งราคาจากราคาล่าสุด', '', '',
-    `${model.brand||''} ${model.name} — ${part.partName} ฿${part.lastPrice.price}`);
+    `${model.brand||''} ${model.name} — ${part.partName}${lp.brand ? ' ('+lp.brand+')' : ''} ฿${lp.price}`);
   flashToast('ตั้งเป็นราคาของรุ่นนี้แล้ว');
   render();
 }
 
 // บรรทัดแสดง "ราคาล่าสุด" ใต้ชื่ออะไหล่ในหน้ารุ่นรถ
 function partLastPriceHtml(model, part){
-  const lp = part.lastPrice;
-  if(!lp || !lp.price) return '';
-  const bits = [];
-  if(lp.brand) bits.push(escapeHtml(lp.brand));
-  if(lp.job)   bits.push('งาน ' + escapeHtml(lp.job));
-  if(lp.at)    bits.push(fmtDateBE(lp.at));
-  if(lp.by)    bits.push(escapeHtml(lp.by));
-  return `<div class="last-price-line">
-    <span class="lp-tag">ราคาล่าสุด ฿${escapeHtml(fmtMoney(parseMoney(lp.price)))}</span>
-    ${bits.length ? `<span class="lp-meta">${bits.join(' · ')}</span>` : ''}
-    <button class="add-brand-btn" title="ตั้งเป็นราคาของรุ่นนี้" onclick="promotePartLastPrice('${model.id}','${part.id}')">ใช้เป็นราคาตั้ง</button>
-    <button class="add-brand-btn" title="ลบราคาที่จำไว้" onclick="clearPartLastPrice('${model.id}','${part.id}')">ลบ</button>
-  </div>`;
+  /* v4.2.8 — แสดงทีละแบรนด์ ถ้าเคยคีย์ไว้หลายแบรนด์ก็ขึ้นหลายบรรทัด
+     ของเก่าที่ยังไม่มี lastPriceByBrand ก็ยังแสดงได้เหมือนเดิมจาก lastPrice */
+  const rows = partBrandPrices(part);
+  const list = rows.length
+    ? rows.map(r => ({ key: r.key, lp: r.stamp }))
+    : ((part.lastPrice && part.lastPrice.price) ? [{ key: null, lp: part.lastPrice }] : []);
+  if(!list.length) return '';
+  return list.map(({ key, lp }) => {
+    const bits = [];
+    if(lp.job) bits.push('งาน ' + escapeHtml(lp.job));
+    if(lp.at)  bits.push(fmtDateBE(lp.at));
+    if(lp.by)  bits.push(escapeHtml(lp.by));
+    const arg = (key === null) ? '' : `,'${escapeAttr(key)}'`;
+    return `<div class="last-price-line">
+      <span class="lp-tag">ราคาล่าสุด${lp.brand ? ' · ' + escapeHtml(lp.brand) : ''} ฿${escapeHtml(fmtMoney(parseMoney(lp.price)))}</span>
+      ${bits.length ? `<span class="lp-meta">${bits.join(' · ')}</span>` : ''}
+      <button class="add-brand-btn" title="ตั้งเป็นราคาของรุ่นนี้" onclick="promotePartLastPrice('${model.id}','${part.id}'${arg})">ใช้เป็นราคาตั้ง</button>
+      <button class="add-brand-btn" title="ลบราคาที่จำไว้ของแบรนด์นี้" onclick="clearPartLastPrice('${model.id}','${part.id}'${arg})">ลบ</button>
+    </div>`;
+  }).join('');
 }
 
 /* ---------------------------------------------------------------------------
@@ -7203,8 +7353,18 @@ function recallPartPrice(job, name, variant, wantBrand){
       if(wantBrand){
         const b = (part.brands || []).find(x => x.price && mmNorm(x.brand) === mmNorm(wantBrand));
         if(b) return Object.assign({ price: b.price, brand: b.brand || '', at: '' }, base);
+        // v4.2.8 — ราคาที่ช่างเคยคีย์ไว้ "ของแบรนด์นี้" โดยเฉพาะ
+        const mine = (part.lastPriceByBrand || {})[brandKeyOf(wantBrand)];
+        if(mine && mine.price)
+          return Object.assign({ price: mine.price, brand: mine.brand || '', at: mine.at || '' }, base);
         if(lp && lp.price && mmNorm(lp.brand) === mmNorm(wantBrand))
           return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base);
+        /* เลือกแบรนด์ไว้แล้วแต่ไม่มีราคาของแบรนด์นั้นเลย — เสนอของแบรนด์อื่นได้
+           แต่ห้ามเติมให้เอง (same:false) เพราะ OEM กับรีบิ้วต่างกันเป็นพัน
+           เดิมตรงนี้ตกไปถึงบรรทัดล่างแล้วเติมราคาแบรนด์อื่นให้เงียบ ๆ */
+        if(lp && lp.price)
+          return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' },
+                               base, { same: false, otherBrand: true });
       }
       if(lp && lp.price)
         return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base);
@@ -15061,6 +15221,21 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
      ลองนึกราคาที่เคยคีย์ไว้ขึ้นมาให้ เดิมราคาเด้งเฉพาะตอนติ๊กชิปจากรุ่นรถเท่านั้น
      ช่างที่พิมพ์ชื่อเองจึงไม่มีทางได้ราคาคืน ทั้งที่ระบบรู้อยู่ว่าเคยคีย์ไว้
      เติมให้เฉพาะราคาของรถ "รุ่นเดียวกัน" เท่านั้น ราคาของรุ่นอื่นขึ้นเป็นปุ่มให้กดเอง */
+  /* v4.2.8 — เปลี่ยนแบรนด์ = เปลี่ยนตัวสินค้า ราคาต้องตามแบรนด์ไปด้วย
+     เดิมการนึกราคาทำเฉพาะตอน "ช่องราคายังว่าง" ซึ่งพลาดลำดับที่พบบ่อยที่สุดหน้างาน:
+     ติ๊กชื่ออะไหล่มาก่อน ระบบเติมราคาอันล่าสุด (รีบิ้ว) ให้แล้ว ช่างค่อยมาเลือก OEM
+     ทีหลัง — ตอนนั้นช่องไม่ว่างแล้ว จึงไม่มีการคิดใหม่ ใบเสนอราคาเลยออกไปเป็น
+     ราคารีบิ้วที่ติดป้ายว่า OEM ซึ่งต่างกันเกือบเท่าตัว
+     เปลี่ยนเฉพาะเมื่อ "เลือกแบรนด์จริง ๆ" และมีราคาของแบรนด์นั้นเก็บไว้แล้วเท่านั้น */
+  if(field === 'brand' && row.brand && parseMoney(row.price)){
+    const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
+    const want = hit && hit.same ? parseMoney(hit.price) : 0;
+    if(want && want !== parseMoney(row.price)){
+      const before = parseMoney(row.price);
+      row.price = want;
+      flashToast(`ราคาของ ${row.brand}: ฿${fmtMoney(before)} → ฿${fmtMoney(want)}`);
+    }
+  }
   if((field === 'partName' || field === 'brand' || field === 'variant') && !parseMoney(row.price)){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
     if(hit && hit.same){
@@ -16581,6 +16756,16 @@ function mergeDuplicateModels(keepId, dropId){
     if(theirs && theirs.price &&
        (!mine || !mine.price || String(theirs.at || '') > String(mine.at || '')))
       twin.lastPrice = theirs;
+
+    /* v4.2.8 — ช่องราคาแยกตามแบรนด์ ก็ต้องรวมทีละช่อง ใหม่กว่าชนะเหมือนกัน
+       ถ้าลืมตรงนี้ การรวมรุ่นซ้ำจะกลืนราคา OEM ที่อยู่ในใบที่ถูกยุบหายไปทั้งก้อน */
+    twin.lastPriceByBrand = twin.lastPriceByBrand || {};
+    const theirBook = dp.lastPriceByBrand || {};
+    Object.keys(theirBook).forEach(k => {
+      const t = theirBook[k], m = twin.lastPriceByBrand[k];
+      if(t && t.price && (!m || !m.price || String(t.at || '') > String(m.at || '')))
+        twin.lastPriceByBrand[k] = t;
+    });
 
     // (2) ราคาที่ร้านตั้งเอง — เติมช่องว่าง ไม่ทับ ต่างกันก็รายงาน ไม่ตัดสิน
     twin.brands = twin.brands || [];
