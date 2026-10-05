@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.5";
+  const APP_VERSION = "4.2.6";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2008,7 +2008,37 @@
 
               shot59.py: 15/15 here, 0/16 on v4.2.4. Half of it is the negative half -
               five pairs that must NOT merge - and it checks the ฿5,500 actually
-              lands on the quote line rather than only the name matching. -->
+              lands on the quote line rather than only the name matching.
+
+     v4.2.6 - The หน่วย dropdown takes new units, added where you are standing.
+
+              The nine built-in units were a guess made once and never revisited. The
+              shop sells เพลาขับ as a คู่ at ฿7,000 and also ข้างละ at ฿3,500-3,700 -
+              same part, two units, two prices - and could not write the second one
+              down. "+ เพิ่มหน่วย…" now sits at the end of the dropdown in both places
+              it appears (รุ่นรถ and the job's quote), and the new unit is selected on
+              the row that opened it, so nobody has to pick it twice. สินค้า grows a
+              list for renaming and removing them; the nine built-ins are shown there
+              as fixed chips and cannot be deleted.
+
+              They live in config/main, NOT a new collection - a new collection is
+              denied by the catch-all rule until somebody publishes for it, the same
+              trap the stock page had to dodge.
+
+              And one sharp edge inside that choice: config/main lets a NON-admin
+              write exactly one key, technicians (hasOnly). If an ordinary staff
+              device ever sent unitOptions while the server document lacked the key,
+              the diff would carry two keys, the write would be rejected, and because
+              config shares the batch with everything else, the technician assignment
+              they had just made would disappear with it - the exact failure the
+              comment above that rule describes. So the payload omits the key entirely
+              until there is a unit to send, and buildConfigPayload is now the single
+              place that shape is defined, used by both the compare and the write.
+
+              shot60.py: 18/18 here, 0/15 on v4.2.5. Its first three checks are that
+              config safety, not the dropdown; renaming or deleting a unit is also
+              asserted NOT to rewrite parts that already use it, the same rule as
+              part brands. -->
 
 
 
@@ -6452,6 +6482,83 @@ const BRAND_OPTIONS = ["TOYOTA","HONDA","ISUZU","MAZDA","NISSAN","MITSUBISHI","F
 // อะไหล่ในรุ่นนี้ table instead of a free-text box that clips on narrow screens.
 const UNIT_OPTIONS = ["ชิ้น","เส้น","อัน","คู่","ลิตร","ชุด","ใบ","ครั้ง","ข้าง"];
 
+/* ================= หน่วยนับที่ร้านเพิ่มเอง (v4.2.6) =================
+   ของชิ้นเดียวกันขายได้หลายหน่วย — เพลาขับขายเป็น "คู่" ก็ได้ ขาย "ข้างละ" ก็ได้
+   ซึ่งคนละราคากัน เก้าหน่วยที่ฝังมาในโค้ดจึงไม่พอ และร้านเติมเองไม่ได้
+
+   เก็บไว้ใน config/main ไม่ใช่คอลเลกชันใหม่ ด้วยเหตุผลเดียวกับที่เขียนไว้ที่
+   startStockSync: คอลเลกชันใหม่โดนกฎปิดท้ายไฟล์ปฏิเสธจนกว่าจะมีคน Publish กฎ
+   ส่วน config/main มีกฎอยู่แล้ว และแอดมินเขียนได้ทุกคีย์
+
+   *** ระวังจุดนี้ *** กฎของ config/main ยอมให้ "คนที่ไม่ใช่แอดมิน" แก้ได้เฉพาะ
+   คีย์ technicians เท่านั้น (hasOnly) ถ้าเครื่องของพนักงานธรรมดาส่งคีย์ unitOptions
+   ขึ้นไปด้วยตอนที่เซิร์ฟเวอร์ยังไม่มีคีย์นี้ diff จะมีสองคีย์ -> ถูกปฏิเสธ ->
+   และเพราะ config อยู่ใน batch เดียวกับทุกอย่าง "ทั้งแบตช์ล้ม" การมอบหมายช่าง
+   ที่เพิ่งกดก็หายไปด้วย flushState จึงใส่คีย์นี้ลงไปเฉพาะตอนที่มีค่าจริงเท่านั้น */
+function allUnitOptions(){
+  const out = UNIT_OPTIONS.slice();
+  (state.unitOptions || []).forEach(u => {
+    const name = String(u || '').trim();
+    if(name && out.indexOf(name) < 0) out.push(name);
+  });
+  return out;
+}
+
+/* ตัวเลือกในดรอปดาวหน่วย + ท้ายรายการมี "เพิ่มหน่วย…" ให้กดเติมได้ตรงนั้นเลย
+   current ที่ไม่อยู่ในรายการ (ของเก่าที่เคยคีย์ไว้) ยังต้องโผล่ ไม่งั้นค่าจะหายไป */
+const UNIT_ADD_SENTINEL = '__add_unit__';
+function unitSelectOptions(current, canAdd){
+  const list = allUnitOptions();
+  if(current && list.indexOf(current) < 0) list.unshift(current);
+  return list.map(u =>
+      `<option value="${escapeAttr(u)}" ${current === u ? 'selected' : ''}>${escapeHtml(u)}</option>`).join('')
+    + (canAdd ? `<option value="${UNIT_ADD_SENTINEL}">+ เพิ่มหน่วย…</option>` : '');
+}
+
+/* คืน true เมื่อ "กลืนค่า" ไปแล้ว (คือเป็นการกดเพิ่มหน่วย ไม่ใช่การเลือกหน่วยจริง)
+   onAdded จะถูกเรียกพร้อมชื่อหน่วยใหม่ ให้ผู้เรียกเอาไปใส่ในช่องของตัวเอง */
+/* ตัวรับการเปลี่ยนหน่วยของทั้งสองหน้า — แยกออกมาเพื่อให้ "เพิ่มหน่วย…" ทำงาน
+   เหมือนกันทั้งคู่ และหน่วยใหม่ถูกเลือกให้ช่องที่กดมาทันที ไม่ต้องกดซ้ำ */
+function onJobPartUnitChange(jobId, partRowId, value){
+  if(handleUnitAddChoice(value, (unit) => {
+    onJobPartFieldChange(jobId, partRowId, 'unit', unit);
+    saveState(true);
+    render();
+  })) return;
+  onJobPartFieldChange(jobId, partRowId, 'unit', value);
+}
+function onModelPartUnitChange(modelId, partId, value){
+  if(handleUnitAddChoice(value, (unit) => {
+    onPartFieldInput(modelId, partId, 'unit', unit);
+    saveState(true);
+    render();
+  })) return;
+  onPartFieldInput(modelId, partId, 'unit', value);
+}
+
+function handleUnitAddChoice(value, onAdded){
+  if(value !== UNIT_ADD_SENTINEL) return false;
+  if(!canManageCatalog()){
+    flashToast('เฉพาะผู้ดูแลระบบเท่านั้น');
+    render();
+    return true;
+  }
+  uiPrompt('หน่วยนับใหม่ (เช่น ข้างละ, ตัว, กล่อง)', '', name => {
+    const trimmed = (name || '').trim();
+    if(!trimmed){ render(); return; }
+    if(allUnitOptions().some(u => u.toLowerCase() === trimmed.toLowerCase())){
+      flashToast(`มีหน่วย "${trimmed}" อยู่แล้ว`);
+      onAdded(allUnitOptions().find(u => u.toLowerCase() === trimmed.toLowerCase()));
+      return;
+    }
+    state.unitOptions = state.unitOptions || [];
+    state.unitOptions.push(trimmed);
+    flashToast(`เพิ่มหน่วย "${trimmed}" แล้ว`);
+    onAdded(trimmed);
+  }, 'เช่น ข้างละ');
+  return true;
+}
+
 /* ---------------------------------------------------------------------------
    THE รุ่นรถ LIST — single source of truth
 
@@ -9201,7 +9308,8 @@ function emptyState(){
     shop:{ name:"POWER GROUP", sub:"ระบบจัดการอู่บริการ (GSMS)", phone:"", line:"", site:"", adminName:"", adminPhone:"", adminLine:"" },
     settings:{ aiApiKey:"", geminiApiKey:"", aiModel:"claude", themeId:"default" },
     customers:[], vehicles:[], complaintTypes:[], jobs:[], editLog:[],
-    masterParts:[], partBrandOptions:[], deletedMasterPartNames:[], technicians:[], models:[]
+    masterParts:[], partBrandOptions:[], deletedMasterPartNames:[], technicians:[], models:[],
+    unitOptions:[]   // v4.2.6 — หน่วยนับที่ร้านเพิ่มเอง อยู่ใน config/main
   };
 }
 
@@ -9489,7 +9597,8 @@ function startSync(){
       if(d.settings) state.settings = d.settings;
       state.deletedMasterPartNames = d.deletedMasterPartNames || [];
       state.technicians = d.technicians || [];
-      shadowConfig = JSON.stringify({ shop: state.shop, settings: state.settings, deletedMasterPartNames: state.deletedMasterPartNames, technicians: state.technicians });
+      state.unitOptions = d.unitOptions || [];
+      shadowConfig = JSON.stringify(buildConfigPayload());
     }
     if(firstCfg){ firstCfg = false; oneReady('config'); }
     else if(dataReady){ applyTheme(state.settings && state.settings.themeId); applyDarkMode(state.settings && state.settings.darkMode); safeRender(); }
@@ -9524,6 +9633,22 @@ function saveState(showToast){
   if(!db || !dataReady) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { flushState(showToast); }, 250);
+}
+
+/* หน้าตาของ config/main ที่จะเขียนขึ้นไป — ใช้ที่เดียวกันทั้งตอนเทียบและตอนเขียน
+   ไม่งั้นสองที่จะเพี้ยนจากกันแล้วระบบจะคิดว่า "มีของค้างไม่ได้บันทึก" ตลอดเวลา
+
+   unitOptions ใส่ลงไปเฉพาะตอนมีค่าจริง — ดูเหตุผลเต็มที่ allUnitOptions:
+   เครื่องของพนักงานที่ไม่ใช่แอดมินห้ามแตะคีย์นี้ ไม่งั้น batch ล้มทั้งก้อน */
+function buildConfigPayload(){
+  const cfg = {
+    shop: state.shop,
+    settings: state.settings,
+    deletedMasterPartNames: state.deletedMasterPartNames || [],
+    technicians: state.technicians || []
+  };
+  if((state.unitOptions || []).length) cfg.unitOptions = state.unitOptions;
+  return cfg;
 }
 
 function flushState(showToast){
@@ -9571,12 +9696,7 @@ function flushState(showToast){
     });
   });
 
-  const cfg = {
-    shop: state.shop,
-    settings: state.settings,
-    deletedMasterPartNames: state.deletedMasterPartNames || [],
-    technicians: state.technicians || []
-  };
+  const cfg = buildConfigPayload();
   const cfgEncoded = JSON.stringify(cfg);
   if(cfgEncoded !== shadowConfig){
     batch.set(db.collection('config').doc('main'), cleanForFirestore(cfg));
@@ -15822,9 +15942,8 @@ function renderJobPartsEditor(job){
         <td class="center" data-label="จำนวน">
           <div class="qty-inline">
             <input type="number" min="1" step="1" class="qty-input" value="${escapeAttr(p.qty)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','qty', this.value)">
-            <select class="unit-select" onchange="onJobPartFieldChange('${job.id}','${p.id}','unit', this.value)">
-              ${(UNIT_OPTIONS.includes(p.unit) || !p.unit ? UNIT_OPTIONS : [p.unit, ...UNIT_OPTIONS]).map(u =>
-                `<option value="${escapeAttr(u)}" ${p.unit===u?'selected':''}>${escapeHtml(u)}</option>`).join('')}
+            <select class="unit-select" onchange="onJobPartUnitChange('${job.id}','${p.id}', this.value)">
+              ${unitSelectOptions(p.unit, canManageCatalog())}
             </select>
           </div>
         </td>
@@ -16779,7 +16898,75 @@ function renderMasterTab(){
   html += `</tbody></table></div>
     <div style="margin-top:10px;"><button class="btn secondary" onclick="addBrandOptionPrompt()">+ เพิ่มแบรนด์ใหม่</button></div>
   </div>`;
+
+  /* v4.2.6 — หน่วยนับ: เก้าหน่วยแรกฝังมาในโค้ด ลบไม่ได้ ที่ร้านเพิ่มเองลบได้ */
+  const custom = state.unitOptions || [];
+  html += `<div class="card">
+    <h3>หน่วยนับ (ตัวเลือกในดรอปดาวข้างช่องจำนวน)</h3>
+    <p class="muted">ของชิ้นเดียวกันขายได้หลายหน่วย เช่น เพลาขับขายเป็น "คู่" หรือ "ข้างละ" ซึ่งคนละราคากัน
+       — เพิ่มหน่วยตรงนี้ หรือกด "+ เพิ่มหน่วย…" ท้ายดรอปดาวในหน้ารุ่นรถ/ใบงานก็ได้เหมือนกัน</p>
+    <div class="row-flex" style="gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+      ${UNIT_OPTIONS.map(u => `<span class="chk-chip" style="cursor:default;">${escapeHtml(u)}</span>`).join('')}
+    </div>
+    <p class="muted" style="margin-top:0;">ข้างบนคือหน่วยมาตรฐานที่มีมาแต่แรก ลบไม่ได้ · ข้างล่างคือที่ร้านเพิ่มเอง</p>`;
+  if(custom.length === 0){
+    html += `<div class="empty-state" style="padding:10px 12px;">ยังไม่มีหน่วยที่เพิ่มเอง</div>`;
+  } else {
+    html += `<div class="table-wrap"><table class="parts-table"><thead><tr><th>ชื่อหน่วย</th><th class="center" style="width:70px;">ลบ</th></tr></thead><tbody>`;
+    custom.forEach((u, i) => {
+      html += `<tr><td><input type="text" class="unit-input" style="width:100%;" value="${escapeAttr(u)}" onchange="onUnitOptionRename(${i}, this.value)"></td>
+        <td class="center"><button class="icon-btn" style="min-width:44px;min-height:44px;" onclick="deleteUnitOption(${i})">${icon('x',13)}</button></td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += `<div style="margin-top:10px;"><button class="btn secondary" style="min-height:44px;" onclick="addUnitOptionPrompt()">+ เพิ่มหน่วยใหม่</button></div>
+  </div>`;
   return html;
+}
+
+function addUnitOptionPrompt(){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  uiPrompt('หน่วยนับใหม่ (เช่น ข้างละ, ตัว, กล่อง)', '', name => {
+    const trimmed = (name || '').trim();
+    if(!trimmed) return;
+    if(allUnitOptions().some(u => u.toLowerCase() === trimmed.toLowerCase())){
+      flashToast(`มีหน่วย "${trimmed}" อยู่แล้ว`);
+      return;
+    }
+    state.unitOptions = state.unitOptions || [];
+    state.unitOptions.push(trimmed);
+    saveState(true);
+    flashToast('เพิ่มหน่วยแล้ว');
+    render();
+  }, 'เช่น ข้างละ');
+}
+/* เปลี่ยนชื่อหน่วย = เปลี่ยนแค่ "ตัวเลือก" ไม่ไล่แก้ของที่เคยเลือกไว้แล้ว
+   กติกาเดียวกับแบรนด์อะไหล่: ใบงานที่ออกไปแล้วต้องไม่ถูกแก้ย้อนหลัง */
+function onUnitOptionRename(index, value){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); render(); return; }
+  const list = state.unitOptions || [];
+  const trimmed = String(value == null ? '' : value).trim();
+  if(!list[index] || !trimmed || trimmed === list[index]){ render(); return; }
+  if(allUnitOptions().some(u => u.toLowerCase() === trimmed.toLowerCase())){
+    flashToast(`มีหน่วย "${trimmed}" อยู่แล้ว`);
+    render();
+    return;
+  }
+  list[index] = trimmed;
+  saveState(true);
+  render();
+}
+function deleteUnitOption(index){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  const list = state.unitOptions || [];
+  const name = list[index];
+  if(!name) return;
+  uiConfirm(`เอาหน่วย "${name}" ออกจากตัวเลือก?\n\nอะไหล่หรือใบงานที่เคยเลือกหน่วยนี้ไว้แล้วจะไม่ถูกแก้ไข`, () => {
+    state.unitOptions = list.filter((_, i) => i !== index);
+    saveState(true);
+    flashToast('เอาหน่วยออกแล้ว');
+    render();
+  }, 'เอาออก');
 }
 
 /* ---------------- ชื่อช่าง (technician roster, its own catalog page) ---------------- */
@@ -20165,10 +20352,8 @@ function renderPartsTab(model){
         <td class="center" rowspan="${rowspan}">
           <div class="qty-inline">
             <input type="number" min="1" step="1" class="qty-input" placeholder="0" value="${escapeAttr(part.qty)}" oninput="onPartFieldInput('${model.id}','${part.id}','qty', this.value)">
-            <select class="unit-select" onchange="onPartFieldInput('${model.id}','${part.id}','unit', this.value)">
-              ${(UNIT_OPTIONS.includes(part.unit) || !part.unit ? UNIT_OPTIONS : [part.unit, ...UNIT_OPTIONS]).map(u =>
-                `<option value="${escapeAttr(u)}" ${part.unit===u?'selected':''}>${escapeHtml(u)}</option>`
-              ).join('')}
+            <select class="unit-select" onchange="onModelPartUnitChange('${model.id}','${part.id}', this.value)">
+              ${unitSelectOptions(part.unit, canManageCatalog())}
             </select>
           </div>
         </td>`;
