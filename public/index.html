@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.10";
+  const APP_VERSION = "4.2.11";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2141,7 +2141,48 @@
 
               Also: permission-denied now raises a dialog once per session saying the
               data is still on this device and will be retried, rather than a toast
-              nobody is looking at. -->
+              nobody is looking at.
+     v4.2.10 — ปุ่มโหมดมืดเลิกเขียนขึ้นเซิร์ฟเวอร์ ย้ายไป localStorage ของแต่ละเครื่อง
+              ปุ่มนี้อยู่บนแอปบาร์นอกเงื่อนไข canManageCatalog() พนักงานกดได้ทุกคน แต่มัน
+              เขียน settings.darkMode ลง config/main ซึ่งกฎยอมให้ non-admin แก้คีย์เดียว
+              คือ technicians กดครั้งเดียว = batch ล้มทั้งก้อนทั้งวัน (shot64 12/12, 0/10 บน
+              4.2.9) และโหมดมืดเป็นความชอบของคนถือเครื่อง ไม่ใช่ค่าของร้าน เดิมกดที่
+              แท็บเล็ตหน้าร้านแล้วจออีกหกเครื่องสลับตาม
+              พร้อมกันนั้นแก้บั๊กราคาแบรนด์ที่ v4.2.8 สร้างขึ้นเอง: สลับไปแบรนด์ที่ยังไม่มี
+              ราคา แล้วเลขของแบรนด์เก่าถูกจำเป็นราคาของแบรนด์ใหม่ ซึ่งเป็นสิ่งที่คอมเมนต์
+              ของ v4.2.8 เขียนไว้เองว่าห้ามเกิด ตอนนี้กันด้วยธง brandPriceIsForeign
+     v4.2.11 — ประตูที่สองของบั๊กข้อมูลหาย ปิดที่ทางออกเดียวแทนการไล่ปิดทีละปุ่ม
+
+              การตรวจทั้งระบบ 6 ต.ค. 2569 เจอว่า v4.2.10 ปิดได้แค่ประตูเดียว แท็บ AI
+              เปิดให้พนักงานทุกคน ('ai' ไม่อยู่ในลิสต์ที่เตะพนักงานออกจากหน้าแอดมิน และ
+              ปุ่มแท็บอยู่นอก canManageCatalog()) ข้างในมีสามตัวที่เขียน state.settings
+              โดยไม่มีด่านสิทธิ์เลย: onAiModelChange, onAiApiKeyInput, onGeminiApiKeyInput
+              พนักงานเลื่อน dropdown จาก Claude เป็น Gemini ครั้งเดียว config/main ถูก
+              ปฏิเสธ แล้วลากใบงาน ราคา สถานะ ที่อยู่ใน batch เดียวกันล้มไปทั้งหมด
+
+              การไล่ปิดทีละปุ่มไม่มีวันจบ และปุ่มที่เพิ่มในอนาคตก็จะพลาดอีก จึงกันที่จุดเดียว
+              ที่ config/main ถูกเขียนจริง คือ flushState ผ่าน configWriteAllowed() ซึ่ง
+              เทียบคีย์ที่เปลี่ยนกับ shadowConfig แล้วเทียบกับ CONFIG_KEYS_STAFF_MAY_CHANGE
+              ให้ตรงกับกฎ Firestore เป๊ะ ถ้าคีย์ที่เปลี่ยนไม่ใช่ของที่บัญชีนี้แก้ได้ -> ไม่ส่ง
+              config ขึ้นไปเลย แต่ "ส่วนที่เหลือใน batch ขึ้นตามปกติ" ซึ่งคือประเด็นทั้งหมด
+              ถ้าในอนาคตมีปุ่มใหม่ที่เขียน settings ด่านนี้กันให้เองโดยไม่ต้องจำ
+
+              ชั้นที่สองคือด่านในสามฟังก์ชันนั้น มีไว้เพื่อบอกคนหน้าเครื่องทันทีว่ากดไม่ได้
+              ไม่ใช่กดแล้วเงียบ และหน้าจอซ่อน dropdown เลือกโมเดลกับช่องคีย์ API จาก
+              พนักงาน เพราะคีย์เป็นของแอดมิน ปุ่ม "ให้ AI วิเคราะห์" ยังเปิดให้ใช้ตามเดิม
+
+              ข้อ B3 ด้วย: ปุ่ม ✕ ลบชิปอะไหล่ ลบ models/ หรือ masterParts/ ซึ่งกฎใหม่ให้
+              "ลบ" เฉพาะแอดมิน ปุ่มจึงถูกซ่อนจากพนักงาน และ deleteQuickPart มีด่านของ
+              ตัวเองด้วยเพราะเป็นฟังก์ชัน global ที่เรียกได้จากที่อื่น การลบอะไหล่กลาง
+              กระทบทุกรุ่นรถ ไม่ใช่แค่ใบงานที่เปิดอยู่
+
+              shot65.py จำลองสิ่งที่เกิดที่ร้านตรง ๆ: db ปลอมเลียนกฎจริงรวมทั้ง
+              hasOnly(['technicians']) แล้ววัดว่าใบงานในรอบเดียวกันรอดไหม
+              20/20 ที่นี่ · 9/20 บน v4.2.10 โดยบรรทัดที่ตกคือ A-3 "ใบงาน 0 ครั้ง"
+
+              ข้อ B2 ไม่ต้องแก้โค้ด กฎชุดใหม่เขียนไว้แล้วแต่ยังไม่ได้ Publish และ GitHub
+              Action ของโปรเจกต์นี้ deploy เฉพาะ Hosting จึงต้อง Publish เองใน Console
+              ทุกครั้งที่แก้กฎ -->
 
 
 
@@ -9851,6 +9892,51 @@ function buildConfigPayload(){
 }
 
 /* ---------------------------------------------------------------------------
+   v4.2.11 — ด่านกลางของ config/main  (ข้อ B1 จากผลตรวจ 6 ต.ค. 2569)
+
+   กฎ Firestore ยอมให้บัญชีที่ไม่ใช่แอดมินแก้ config/main ได้คีย์เดียวคือ
+   technicians (ผ่าน hasOnly) คีย์อื่นที่เครื่องพนักงานส่งขึ้นไปจะถูกปฏิเสธ
+   และเพราะ flushState ยัดทุกอย่างลง batch เดียว การปฏิเสธครั้งเดียวลาก
+   ใบงาน ราคา สถานะ ที่อยู่ใน batch เดียวกันล้มไปด้วยทั้งหมด
+
+   v4.2.10 ปิดไปหนึ่งประตู (ปุ่มโหมดมืดเขียน settings.darkMode) แต่การตรวจ
+   รอบใหญ่ 6 ต.ค. เจอประตูที่สอง: แท็บ AI ซึ่งเปิดให้พนักงานทุกคน และมีสามตัว
+   ที่เขียน state.settings โดยไม่มีด่านสิทธิ์เลย (เลือกโมเดล / คีย์ Claude /
+   คีย์ Gemini) พนักงานเลื่อน dropdown ครั้งเดียว = บันทึกไม่ขึ้นทั้งวัน
+
+   การไล่ปิดทีละปุ่มไม่มีวันจบ และปุ่มที่เพิ่มในอนาคตก็จะพลาดอีก จึงกันที่
+   "ทางออกเดียว" คือจุดนี้ ซึ่งเป็นจุดเดียวในไฟล์ที่ config/main ถูกเขียน
+   ถ้าคีย์ที่เปลี่ยนไม่ใช่ของที่บัญชีนี้มีสิทธิ์แก้ -> ไม่ส่ง config ขึ้นไปเลย
+   แต่ "ส่วนที่เหลือใน batch ยังขึ้นตามปกติ" ซึ่งคือสิ่งที่ต้องการ
+
+   ของที่ไม่ถูกส่งไม่ได้หายไปจากเครื่อง มันรอ snapshot จากเซิร์ฟเวอร์มาทับ
+   ให้ตรงกับของจริงอีกครั้ง ซึ่งถูกต้องแล้ว เพราะบัญชีนี้ไม่มีสิทธิ์แก้มันอยู่ดี
+   --------------------------------------------------------------------------- */
+const CONFIG_KEYS_STAFF_MAY_CHANGE = ['technicians'];
+let cfgBlockedShown = false;     // กล่องเตือนขึ้นครั้งเดียวต่อการเปิดแอปหนึ่งครั้ง
+
+/* คีย์ระดับบนสุดของ config ที่ต่างจาก "สภาพล่าสุดที่เซิร์ฟเวอร์ตอบมา"
+   ใช้ stableJson เพื่อไม่ให้ลำดับคีย์ที่ต่างกันถูกนับว่าเป็นการเปลี่ยนค่า */
+function changedConfigKeys(cfgEncoded){
+  let now = {}, was = {};
+  try { now = JSON.parse(cfgEncoded) || {}; } catch(e){}
+  try { was = JSON.parse(shadowConfig || '{}') || {}; } catch(e){}
+  const seen = {};
+  Object.keys(now).forEach(k => { seen[k] = 1; });
+  Object.keys(was).forEach(k => { seen[k] = 1; });
+  return Object.keys(seen)
+    .filter(k => stableJson(now[k]) !== stableJson(was[k]))
+    .sort();
+}
+
+function configWriteAllowed(cfgEncoded){
+  if(isAdmin()) return { ok:true, blocked:[] };
+  const blocked = changedConfigKeys(cfgEncoded)
+    .filter(k => CONFIG_KEYS_STAFF_MAY_CHANGE.indexOf(k) < 0);
+  return { ok: blocked.length === 0, blocked: blocked };
+}
+
+/* ---------------------------------------------------------------------------
    v4.2.9 — ข้อมูลที่คีย์ไว้หายไปเงียบ ๆ หลังใช้งานไปวันหนึ่ง
 
    ของเดิมเขียน shadow ว่า "บันทึกแล้ว" ตั้งแต่ตอนใส่ลง batch — คือก่อนรู้ผลว่า
@@ -9925,9 +10011,27 @@ function flushState(showToast){
   const cfgEncoded = JSON.stringify(cfg);
   let cfgPending = null;
   if(cfgEncoded !== shadowConfig){
-    batch.set(db.collection('config').doc('main'), cleanForFirestore(cfg));
-    cfgPending = cfgEncoded;        // v4.2.9 — เขียน shadowConfig ตอน commit ผ่านเท่านั้น
-    bump();
+    /* v4.2.11 — ด่านเดียวที่กัน config/main ไม่ให้ลาก batch ทั้งก้อนล้ม
+       ดูคำอธิบายเต็มที่ configWriteAllowed ข้างบน */
+    const cfgGate = configWriteAllowed(cfgEncoded);
+    if(cfgGate.ok){
+      batch.set(db.collection('config').doc('main'), cleanForFirestore(cfg));
+      cfgPending = cfgEncoded;      // v4.2.9 — เขียน shadowConfig ตอน commit ผ่านเท่านั้น
+      bump();
+    } else if(!cfgBlockedShown){
+      cfgBlockedShown = true;
+      console.warn('config/main blocked for this role:', cfgGate.blocked.join(', '));
+      flashToast('การตั้งค่าส่วนนี้ต้องให้ผู้ดูแลระบบแก้');
+      uiModal({
+        message: 'การตั้งค่าที่เพิ่งแก้ไม่ได้ถูกบันทึก เพราะบัญชีที่ใช้อยู่ไม่มีสิทธิ์แก้ส่วนนี้\n\n' +
+                 'ใบงาน ราคา และสถานะรถที่คีย์ไว้ "บันทึกขึ้นเซิร์ฟเวอร์ปกติ" ไม่ได้รับผลกระทบ\n' +
+                 'ค่าที่แก้จะกลับไปเป็นของเดิมเมื่อข้อมูลจากเซิร์ฟเวอร์เข้ามา\n\n' +
+                 'ถ้าต้องแก้จริง บอกผู้ดูแลระบบให้แก้ให้',
+        okLabel: 'รับทราบ',
+        cancelLabel: 'ปิด',
+        onOk: () => {}
+      });
+    }
   }
 
   if(ops > 0) commits.push(batch.commit());
@@ -13545,17 +13649,28 @@ function onShopFieldInput(field, value){
 }
 
 /* ================= AI: job summary / customer message draft ================= */
+/* v4.2.11 — สามตัวนี้เขียน state.settings ซึ่งไปอยู่ใน config/main
+   เดิมไม่มีด่านสิทธิ์เลย ทั้งที่แท็บ AI เปิดให้พนักงานทุกคน ผลคือพนักงาน
+   เลื่อน dropdown ครั้งเดียว config ถูกปฏิเสธ แล้วลาก batch ทั้งก้อนล้ม
+   = บันทึกอะไรไม่ขึ้นทั้งวัน (อาการเดียวกับปุ่มโหมดมืดใน v4.2.10)
+
+   ด่านที่นี่เป็นชั้นที่สอง ชั้นหลักคือ configWriteAllowed ใน flushState
+   ที่นี่มีไว้เพื่อ "บอกคนที่หน้าเครื่องทันที" ว่ากดไม่ได้ ไม่ใช่กดแล้วเงียบ
+   และคีย์ AI เป็นของแอดมิน ไม่ใช่ของเครื่องใครเครื่องมัน */
 function onAiApiKeyInput(value){
+  if(!isAdmin()){ flashToast('คีย์ AI แก้ได้เฉพาะผู้ดูแลระบบ'); return; }
   state.settings = state.settings || {};
   state.settings.aiApiKey = value;
   saveState(false);
 }
 function onGeminiApiKeyInput(value){
+  if(!isAdmin()){ flashToast('คีย์ AI แก้ได้เฉพาะผู้ดูแลระบบ'); return; }
   state.settings = state.settings || {};
   state.settings.geminiApiKey = value;
   saveState(false);
 }
 function onAiModelChange(value){
+  if(!isAdmin()){ flashToast('การเลือกโมเดล AI แก้ได้เฉพาะผู้ดูแลระบบ'); return; }
   state.settings = state.settings || {};
   state.settings.aiModel = value;
   saveState(false);
@@ -15300,6 +15415,13 @@ function addQuickPartToCategory(jobId, category){
 // retroactively edit a quote that already used it.
 function deleteQuickPart(jobId, mpId, e){
   if(e) e.stopPropagation();
+  /* v4.2.11 — ชั้นที่สองของข้อ B3 ปุ่มถูกซ่อนไปแล้ว แต่ฟังก์ชันยังเป็น global
+     ที่เรียกได้จากที่อื่น และกฎ Firestore ให้ลบเฉพาะแอดมิน ถ้าปล่อยผ่าน
+     batch.delete จะถูกปฏิเสธแล้วลากงานที่เหลือล้มไปด้วย */
+  if(!canManageCatalog()){
+    flashToast('การลบอะไหล่ออกจากตัวเลือกต้องให้ผู้ดูแลระบบทำ');
+    return;
+  }
   const job = getJob(jobId);
   if(!job) return;
   const picker = jobPickableParts(job);
@@ -16341,7 +16463,10 @@ function renderJobPartsEditor(job){
         const chipPrice = partPriceOf(mp);
         html += `<span class="chk-chip ${on?'checked':''}" onclick="toggleJobPartFromModel('${job.id}','${mp.id}')">
           ${escapeHtml(label)}${chipPrice ? `<span class="chk-price">฿${escapeHtml(fmtMoney(parseMoney(chipPrice)))}</span>` : ''}
-          <button type="button" class="chk-chip-del" title="ลบรายการนี้ออกจากตัวเลือก" onclick="deleteQuickPart('${job.id}','${mp.id}', event)">${icon('x',10)}</button>
+          ${/* v4.2.11 — ข้อ B3: ปุ่มนี้ลบ models/ หรือ masterParts/ ซึ่งกฎ Firestore
+                ให้ "ลบ" เฉพาะแอดมิน พนักงานกดแล้ว batch ล้มทั้งก้อน
+                และการลบอะไหล่กลางกระทบทุกรุ่นรถ ไม่ใช่แค่ใบงานที่เปิดอยู่ */''}
+          ${canManageCatalog() ? `<button type="button" class="chk-chip-del" title="ลบรายการนี้ออกจากตัวเลือก" onclick="deleteQuickPart('${job.id}','${mp.id}', event)">${icon('x',10)}</button>` : ''}
         </span>`;
       });
       html += `<span class="chk-chip chk-chip-add" data-job="${escapeAttr(job.id)}" data-cat="${escapeAttr(group.category)}" onclick="addQuickPartToCategory(this.dataset.job, this.dataset.cat)">${icon('plus',12)} เพิ่ม</span>`;
@@ -20518,6 +20643,7 @@ function renderAiTab(){
   html += `<div class="card">
     <h3>ให้ AI วิเคราะห์</h3>
     <p class="muted">ส่งตัวเลขข้างบนทั้งหมดไปให้ AI อ่านแล้วช่วยชี้จุดที่ควรสนใจและให้คำแนะนำ — API Key เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น แต่จะรวมอยู่ในไฟล์สำรองข้อมูลด้วย โปรดเก็บไฟล์สำรองให้ปลอดภัย</p>
+    ${isAdmin() ? `
     <div class="field">
       <label>เลือกโมเดล AI</label>
       <select onchange="onAiModelChange(this.value)">
@@ -20533,7 +20659,13 @@ function renderAiTab(){
     <div class="field">
       <label>Claude API Key</label>
       <input type="password" placeholder="sk-ant-..." value="${escapeAttr(aiApiKey)}" oninput="onAiApiKeyInput(this.value)">
-    </div>`}
+    </div>`}` : `
+    <p class="muted" style="font-size:12.5px;">ใช้โมเดล ${modelSel === 'gemini' ? 'Gemini' : 'Claude AI'} ที่ผู้ดูแลระบบตั้งไว้ · กดวิเคราะห์ได้เลย</p>`}
+    ${/* v4.2.11 — การตั้งค่าโมเดลและคีย์ AI เป็นของแอดมิน เพราะมันเขียนลง
+          config/main ซึ่งกฎ Firestore ไม่ให้พนักงานแก้ ถ้าปล่อยให้เห็นและกดได้
+          ผลคือ batch ล้มทั้งก้อนแล้วงานที่คีย์ไว้ไม่ขึ้นทั้งวัน
+          ปุ่ม "ให้ AI วิเคราะห์" ยังเปิดให้พนักงานใช้ตามเดิม เพราะมันใช้คีย์ที่
+          แอดมินตั้งไว้แล้ว ไม่ได้แก้ค่าอะไร */''}
     <button class="btn" onclick="generateBusinessInsight()" ${view.ai_loading?'disabled':''}>${icon('sparkle',14)} ${view.ai_loading ? 'กำลังวิเคราะห์...' : 'ให้ AI วิเคราะห์ภาพรวมนี้'}</button>
   </div>`;
 
