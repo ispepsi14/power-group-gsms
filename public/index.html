@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.8";
+  const APP_VERSION = "4.2.9";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2102,7 +2102,46 @@
               Still one slot per model (not per brand) in the masterParts fallback,
               which is only used for vehicles with no model in the system.
 
-              shot62.py: 15/15 here, 0/14 on v4.2.7. -->
+              shot62.py: 15/15 here, 0/14 on v4.2.7.
+
+     v4.2.9 - Data typed in and then gone a day later. This is the serious one.
+
+              flushState marked a row in `shadow` as "saved" at the moment it was put
+              into the batch - before knowing whether the server took it. When the
+              commit was rejected, three things followed in order:
+
+                1. a toast for 1.6 seconds, then nothing;
+                2. the next save compared the row against shadow, found them equal,
+                   and SKIPPED it - so it was never sent again;
+                3. the next snapshot arrived, mergeSnapshotRows compared local against
+                   shadow, concluded nothing was pending, and took the server's copy.
+
+              Step 3 is where the work disappeared. The v3.23.0 guard that exists
+              precisely to stop unsaved edits being overwritten did its job perfectly -
+              it just trusted a shadow that had been told a lie.
+
+              Fixed by staging the shadow updates and applying them only after
+              Promise.all(commits) resolves. On failure shadow is left untouched, so
+              the row still counts as pending: it goes up on the next save, and the
+              merge guard protects it in the meantime. Same rule flushStock was
+              written with from the start - the pattern was recognised in the new code
+              and never checked against the old.
+
+              shot63.py drives a db whose commit rejects on demand: 14/14 here, 4/14
+              on v4.2.8, and the failing line there reads "ใบงานที่เหลือ: 0".
+
+              What makes a commit reject at this shop is a separate question, and the
+              likely answer is the rules: models/ and masterParts/ were admin-only to
+              write, while rememberJobPartPrice writes to models/ on EVERY price a
+              technician types. A non-admin account therefore had its whole batch
+              rejected - job, vehicle and customer along with it. firestore.rules now
+              grants create/update on the four catalog collections to anyone with
+              access and keeps delete for admins, matching jobs/vehicles/customers.
+              Rules have to be published by hand in the Firebase Console.
+
+              Also: permission-denied now raises a dialog once per session saying the
+              data is still on this device and will be retried, rather than a toast
+              nobody is looking at. -->
 
 
 
@@ -9811,11 +9850,37 @@ function buildConfigPayload(){
   return cfg;
 }
 
+/* ---------------------------------------------------------------------------
+   v4.2.9 — ข้อมูลที่คีย์ไว้หายไปเงียบ ๆ หลังใช้งานไปวันหนึ่ง
+
+   ของเดิมเขียน shadow ว่า "บันทึกแล้ว" ตั้งแต่ตอนใส่ลง batch — คือก่อนรู้ผลว่า
+   เซิร์ฟเวอร์รับหรือไม่รับ ถ้า commit ถูกปฏิเสธ (เช่นพนักงานที่ไม่ใช่แอดมินไปแตะ
+   อะไรที่กฎให้เฉพาะแอดมินเขียน) สิ่งที่เกิดขึ้นคือ:
+
+     1. toast ขึ้น "ไม่มีสิทธิ์แก้ไขส่วนนี้" 1.6 วินาทีแล้วหายไป
+     2. shadow โกหกว่าแถวนี้ตรงกับเซิร์ฟเวอร์แล้ว -> รอบบันทึกถัดไป "ข้าม" แถวนี้
+        เพราะเทียบแล้วไม่เห็นว่ามีอะไรเปลี่ยน ของจึงไม่ถูกส่งซ้ำอีกเลย
+     3. พอ snapshot จากเซิร์ฟเวอร์เด้งมา mergeSnapshotRows เทียบ local กับ shadow
+        เห็นว่า "เท่ากัน" จึงสรุปว่าไม่มีของค้าง แล้วรับของจากเซิร์ฟเวอร์มาทับ
+        -> สิ่งที่คีย์ไว้หายไปจริง ๆ โดยไม่มีอะไรบอก
+
+   นั่นคืออาการ "ลงข้อมูลแล้ว ใช้ไปวันนึง ข้อมูลหาย" เป๊ะ ๆ
+   ตัวกันข้อมูลหายของ v3.23.0 ทำงานถูกต้องทุกอย่าง แต่มันเชื่อ shadow ซึ่งถูกโกหก
+
+   แก้: จดไว้ก่อน แล้วค่อยเขียน shadow เมื่อ commit สำเร็จจริงเท่านั้น
+   ถ้าล้ม shadow ไม่ถูกแตะเลย -> รอบหน้าส่งซ้ำ และ mergeSnapshotRows ยังรู้ว่า
+   ของในเครื่องเป็นของค้างที่ต้องปกป้อง ไม่ใช่ของที่เซิร์ฟเวอร์มีอยู่แล้ว
+   (กติกาเดียวกับที่ flushStock ของหน้าสต็อกเขียนไว้ตั้งแต่ต้น)
+   --------------------------------------------------------------------------- */
+let saveDeniedShown = false;    // กล่องเตือนสิทธิ์ ขึ้นครั้งเดียวพอ ไม่ตามรังควาน
+
 function flushState(showToast){
   if(!db || !dataReady) return;
   let batch = db.batch();
   let ops = 0;
   const commits = [];
+  const marks = [];   // [col, id, encoded] รอเขียนลง shadow เมื่อ commit ผ่าน
+  const drops = [];   // [col, id] รอลบออกจาก shadow เมื่อ commit ผ่าน
   const bump = () => {
     ops++;
     if(ops >= 400){ commits.push(batch.commit()); batch = db.batch(); ops = 0; }
@@ -9834,7 +9899,7 @@ function flushState(showToast){
       if(shadow[col][row.id] === encoded) return;   // unchanged — skip
       delete payload.id;                            // id lives in the doc path
       batch.set(db.collection(col).doc(row.id), cleanForFirestore(payload));
-      shadow[col][row.id] = encoded;
+      marks.push([col, row.id, encoded]);           // v4.2.9 — จดไว้ก่อน ยังไม่แตะ shadow
       bump();
       // Keep the public waiting-room board in step with any job that changed.
       if(col === 'jobs'){
@@ -9847,7 +9912,7 @@ function flushState(showToast){
     Object.keys(shadow[col]).forEach(id => {
       if(seen[id]) return;
       batch.delete(db.collection(col).doc(id));
-      delete shadow[col][id];
+      drops.push([col, id]);                        // v4.2.9 — จดไว้ก่อนเช่นกัน
       bump();
       if(col === 'jobs'){
         batch.delete(db.collection('board').doc(id));
@@ -9858,9 +9923,10 @@ function flushState(showToast){
 
   const cfg = buildConfigPayload();
   const cfgEncoded = JSON.stringify(cfg);
+  let cfgPending = null;
   if(cfgEncoded !== shadowConfig){
     batch.set(db.collection('config').doc('main'), cleanForFirestore(cfg));
-    shadowConfig = cfgEncoded;
+    cfgPending = cfgEncoded;        // v4.2.9 — เขียน shadowConfig ตอน commit ผ่านเท่านั้น
     bump();
   }
 
@@ -9870,11 +9936,36 @@ function flushState(showToast){
     return;
   }
   Promise.all(commits)
-    .then(() => { if(showToast) flashToast('บันทึกแล้ว'); })
+    .then(() => {
+      // ถึงตรงนี้แปลว่าเซิร์ฟเวอร์รับครบแล้วจริง ค่อยบอก shadow ได้
+      marks.forEach(([col, id, encoded]) => {
+        shadow[col] = shadow[col] || {};
+        shadow[col][id] = encoded;
+      });
+      drops.forEach(([col, id]) => { if(shadow[col]) delete shadow[col][id]; });
+      if(cfgPending !== null) shadowConfig = cfgPending;
+      if(showToast) flashToast('บันทึกแล้ว');
+    })
     .catch(err => {
       console.error('save', err);
+      /* shadow ไม่ถูกแตะเลยโดยตั้งใจ — ของในเครื่องยังนับเป็น "ค้างยังไม่ได้บันทึก"
+         จึงถูกส่งซ้ำรอบหน้า และไม่ถูก snapshot จากเซิร์ฟเวอร์ทับทิ้ง */
       if(err && err.code === 'permission-denied'){
-        flashToast('ไม่มีสิทธิ์แก้ไขส่วนนี้');
+        flashToast('บันทึกไม่ผ่าน — บัญชีนี้ไม่มีสิทธิ์แก้ไขส่วนนี้');
+        if(!saveDeniedShown){
+          saveDeniedShown = true;
+          /* ของหายเงียบ ๆ คือสิ่งที่ทำให้เรื่องนี้แพง toast 1.6 วินาทีไม่พอ
+             ขึ้นกล่องครั้งเดียวต่อการเปิดแอปหนึ่งครั้ง ให้คนที่หน้าเครื่องรู้ตัวจริง ๆ */
+          uiModal({
+            message: 'บันทึกขึ้นเซิร์ฟเวอร์ไม่ผ่าน เพราะบัญชีที่ใช้อยู่ไม่มีสิทธิ์แก้ไขส่วนนี้\n\n' +
+                     'สิ่งที่คีย์ไว้ "ยังอยู่ในเครื่องนี้" และระบบจะลองส่งใหม่ให้เรื่อย ๆ\n' +
+                     'แต่ถ้าปิดแอปหรือเปลี่ยนเครื่องก่อนที่จะส่งผ่าน ของรอบนี้จะหาย\n\n' +
+                     'บอกผู้ดูแลระบบให้เปิดสิทธิ์ให้บัญชีนี้ก่อน แล้วค่อยคีย์ต่อ',
+            okLabel: 'รับทราบ',
+            cancelLabel: 'ปิด',
+            onOk: () => {}
+          });
+        }
       } else {
         flashToast('บันทึกไม่สำเร็จ — จะลองส่งอีกครั้งเมื่อเน็ตกลับมา');
       }
