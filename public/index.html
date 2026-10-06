@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.9";
+  const APP_VERSION = "4.2.10";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -9738,7 +9738,7 @@ function startSync(){
       dataReady = true;
       runSafeMigrations();
       applyTheme(state.settings && state.settings.themeId);
-      applyDarkMode(state.settings && state.settings.darkMode);
+      applyDarkMode(isDarkOn());
       render();
       // ซ่อมกระดานลูกค้าให้ตรงกับใบงาน — เดิมทำ "ทุกครั้งที่เปิดแอป" ซึ่งสั่ง
       // board.get() อ่านทั้งคอลเลกชันหนึ่งรอบเต็ม ๆ ต่อการเปิดหนึ่งครั้งต่อหนึ่งเครื่อง
@@ -9800,7 +9800,7 @@ function startSync(){
       shadowConfig = JSON.stringify(buildConfigPayload());
     }
     if(firstCfg){ firstCfg = false; oneReady('config'); }
-    else if(dataReady){ applyTheme(state.settings && state.settings.themeId); applyDarkMode(state.settings && state.settings.darkMode); safeRender(); }
+    else if(dataReady){ applyTheme(state.settings && state.settings.themeId); applyDarkMode(isDarkOn()); safeRender(); }
   }, err => {
     console.error('sync config', err);
     if(firstCfg){ firstCfg = false; oneReady('config'); }
@@ -13625,11 +13625,34 @@ function applyDarkMode(enabled){
   document.documentElement.setAttribute('data-mode', enabled ? 'dark' : 'light');
 }
 
+/* ---------------------------------------------------------------------------
+   v4.2.10 — โหมดมืดย้ายมาเก็บในเครื่อง ไม่ใช่ใน config/main อีกต่อไป
+
+   ปุ่มนี้อยู่บนแอปบาร์ "นอก" เงื่อนไข canManageCatalog() คือพนักงานทุกคนเห็น
+   แต่เดิมมันเขียน state.settings.darkMode ลง config/main ซึ่งกฎ Firestore ยอมให้
+   คนที่ไม่ใช่แอดมินแก้ได้คีย์เดียวคือ technicians เท่านั้น
+
+   ผลคือ: พนักงานกดปุ่มนี้หนึ่งครั้ง -> config ถูกปฏิเสธ -> และเพราะ config อยู่ใน
+   batch เดียวกับทุกอย่าง "ทุกการบันทึกของเครื่องนั้นล้มตลอดทั้งวัน" ทั้งใบงาน
+   รับรถ เปลี่ยนสถานะ ราคา — จนกว่าจะรีโหลด นี่คืออาการเดียวกับที่คิวหายไปทั้งคิว
+
+   และต่อให้กฎเปิดให้ มันก็ยังผิดอยู่ดี: โหมดมืดคือความชอบของคนที่ถือเครื่องนั้น
+   ไม่ใช่การตั้งค่าของร้าน การกดที่แท็บเล็ตหน้าร้านไม่ควรไปสลับจอของอีกหกเครื่อง
+   --------------------------------------------------------------------------- */
+const DARK_MODE_KEY = 'gsms_dark_mode';
+function isDarkOn(){
+  try{
+    const v = localStorage.getItem(DARK_MODE_KEY);
+    if(v === '1') return true;
+    if(v === '0') return false;
+  }catch(e){}
+  // ยังไม่เคยตั้งในเครื่องนี้ — ใช้ค่าเดิมที่เคยตั้งไว้ร่วมกัน จะได้ไม่มีใครรู้สึกว่าของหาย
+  return !!(state && state.settings && state.settings.darkMode);
+}
 function toggleDarkMode(){
-  state.settings = state.settings || {};
-  state.settings.darkMode = !state.settings.darkMode;
-  saveState(true);
-  applyDarkMode(state.settings.darkMode);
+  const next = !isDarkOn();
+  try{ localStorage.setItem(DARK_MODE_KEY, next ? '1' : '0'); }catch(e){}
+  applyDarkMode(next);
   render();
 }
 function onAiJobSelect(value){ view.ai_jobId = value; view.ai_result = null; view.ai_error=''; render(); }
@@ -14154,7 +14177,7 @@ function render(){
     </div>
     <div class="topnav backup-nav">
       ${presenceStripHtml()}
-      <button class="darkmode-toggle-btn" title="${(state.settings && state.settings.darkMode) ? 'ปิดโหมดมืด' : 'เปิดโหมดมืด'}" onclick="toggleDarkMode()">${icon((state.settings && state.settings.darkMode) ? 'sun' : 'moon', 16)}</button>
+      <button class="darkmode-toggle-btn" title="${isDarkOn() ? 'ปิดโหมดมืด' : 'เปิดโหมดมืด'}" onclick="toggleDarkMode()">${icon(isDarkOn() ? 'sun' : 'moon', 16)}</button>
       <span class="user-wrap">
         <button class="user-chip" onclick="toggleUserMenu(event)">
           <span class="sync-dot ${isOnline?'':'offline'}" title="${isOnline?'ซิงค์อยู่':'ออฟไลน์ — จะส่งข้อมูลเมื่อเน็ตกลับมา'}"></span>
@@ -15318,6 +15341,11 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
      ทีหลัง — ตอนนั้นช่องไม่ว่างแล้ว จึงไม่มีการคิดใหม่ ใบเสนอราคาเลยออกไปเป็น
      ราคารีบิ้วที่ติดป้ายว่า OEM ซึ่งต่างกันเกือบเท่าตัว
      เปลี่ยนเฉพาะเมื่อ "เลือกแบรนด์จริง ๆ" และมีราคาของแบรนด์นั้นเก็บไว้แล้วเท่านั้น */
+  /* v4.2.10 — ราคาบนจอ "ยังเป็นของแบรนด์เก่า" ห้ามเอาไปจำเป็นราคาของแบรนด์ใหม่
+     ถ้าไม่กันตรงนี้: ติ๊กชิปได้ราคารีบิ้ว 9,500 มา แล้วสลับเป็น OEM ที่ยังไม่มีราคา
+     ตัวเลข 9,500 จะถูกจำลงช่อง OEM ทันที คันหน้าที่เลือก OEM ก็ได้ 9,500 แบบเงียบ ๆ
+     — กลายเป็นว่า v4.2.8 ที่เขียนมาเพื่อกันเรื่องนี้ ไปสร้างเรื่องเดียวกันเสียเอง */
+  let brandPriceIsForeign = false;
   if(field === 'brand' && row.brand && parseMoney(row.price)){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
     const want = hit && hit.same ? parseMoney(hit.price) : 0;
@@ -15325,6 +15353,9 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
       const before = parseMoney(row.price);
       row.price = want;
       flashToast(`ราคาของ ${row.brand}: ฿${fmtMoney(before)} → ฿${fmtMoney(want)}`);
+    } else if(!want){
+      brandPriceIsForeign = true;
+      flashToast(`ยังไม่มีราคาของ ${row.brand} — เลขที่เห็นเป็นราคาของแบรนด์อื่น ตรวจก่อนออกใบ`);
     }
   }
   if((field === 'partName' || field === 'brand' || field === 'variant') && !parseMoney(row.price)){
@@ -15339,7 +15370,8 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   }
   // v3.38.0 — คีย์ราคา/แบรนด์/จำนวนเสร็จ เก็บกลับเข้ารุ่นรถทันที
   // คันหน้าที่เป็นรุ่นเดียวกัน ติ๊กแล้วราคาเด้งเอง ไม่ต้องคีย์ซ้ำ
-  if(field === 'price' || field === 'brand' || field === 'qty' || field === 'unit'){
+  if((field === 'price' || field === 'brand' || field === 'qty' || field === 'unit')
+     && !brandPriceIsForeign){
     const mode = rememberJobPartPrice(job, row);
     if(mode === 'new'){
       const m = getJobModel(job);
@@ -19222,7 +19254,7 @@ function renderSettingsTab(){
     </div>
   </div>`;
 
-  const darkOn = !!(state.settings && state.settings.darkMode);
+  const darkOn = isDarkOn();
   C.dark = `<div class="card">
     <h3>โหมดมืด</h3>
     <p class="muted">สลับพื้นหลังเป็นสีเข้ม ใช้ร่วมกับโทนสีด้านบนได้ทุกแบบ (หน้าพิมพ์และกระดานลูกค้ายังคงสีขาวเสมอ ไม่เปลี่ยนตาม)</p>
