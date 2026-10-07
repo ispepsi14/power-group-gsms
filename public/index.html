@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.2.11";
+  const APP_VERSION = "4.3.3";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2182,7 +2182,90 @@
 
               ข้อ B2 ไม่ต้องแก้โค้ด กฎชุดใหม่เขียนไว้แล้วแต่ยังไม่ได้ Publish และ GitHub
               Action ของโปรเจกต์นี้ deploy เฉพาะ Hosting จึงต้อง Publish เองใน Console
-              ทุกครั้งที่แก้กฎ -->
+              ทุกครั้งที่แก้กฎ
+     v4.3.2 — หมวดเงินและใบเสนอราคาทั้งหมวด 9 ข้อ (M1-M9 จากผลตรวจ 6 ต.ค. 2569)
+
+              หมายเหตุเรื่องเลขเวอร์ชัน: ข้ามจาก 4.2.11 มาเป็น 4.3.2 ตามที่เจ้าของสั่ง
+              เลข 4.3.0 กับ 4.3.1 จึงไม่มีอยู่จริง งานพิมพ์กระดาษกับหน้าสต็อกที่เคย
+              จดไว้ว่าจะเป็น 4.3.0 ยังไม่ได้ทำ และต้องใช้เลขอื่นต่อไป
+
+              M1 ติ๊กชิปอะไหล่ที่อยู่ในชุดโปร = ลบของในชุดทิ้ง กดอีกทีได้ราคาซ้อน
+                 toggleJobPartFromModel ไม่เคยเช็ก promoParent ชิปของอะไหล่ที่เป็น
+                 บรรทัดลูกของชุดโปรขึ้นเป็น "ติ๊กแล้ว" (ถูก เพราะมันอยู่ในใบจริง)
+                 ช่างกดเพื่อดูราคา -> splice ลบลูกออกจากชุด ชุดยังคิด 7,500 แต่ในใบ
+                 ไม่มีปีกนก แล้วพอเห็นชิปดับก็กดกลับ -> ได้บรรทัดเดี่ยว 1,800 ซ้อน
+                 ตอนนี้ของในชุดเอาออกเดี่ยว ๆ ไม่ได้ และบอกไปตรง ๆ ว่าให้เอาชุดออก
+
+              M2 ชุดโปรคิดเงินซ้ำ แก้ที่ addPromoChildLines ซึ่งเป็นจุดที่ทุกเส้นทาง
+                 เรียกผ่าน (ชิปโปร + ชิปอาการ) ไม่ใช่ที่ togglePromoOnJob ที่ปิดได้
+                 ทางเดียว ถ้ามีบรรทัดเดี่ยวชื่อเดียวกันอยู่แล้ว ให้ "ย้ายเข้าชุด"
+                 คือผูก promoParent แล้วล้างราคา ไม่สร้างบรรทัดที่สอง
+
+              M3 หน้าลูกค้าเคยบอกว่า "ไม่ได้คิดเงินเพิ่ม" กับบรรทัดที่ช่างยังไม่ได้
+                 ใส่ราคา เพราะ boardPayloadFor ไม่ส่งธง promoParent ขึ้นไป ฝั่งลูกค้า
+                 จึงเดาจาก "ราคาเป็น 0" ซึ่งแยกสองกรณีไม่ออก ตอนนี้ส่งธง inPromo
+                 และแยกเป็น "รวมในชุด" กับ "รอยืนยัน" ที่เขียนชัดว่ายังไม่รวมในยอด
+
+              M4 ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ผ่าน partPriceAndBrand() ตัวเดียว
+                 ที่ทั้งติ๊กทีละตัวและ "เพิ่มทั้งหมด" ใช้ ของเดิมเอาราคาจาก partPriceOf
+                 แต่เอาแบรนด์จากอีกที่ ได้ "OEM ราคา 9,500" ซึ่งคือราคารีบิ้วติดป้าย OEM
+
+              M5 ปุ่ม "ใช้ราคานี้" เรียก rememberJobPartPrice ตรง ๆ โดยไม่มีธง
+                 brandPriceIsForeign ที่ v4.2.10 ใส่ไว้ที่ onJobPartFieldChange
+                 ตอนนี้ใส่เลขบนใบให้ช่างเห็นแต่ไม่จำลงตำรา และป้ายแยก
+                 "ราคาของแบรนด์อื่น" ออกจาก "ราคาของรถรุ่นอื่น" ซึ่งคนละเรื่อง
+
+              M6 สถิติรายได้ "ปีนี้ / รวมสะสม" คิดจาก state.jobs ซึ่งตัวฟังจำกัดไว้
+                 600 ใบ = ประมาณ 3-4 สัปดาห์ ที่ 20-30 คัน/วัน ไม่แตะตัวฟัง (ค่าอ่าน)
+                 แต่เพิ่ม loadAllJobsForStats() ที่ดึงครั้งเดียวต่อการเปิดแอปเมื่อกดปุ่ม
+                 และถ้ายังไม่ดึง หน้าสถิติบอกตรง ๆ ว่าตัวเลขยังไม่ครบ (complete:false)
+
+              M7 ช่องราคาแบรนด์ในหน้ารุ่นรถเก็บค่าดิบ พิมพ์ "9,500" ตามที่แอปแสดง
+                 แล้ว fmtMoney คืน "0.00" เล่มตำราราคาที่ปรินต์แจกขึ้น 0.00 เป็นแถว
+                 ทั้งที่ใบเสนอราคาคิดถูก ตอนนี้กรองผ่าน parsePrice
+
+              M8 มีสองสูตรจัดรูปเงิน ใบที่ลูกค้าเซ็นใช้ทศนิยม 2 ตำแหน่ง แต่หน้า
+                 ?reception และรายการส่งมอบใช้ Math.round ยอด 1,212.50 จึงขึ้น 1,213
+                 บนมือถือลูกค้า รวมเป็น fmtBaht() ตัวเดียวที่ยึดตามใบกระดาษ
+                 ผลข้างเคียงที่เห็นได้: หน้าลูกค้าขึ้น .00 แล้ว
+
+              M9 parseMoney ปล่อย "-" ผ่าน (ช่องส่วนลดตัดอยู่แล้ว) ราคา -500 ถูกลบ
+                 ออกจากยอด และถ้ายอดติดลบ ส่วนลดคืน 0 เงียบ ๆ เพิ่ม parsePrice()
+                 ที่ไม่รับติดลบ ใช้ที่ jobPartsTotal / onJobPartFieldChange / board
+                 และเลขไทย ๙๕๐๐ เคยกลายเป็น 0 ตอนนี้แปลงก่อนด้วย normalizeDigits
+
+              shot66.py 33/33 ที่นี่ · 9/33 บน v4.2.11 (ตก 24 ข้อ)
+              รัน 34 ชุดเทียบสองเวอร์ชันแล้วไม่มี regression
+     v4.3.3 — ประตูข้างของบั๊กที่แก้ไปแล้ว 3 ข้อ (ตรวจย้อน 7 ต.ค. 2569)
+              ทั้งสามข้อคือ "แก้ที่ทางเข้าหนึ่ง แต่อีกทางเข้าหนึ่งยังเปิดอยู่"
+
+              1. M1 กันไว้ที่ชิป แต่ปุ่มถังขยะท้ายบรรทัดลูกของชุดโปรยังลบของออกจาก
+                 ชุดเดี่ยว ๆ ได้ แล้วติ๊กชิปกลับได้ราคาซ้อน 9,300 เหมือนเดิม
+                 removeJobPart ไม่ลบบรรทัดลูกที่หัวชุดยังอยู่ในใบแล้ว
+
+              2. ธง brandPriceIsForeign (v4.2.10) กับปุ่ม "ใช้ราคานี้" (M5) กันได้แค่
+                 การกดครั้งนั้น แก้จำนวนหรือเปลี่ยนหน่วยต่อ เลขของรีบิ้วก็ถูกจำเป็น
+                 ราคา OEM อยู่ดี ย้ายธงไปติดกับบรรทัด (row.priceForeign) และกันที่
+                 rememberJobPartPrice จุดเดียว ล้างเมื่อช่างคีย์ราคาเองหรือเลือก
+                 แบรนด์ใหม่ บรรทัดที่ติดธงมีป้ายบอกใต้ช่องราคา
+
+              3. ด่าน config/main (v4.2.11) เป็นแบบทั้งก้อนหรือไม่ส่งเลย พอมีคีย์
+                 ต้องห้ามค้างในเครื่องพนักงาน การแก้รายชื่อช่างก็ไม่ขึ้นไปด้วยทั้งรอบ
+                 ตอนนี้ส่งเฉพาะ technicians ด้วย merge ซึ่งผ่านกฎ hasOnly พอดี
+
+              4. คีย์ราคาโดยไม่เลือกแบรนด์ = บันทึกไม่ขึ้นทั้งเครื่องจนกว่าจะรีโหลด
+                 v4.2.8 เก็บช่อง "ไม่ระบุแบรนด์" ไว้ใต้คีย์สตริงว่าง ซึ่ง Firestore
+                 ไม่รับ batch.set โยน error ทันที flushState หยุดกลางทางโดยไม่มี
+                 toast หรือกล่องเตือน (ยืนยันกับ SDK 10.12.2 บนเว็บจริง) ใช้คีย์ '-'
+                 แทน และ cleanForFirestore ตัดชื่อช่องที่ Firestore ไม่รับทิ้งอีกชั้น
+
+              5. ราคาของรถที่ยังไม่มีรุ่นในระบบแยกตามรุ่นรถ แต่ไม่แยกแบรนด์ เลือก
+                 OEM แล้วได้ราคารีบิ้วของรุ่นนั้นมาเติมเอง และคีย์ OEM ทับราคารีบิ้วหาย
+                 เพิ่ม lastPriceByModelBrand[รุ่น][แบรนด์] ที่รายการกลาง
+
+              tests\guard.js (node ล้วน ไม่ต้องมีเบราว์เซอร์) 59/59 ที่นี่ · 43/59 บน
+              v4.3.2 โดย 16 ข้อที่ตกคือห้าเรื่องข้างบน ข้อที่เหลือ 43 ข้อคือของที่
+              แก้ไปตั้งแต่ v4.2.8 ถึง v4.3.2 ซึ่งยังอยู่ครบ -->
 
 
 
@@ -7140,7 +7223,14 @@ function partLastPrice(part){
    ปัญหาตัวเดียวกับที่ v3.40.0 เจอกับ "รุ่นรถ" แล้วแก้ด้วย lastPriceByModel —
    ที่นี่ใช้รูปเดียวกัน: lastPriceByBrand ช่องละแบรนด์ ส่วน lastPrice เดิมยังอยู่
    ในฐานะ "อันล่าสุดสุด ไม่สนแบรนด์" สำหรับตอนที่ยังไม่ได้เลือกแบรนด์ */
-function brandKeyOf(brand){ return mmNorm(brand || ''); }   // '' = ไม่ระบุแบรนด์ ก็มีช่องของตัวเอง
+/* v4.3.3 — ช่อง "ไม่ระบุแบรนด์" เคยใช้คีย์เป็นสตริงว่าง '' ซึ่ง Firestore ไม่รับ
+   batch.set โยน "Document fields must not be empty" ออกมาทันทีตรงนั้น (ไม่ใช่ตอน
+   commit) flushState จึงหยุดกลางทาง ไม่มี commit ไม่มี toast ไม่มีกล่องเตือน
+   และรุ่นรถตัวนั้นยังค้างอยู่ในเครื่อง ทุกรอบบันทึกถัดไปจึงตายที่เดิมจนกว่าจะรีโหลด
+   ทางเข้าคือสิ่งที่ทำกันทั้งวัน: คีย์ราคาโดยยังไม่เลือกแบรนด์ (ยืนยันกับ SDK
+   10.12.2 ตัวจริงแล้ว) ช่องไม่ระบุแบรนด์จึงใช้คีย์ '-' แทน */
+const NO_BRAND_KEY = '-';
+function brandKeyOf(brand){ return mmNorm(brand || '') || NO_BRAND_KEY; }
 function partBrandPrices(part){
   const book = (part && part.lastPriceByBrand) || {};
   return Object.keys(book)
@@ -7160,6 +7250,10 @@ function rememberJobPartPrice(job, row, opts){
   if(row.promoId) return '';
   // v3.44.0 — บรรทัดที่ชื่อตรงกับชุดโปร ก็คือชุดโปร ถึงจะไม่ได้ผูก promoId ก็ตาม
   if(isPromoNamedRow(row)) return '';
+  /* v4.3.3 — เลขบนบรรทัดนี้ยังเป็นราคาของแบรนด์อื่น (ดู onJobPartFieldChange)
+     กันที่นี่เพราะเป็นจุดเดียวที่ทุกเส้นทางจำราคาเรียกผ่าน: แก้จำนวน เปลี่ยนหน่วย
+     ปุ่ม "ใช้ราคานี้" และการเรียนรู้ย้อนหลังจากใบเก่า */
+  if(row.priceForeign) return '';
   const price = parseMoney(row.price);
   if(!price) return '';
   const name = String(row.partName || '').trim();
@@ -7223,6 +7317,17 @@ function rememberJobPartPrice(job, row, opts){
      ราคาแร็ค ALPHARD ที่จำไว้ก่อนหน้าถูกทับหายทันที รถคันที่สามมาก็ไม่เหลืออะไร
      ปัญหาเดียวกับที่ v3.38.0 ตั้งใจเลี่ยงไว้ตั้งแต่ต้น แค่ย้ายที่เกิด */
   mp.lastPriceByModel = mp.lastPriceByModel || {};
+  /* v4.3.3 — แยก "รุ่นรถ x แบรนด์" ให้รถที่ยังไม่มีรุ่นในระบบด้วย
+     lastPriceByModel มีช่องเดียวต่อรุ่น คีย์ OEM 14,500 ให้ ALTIS ราคารีบิ้ว 9,500
+     ของ ALTIS ก็หาย และคันที่เลือก OEM ได้เลขรีบิ้วมาเติมให้เอง เรื่องเดียวกับที่
+     v4.2.8 แก้ให้รุ่นที่อยู่ในระบบ เขียนช่องของแบรนด์ก่อน early-return เช่นกัน */
+  if(stamp.forModel){
+    mp.lastPriceByModelBrand = mp.lastPriceByModelBrand || {};
+    const bb = mp.lastPriceByModelBrand[stamp.forModel]
+            || (mp.lastPriceByModelBrand[stamp.forModel] = {});
+    const bk = brandKeyOf(stamp.brand);
+    if(!tooOld(bb[bk])) bb[bk] = stamp;
+  }
   if(tooOld(mp.lastPriceByModel[stamp.forModel])) return 'skip';
   if(stamp.forModel) mp.lastPriceByModel[stamp.forModel] = stamp;
   if(!tooOld(mp.lastPrice)) mp.lastPrice = stamp;   // อันล่าสุดสุด ไว้เสนอข้ามรุ่น
@@ -7458,6 +7563,20 @@ function recallPartPrice(job, name, variant, wantBrand){
     const tag  = jobVehicleTag(job);
     const book = mp.lastPriceByModel || {};
     const mine = tag ? book[tag] : null;
+    /* v4.3.3 — เลือกแบรนด์ไว้แล้ว ต้องได้ราคาของ "รุ่นนี้ แบรนด์นี้" เท่านั้น
+       ไม่มีก็เสนอของแบรนด์อื่นได้ แต่ห้ามเติมให้เอง (กติกาเดียวกับรุ่นในระบบ) */
+    if(wantBrand && tag){
+      const own = ((mp.lastPriceByModelBrand || {})[tag] || {})[brandKeyOf(wantBrand)];
+      const hit = (own && own.price) ? own
+                : (mine && mine.price && mmNorm(mine.brand) === mmNorm(wantBrand)) ? mine : null;
+      if(hit)
+        return { price: hit.price, brand: hit.brand || '', qty: hit.qty || '',
+                 unit: hit.unit || '', same: true, from: hit.forModel || '', at: hit.at || '' };
+      if(mine && mine.price)
+        return { price: mine.price, brand: mine.brand || '', qty: mine.qty || '',
+                 unit: mine.unit || '', same: false, otherBrand: true,
+                 from: mine.forModel || '', at: mine.at || '' };
+    }
     if(mine && mine.price)
       return { price: mine.price, brand: mine.brand || '', qty: mine.qty || '',
                unit: mine.unit || '', same: true, from: mine.forModel || '', at: mine.at || '' };
@@ -7486,8 +7605,15 @@ function priceHintHtml(job, row){
   if(!h.same && h.from) bits.push(escapeHtml(h.from));
   if(h.brand) bits.push(escapeHtml(h.brand));
   if(h.at)    bits.push(fmtDateBE(h.at));
+  /* v4.3.2 — ข้อ M5: ป้ายเดิมเขียน "ราคาของรถรุ่นอื่น" กับทุกกรณีที่ same=false
+     ทั้งที่ otherBrand คือ "ราคาของแบรนด์อื่นในรถคันเดียวกัน" ซึ่งคนละเรื่อง
+     ช่างอ่านว่าเป็นรถรุ่นอื่นก็จะไม่ระวังว่ามันเป็นราคาของ รีบิ้ว ที่กำลังจะ
+     ถูกเอาไปใส่ให้ OEM */
+  const tag = h.same ? 'เคยคีย์'
+            : h.otherBrand ? 'ราคาของแบรนด์อื่น'
+            : 'ราคาของรถรุ่นอื่น';
   return `<div class="price-hint${h.same ? '' : ' other-model'}">
-    <span class="ph-txt">${h.same ? 'เคยคีย์' : 'ราคาของรถรุ่นอื่น'} ฿${escapeHtml(fmtMoney(parseMoney(h.price)))}${bits.length ? ' · ' + bits.join(' · ') : ''}</span>
+    <span class="ph-txt">${tag} ฿${escapeHtml(fmtMoney(parseMoney(h.price)))}${bits.length ? ' · ' + bits.join(' · ') : ''}</span>
     <button class="add-brand-btn" onclick="usePriceHint('${job.id}','${row.id}')">ใช้ราคานี้</button>
   </div>`;
 }
@@ -7503,9 +7629,18 @@ function usePriceHint(jobId, rowId){
   if(!row.brand && h.brand) row.brand = h.brand;
   if(!row.qty && h.qty)     row.qty   = h.qty;
   if(h.unit)                row.unit  = h.unit;
-  rememberJobPartPrice(job, row);
+  /* v4.3.2 — ข้อ M5: v4.2.10 ปิดรูทาง onJobPartFieldChange ด้วยธง brandPriceIsForeign
+     แต่ปุ่มนี้เรียก rememberJobPartPrice ตรง ๆ โดยไม่มีธงนั้น กดปุ่มเดียวแล้ว
+     ราคาของแบรนด์อื่นถูกจำเป็นราคาของแบรนด์ที่เลือกลงตำราถาวร
+     ใส่เลขบนใบให้ช่างเห็นและแก้ได้ แต่ไม่จำลงตำรา และเตือนให้ตรวจก่อนออกใบ */
+  if(h.otherBrand){
+    row.priceForeign = true;      // v4.3.3 — ธงติดบรรทัด จนกว่าช่างจะคีย์ราคาเอง
+    flashToast(`ใส่ ฿${fmtMoney(parseMoney(h.price))} แล้ว — เลขนี้เป็นราคาของ ${h.brand || 'แบรนด์อื่น'} ยังไม่จำเป็นราคาของ ${row.brand} ตรวจก่อนออกใบ`);
+  } else {
+    rememberJobPartPrice(job, row);
+    flashToast(`ใส่ราคา ฿${fmtMoney(parseMoney(h.price))} แล้ว`);
+  }
   saveState(true);
-  flashToast(`ใส่ราคา ฿${fmtMoney(parseMoney(h.price))} แล้ว`);
   render();
 }
 
@@ -7578,7 +7713,9 @@ function createModelFromVehicle(jobId){
       model.parts.push({ id: uid(), partName: mp.name,
         category: mp.category || guessPartCategory(mp.name),
         qty: lp.qty || '', unit: lp.unit || 'ชิ้น', variant: '', brands: [],
-        lastPrice: lp });
+        lastPrice: lp,
+        // v4.3.3 — ราคาแยกแบรนด์ของรุ่นนี้ ยกตามเข้ารุ่นใหม่ด้วย
+        lastPriceByBrand: Object.assign({}, (mp.lastPriceByModelBrand || {})[tag] || {}) });
     });
     state.models = state.models || [];
     state.models.push(model);
@@ -9335,9 +9472,17 @@ function boardPayloadFor(job){
     // into, so a customer can see exactly which parts/work they approved, not just a
     // single total. Trimmed to the fields the customer actually needs (name, qty,
     // unit, line price) — brand and internal category stay out of the public payload.
+    /* v4.3.2 — ข้อ M3: ส่งธง inPromo ขึ้นไปด้วย
+       ของเดิมฝั่งลูกค้าเดาจาก "ราคาเป็น 0" ว่าบรรทัดนั้นอยู่ในชุดโปร ซึ่งแยกไม่ออก
+       จาก "ช่างยังไม่ได้ใส่ราคา" ทั้งสองได้เครื่องหมาย — เหมือนกัน แล้วได้ประโยค
+       ว่า "รวมอยู่ในราคาชุดด้านบนแล้ว ไม่ได้คิดเงินเพิ่ม" ทั้งคู่
+       เคสจริง: ใส่ชุดโปร 7,500 แล้วยังไม่ใส่ราคาแร็ค (รอเช็คของ) ลูกค้าเปิดลิงก์
+       ตอนนั้นอ่านว่าแร็คไม่คิดเงินเพิ่ม แล้ววันรับรถถูกเก็บอีก 9,500
+       ใบที่พิมพ์ลงกระดาษไม่มีปัญหานี้เพราะแยกด้วย isPromoChild จริง */
     parts: (job.partsNeeded || [])
       .filter(p => (p.partName || '').trim())
-      .map(p => ({ name: p.partName, qty: parseQty(p.qty), unit: p.unit || 'ชิ้น', price: parseMoney(p.price) })),
+      .map(p => ({ name: p.partName, qty: parseQty(p.qty), unit: p.unit || 'ชิ้น',
+                   price: parsePrice(p.price), inPromo: !!p.promoParent })),
     partsSubtotal: jobPartsTotal(job),
     discountType: job.discountType || 'amount',
     discountValue: Number(job.discountValue) || 0,
@@ -9494,6 +9639,10 @@ function cleanForFirestore(value){
   if(Array.isArray(value)) return value.map(cleanForFirestore);
   const out = {};
   Object.keys(value).forEach(k => {
+    /* v4.3.3 — ชื่อช่องที่ Firestore ไม่รับ (ว่าง หรือ __แบบนี้__) ทำให้ batch.set
+       โยน error ทันทีและ flushState หยุดทั้งรอบ ตัดทิ้งที่ทางออกเดียวนี้
+       ช่องแบบนี้ช่องเดียวต้องไม่ทำให้ใบงานทั้งวันบันทึกไม่ขึ้น */
+    if(k === '' || /^__.*__$/.test(k)) return;
     const v = cleanForFirestore(value[k]);
     if(v !== undefined) out[k] = v;
   });
@@ -10018,7 +10167,28 @@ function flushState(showToast){
       batch.set(db.collection('config').doc('main'), cleanForFirestore(cfg));
       cfgPending = cfgEncoded;      // v4.2.9 — เขียน shadowConfig ตอน commit ผ่านเท่านั้น
       bump();
-    } else if(!cfgBlockedShown){
+    } else {
+      /* v4.3.3 — ด่านของ v4.2.11 เป็นแบบ "ทั้งก้อนหรือไม่ส่งเลย" พอมีคีย์ต้องห้าม
+         ค้างอยู่ในเครื่องพนักงานหนึ่งตัว การแก้รายชื่อช่าง ซึ่งเป็นคีย์ที่กฎให้
+         พนักงานแก้ได้ ก็ไม่ถูกส่งไปด้วยตลอดทั้งรอบการใช้งาน โดยไม่มีอะไรบอก
+         (กล่องเตือนขึ้นครั้งเดียว) ส่งเฉพาะคีย์ที่มีสิทธิ์ด้วย merge ซึ่งผ่าน
+         hasOnly(['technicians']) ของกฎพอดี ต้องมี shadowConfig ก่อนเท่านั้น
+         คือเอกสารมีอยู่จริงบนเซิร์ฟเวอร์ ไม่งั้น merge จะกลายเป็น "สร้าง" ที่ถูกปฏิเสธ */
+      const allowedChanged = changedConfigKeys(cfgEncoded)
+        .filter(k => CONFIG_KEYS_STAFF_MAY_CHANGE.indexOf(k) >= 0);
+      if(allowedChanged.length && shadowConfig){
+        const part = {};
+        let was = null;
+        try { was = JSON.parse(shadowConfig); } catch(e){}
+        if(was){
+          allowedChanged.forEach(k => { part[k] = cfg[k]; was[k] = cfg[k]; });
+          batch.set(db.collection('config').doc('main'), cleanForFirestore(part), { merge:true });
+          cfgPending = JSON.stringify(was);   // สภาพบนเซิร์ฟเวอร์หลัง commit ผ่าน
+          bump();
+        }
+      }
+    }
+    if(!cfgGate.ok && !cfgBlockedShown){
       cfgBlockedShown = true;
       console.warn('config/main blocked for this role:', cfgGate.blocked.join(', '));
       flashToast('การตั้งค่าส่วนนี้ต้องให้ผู้ดูแลระบบแก้');
@@ -13417,7 +13587,19 @@ function onBrandFieldInput(modelId, partId, brandId, field, value){
   const model = getModel(modelId);
   const part = model.parts.find(p => p.id === partId);
   const brand = part.brands.find(b => b.id === brandId);
-  brand[field] = value;
+  /* v4.3.2 — ข้อ M7: ช่องนี้เคยเก็บค่าดิบ ไม่ผ่านตัวแปลงเลข
+     แอปใส่ลูกน้ำคั่นหลักพันให้เองทุกที่ แอดมินจึงพิมพ์ "9,500" ตามที่เห็น
+     แล้ว fmtMoney("9,500") คืน "0.00" (Number("9,500") = NaN -> 0)
+     เล่มตำราราคาที่ปรินต์แจกขึ้น ฿0.00 เป็นแถว ทั้งที่ใบเสนอราคาคิดถูก
+     เพราะใบเสนอราคาอ่านผ่าน parseMoney แต่หน้าตำราอ่านตรง ๆ
+     นี่เป็นช่องราคาช่องเดียวที่เหลือซึ่งไม่กรอง (pbSetPartPrice และ
+     onJobPartFieldChange กรองอยู่แล้ว) */
+  if(field === 'price'){
+    const n = parsePrice(value);
+    brand.price = n ? String(n) : '';
+  } else {
+    brand[field] = value;
+  }
   saveState(false);
 }
 
@@ -15056,11 +15238,28 @@ function onJobPriceEstimateChange(jobId, value){
    ลูกน้ำให้เอง) แล้ว parseFloat("12,500") = 12 — ใบเสนอราคาออกไป 12 บาท
 
    ตอนนี้ทุกที่เรียกตัวนี้ตัวเดียว ลูกน้ำ ช่องว่าง "บาท" ".-" ตัดทิ้งหมด */
+/* v4.3.2 — ข้อ M9: เลขไทยกลายเป็น 0 เงียบ ๆ
+   คนหน้าร้านพิมพ์ด้วยคีย์บอร์ดไทยบางเครื่องได้ ๙๕๐๐ แล้วตัวแปลงเดิมตัดทิ้งหมด
+   เหลือสตริงว่าง -> ราคา 0 โดยไม่มีสัญญาณอะไรเลย แปลงเป็นเลขอาหรับก่อนจึงปลอดภัย */
+const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
+function normalizeDigits(s){
+  return String(s).replace(/[๐-๙]/g, ch => String(THAI_DIGITS.indexOf(ch)));
+}
+
 function parseMoney(v){
   if(typeof v === 'number') return isFinite(v) ? v : 0;
-  const s = String(v == null ? '' : v).replace(/[^0-9.\-]/g, '');
+  const s = normalizeDigits(v == null ? '' : v).replace(/[^0-9.\-]/g, '');
   const n = parseFloat(s);
   return isFinite(n) ? n : 0;
+}
+
+/* v4.3.2 — ข้อ M9: ราคาต่อบรรทัดห้ามติดลบ
+   ช่องราคาเป็นช่องเดียวที่ปล่อย "-" ผ่าน (ช่องส่วนลดตัดทิ้งอยู่แล้ว)
+   ราคา -500 ถูกลบออกจากยอดรวม และถ้ายอดรวมติดลบ jobDiscountAmount คืน 0 เงียบ ๆ
+   ส่วนลดที่ช่างคีย์ไว้หายจากใบโดยไม่มีคำเตือน */
+function parsePrice(v){
+  const n = parseMoney(v);
+  return n > 0 ? n : 0;
 }
 
 /* จำนวนชิ้น — อย่างน้อย 1 เสมอ
@@ -15078,7 +15277,7 @@ function jobPartsTotal(job){
   return (job.partsNeeded || []).reduce((sum, p) => {
     // รายการในชุดโปร คิดเงินรวมไปในราคาชุดแล้ว ไม่นับซ้ำ
     if(p.promoParent) return sum;
-    const price = parseMoney(p.price);
+    const price = parsePrice(p.price);    // v4.3.2 M9 — ราคาติดลบไม่ถูกหักออกจากยอด
     if(!price) return sum;
     return sum + price * parseQty(p.qty);
   }, 0);
@@ -15268,13 +15467,41 @@ function togglePromoOnJob(jobId, promoId){
    ผูกกับหัวชุดด้วย promoParent จึงลบหัวชุดแล้วลูกหายตามทั้งหมด และไม่เคยถูก
    นับเข้ายอดรวมซ้ำ (ราคาว่าง -> parseMoney = 0 อยู่แล้ว แต่กันไว้ที่ jobPartsTotal
    อีกชั้น เผื่อมีใครไปพิมพ์ราคาใส่บรรทัดลูกในอนาคต) */
+/* v4.3.2 — ข้อ M2: จุดเดียวที่กันการคิดเงินโปรซ้ำ
+
+   ทุกเส้นทางที่ใส่ชุดโปร (กดชิปโปร / กดจากชิปอาการ) เรียกฟังก์ชันนี้
+   จึงกันที่นี่ที่เดียว ไม่ใช่ไปกันที่ togglePromoOnJob ซึ่งปิดได้ทางเดียว
+
+   เคสจริง: ช่างติ๊ก "ปีกนก 1,800" ไว้ก่อน แล้วค่อยกด "ชุดโปรช่วงล่าง 7,500"
+   ของเดิม push บรรทัดลูกเข้าไปอีกบรรทัด -> ใบมีปีกนกสองบรรทัด -> ยอด 9,300
+   ลูกค้าจ่ายค่าปีกนกสองรอบ รอบหนึ่งในราคาชุด อีกรอบเป็นบรรทัดเดี่ยว
+
+   แก้: ถ้ามีบรรทัดเดี่ยวชื่อเดียวกันอยู่แล้ว ให้ "ย้ายเข้าชุด" คือผูก
+   promoParent แล้วล้างราคาออก ไม่สร้างบรรทัดที่สอง ของที่ช่างคีย์ไว้
+   ไม่หายจากใบ มันแค่ย้ายไปอยู่ใต้หัวชุดตามความจริงว่าถูกคิดในราคาชุดแล้ว */
 function addPromoChildLines(job, model, promo){
   const ids = promo.itemIds || [];
   if(!ids.length) return 0;
+  job.partsNeeded = job.partsNeeded || [];
   let n = 0;
   ids.forEach(pid => {
     const mp = (model.parts || []).find(x => x.id === pid);
     if(!mp) return;                       // อะไหล่ถูกลบไปแล้ว ข้ามไป ไม่ต้องสร้างบรรทัดเปล่า
+    const sameName = p => p.partName === mp.partName
+                       && (p.variant || '') === (mp.variant || '');
+
+    // ใส่ชุดเดิมซ้ำรอบสอง (เช่น กดชิปอาการหลังกดชิปโปร) — ลูกมีอยู่แล้ว ไม่ต้องทำอะไร
+    if(job.partsNeeded.some(p => p.promoParent === promo.id && sameName(p))) return;
+
+    // มีบรรทัดเดี่ยวอยู่แล้ว -> ย้ายเข้าชุด ไม่เพิ่มบรรทัดที่สอง
+    const plain = job.partsNeeded.find(p => !p.promoId && !p.promoParent && sameName(p));
+    if(plain){
+      plain.promoParent = promo.id;
+      plain.price = '';                   // ราคาอยู่ที่หัวชุดแล้ว บรรทัดลูกต้องไม่คิดเงินซ้ำ
+      n++;
+      return;
+    }
+
     job.partsNeeded.push({
       id: uid(), partName: mp.partName, variant: mp.variant || '',
       qty: mp.qty || '1', unit: mp.unit || 'ชิ้น',
@@ -15286,6 +15513,22 @@ function addPromoChildLines(job, model, promo){
   return n;
 }
 
+/* v4.3.2 — ข้อ M4: ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา
+
+   ของเดิมเอาราคาจาก partPriceOf() แต่เอาแบรนด์จาก lastPrice.brand แล้วถ้าว่าง
+   ก็ตกไปใช้ brands[0].brand ซึ่งเป็น "คนละที่" กับราคา ผลคือ ช่างคีย์ราคารีบิ้ว
+   9,500 โดยไม่เลือกแบรนด์ -> lastPrice.brand ว่าง -> คันถัดไปติ๊กชิปได้
+   "OEM ราคา 9,500" คือราคารีบิ้วที่ติดป้าย OEM และถ้าช่างแก้ qty ต่อ
+   ระบบจะเขียน lastPriceByBrand['OEM'] = 9500 ลงตำราถาวร
+   ซึ่งเป็นสิ่งที่คอมเมนต์ของ v4.2.8 เขียนไว้เองว่าห้ามเกิด */
+function partPriceAndBrand(mp){
+  const lp = mp && mp.lastPrice;
+  if(lp && lp.price) return { price: lp.price, brand: lp.brand || '' };
+  const b = ((mp && mp.brands) || []).find(x => x.price);
+  if(b) return { price: b.price, brand: b.brand || '' };
+  return { price: '', brand: '' };
+}
+
 function isPromoChild(p){ return !!(p && p.promoParent); }
 
 function toggleJobPartFromModel(jobId, modelPartId){
@@ -15295,20 +15538,34 @@ function toggleJobPartFromModel(jobId, modelPartId){
   // which uses synthetic "master-<id>" keys (see jobPickableParts).
   const mp = jobPickableParts(job).items.find(p => p.id === modelPartId);
   if(!mp) return;
-  const existingIdx = job.partsNeeded.findIndex(p => p.partName === mp.partName && (p.variant||'') === (mp.variant||''));
-  if(existingIdx > -1){
-    job.partsNeeded.splice(existingIdx, 1);
+  job.partsNeeded = job.partsNeeded || [];
+  const sameName = p => p.partName === mp.partName && (p.variant || '') === (mp.variant || '');
+
+  /* v4.3.2 — ข้อ M1: ชิปของอะไหล่ที่อยู่ในชุดโปรขึ้นเป็น "ติ๊กแล้ว" อยู่แล้ว
+     (ถูกต้อง เพราะมันอยู่ในใบจริง) แต่ของเดิม findIndex ไม่เช็ก promoParent
+     ช่างกดเพื่อดูราคา = splice ลบบรรทัดลูกออกจากชุด ชุดยังคิด 7,500 แต่ในใบ
+     ไม่มีปีกนกแล้ว แล้วพอเห็นชิปดับก็กดกลับ = ได้บรรทัดเดี่ยว 1,800 ซ้อนเข้ามา
+     ของในชุดเอาออกเดี่ยว ๆ ไม่ได้ ต้องเอาชุดออกทั้งชุด จึงบอกไปตรง ๆ */
+  const inPromo = job.partsNeeded.find(p => p.promoParent && sameName(p));
+  const plain   = job.partsNeeded.find(p => !p.promoId && !p.promoParent && sameName(p));
+  if(inPromo && !plain){
+    const label = mp.variant ? `${mp.partName} (${mp.variant})` : mp.partName;
+    flashToast(`"${label}" รวมอยู่ในชุดโปรแล้ว ถ้าจะเอาออกให้กดเอาชุดโปรออก`);
+    return;
+  }
+
+  if(plain){
+    job.partsNeeded = job.partsNeeded.filter(p => p !== plain);
   } else {
-    /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา (partPriceOf จัดลำดับให้)
-       แบรนด์ก็เอาของครั้งล่าสุดมาด้วย ช่างจะได้ไม่ต้องเลือกแบรนด์ซ้ำทุกคัน
+    /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา
+       v4.3.2 — ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ดู partPriceAndBrand
        ทั้งสองทางที่เพิ่มอะไหล่จากรุ่น (ติ๊กทีละตัว / เพิ่มทั้งหมด) ใช้กติกาเดียวกัน */
-    const lp = mp.lastPrice;
-    const firstPriced = (mp.brands || []).find(b => b.price);
+    const pb = partPriceAndBrand(mp);
     job.partsNeeded.push({
       id: uid(), partName: mp.partName, variant: mp.variant || '',
       qty: mp.qty || '', unit: mp.unit || 'ชิ้น',
-      brand: (lp && lp.price && lp.brand) ? lp.brand : (firstPriced ? (firstPriced.brand || '') : ''),
-      price: partPriceOf(mp),
+      brand: pb.brand,
+      price: pb.price,
       note: ''
     });
   }
@@ -15450,7 +15707,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   /* v3.23.0 — ช่องเงินกับช่องจำนวนถูกทำให้เป็นตัวเลขตั้งแต่ตอนคีย์
      เดิมเก็บสตริงดิบ ๆ แล้วให้แต่ละหน้าจอไปแปลเอาเอง ซึ่งแปลไม่ตรงกัน
      เก็บเป็นตัวเลขตรงนี้ที่เดียว ทุกหน้าจอจึงได้เลขเดียวกันโดยอัตโนมัติ */
-  if(field === 'price')      row.price = parseMoney(value);
+  if(field === 'price')      row.price = parsePrice(value);   // v4.3.2 M9 — ติดลบไม่ได้
   else if(field === 'qty')   row.qty   = parseQty(value);
   else                       row[field] = value;
   /* v3.40.0 — พิมพ์ชื่อรายการเอง (หรือเปลี่ยนแบรนด์/รุ่นย่อย) แล้วช่องราคายังว่าง
@@ -15467,6 +15724,12 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
      ถ้าไม่กันตรงนี้: ติ๊กชิปได้ราคารีบิ้ว 9,500 มา แล้วสลับเป็น OEM ที่ยังไม่มีราคา
      ตัวเลข 9,500 จะถูกจำลงช่อง OEM ทันที คันหน้าที่เลือก OEM ก็ได้ 9,500 แบบเงียบ ๆ
      — กลายเป็นว่า v4.2.8 ที่เขียนมาเพื่อกันเรื่องนี้ ไปสร้างเรื่องเดียวกันเสียเอง */
+  /* v4.3.3 — ธงของ v4.2.10 เป็นตัวแปรในฟังก์ชัน อยู่ได้แค่การกดครั้งเดียว
+     สลับเป็น OEM แล้วแก้ "จำนวน" หรือ "หน่วย" ต่อ ธงหายไปแล้ว เลข 9,500 ของรีบิ้ว
+     จึงถูกจำเป็นราคา OEM อยู่ดี (ปุ่ม "ใช้ราคานี้" ของ M5 ก็รั่วทางเดียวกัน)
+     ย้ายธงไปติดไว้กับบรรทัด: ตั้งตอนเลขบนจอเป็นของแบรนด์อื่น ล้างเมื่อช่างคีย์
+     ราคาเอง หรือเมื่อเลือกแบรนด์ใหม่ (แล้วตัดสินใหม่ข้างล่าง) */
+  if(field === 'price' || field === 'brand') delete row.priceForeign;
   let brandPriceIsForeign = false;
   if(field === 'brand' && row.brand && parseMoney(row.price)){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
@@ -15477,6 +15740,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
       flashToast(`ราคาของ ${row.brand}: ฿${fmtMoney(before)} → ฿${fmtMoney(want)}`);
     } else if(!want){
       brandPriceIsForeign = true;
+      row.priceForeign = true;
       flashToast(`ยังไม่มีราคาของ ${row.brand} — เลขที่เห็นเป็นราคาของแบรนด์อื่น ตรวจก่อนออกใบ`);
     }
   }
@@ -15522,6 +15786,15 @@ function removeJobPart(jobId, partRowId){
   const job = getJob(jobId);
   if(!job) return;
   const row = (job.partsNeeded || []).find(p => p.id === partRowId);
+  /* v4.3.3 — ประตูข้างของข้อ M1: v4.3.2 กันไว้ที่ชิป แต่ปุ่มถังขยะท้ายบรรทัดลูก
+     ยังลบของออกจากชุดเดี่ยว ๆ ได้ ชุดยังคิด 7,500 แต่ในใบไม่มีปีกนก แล้วพอติ๊กชิป
+     กลับก็ได้บรรทัดเดี่ยว 1,800 ซ้อนเข้ามา = 9,300 อาการเดียวกับ M1 ทุกอย่าง
+     บรรทัดลูกที่หัวชุดหายไปแล้ว (ของค้างจากเวอร์ชันเก่า) ยังลบได้ตามปกติ */
+  if(row && row.promoParent
+     && job.partsNeeded.some(p => p.promoId === row.promoParent)){
+    flashToast(`"${row.partName}" รวมอยู่ในชุดโปรแล้ว ถ้าจะเอาออกให้ลบที่บรรทัดชุดโปร`);
+    return;
+  }
   // ลบหัวชุดโปร = รายการในชุดต้องหายตามไปด้วย ไม่งั้นจะเหลือรายการลอย ๆ
   // ที่ไม่มีราคาและไม่มีใครรู้ว่ามาจากไหน
   const promoId = row && row.promoId;
@@ -15553,16 +15826,15 @@ function addAllModelPartsToJob(jobId){
   picker.items.forEach(mp => {
     const exists = job.partsNeeded.some(p => p.partName === mp.partName && (p.variant||'') === (mp.variant||''));
     if(exists) return;
-    /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา (partPriceOf จัดลำดับให้)
-       แบรนด์ก็เอาของครั้งล่าสุดมาด้วย ช่างจะได้ไม่ต้องเลือกแบรนด์ซ้ำทุกคัน
+    /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา
+       v4.3.2 — ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ดู partPriceAndBrand (ข้อ M4)
        ทั้งสองทางที่เพิ่มอะไหล่จากรุ่น (ติ๊กทีละตัว / เพิ่มทั้งหมด) ใช้กติกาเดียวกัน */
-    const lp = mp.lastPrice;
-    const firstPriced = (mp.brands || []).find(b => b.price);
+    const pb = partPriceAndBrand(mp);
     job.partsNeeded.push({
       id: uid(), partName: mp.partName, variant: mp.variant || '',
       qty: mp.qty || '', unit: mp.unit || 'ชิ้น',
-      brand: (lp && lp.price && lp.brand) ? lp.brand : (firstPriced ? (firstPriced.brand || '') : ''),
-      price: partPriceOf(mp),
+      brand: pb.brand,
+      price: pb.price,
       note: ''
     });
     added++;
@@ -16376,7 +16648,7 @@ function renderJobPartsEditor(job){
         </td>
         <td class="center" data-label="ราคา/หน่วย">${inPromo
           ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>`
-          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${priceHintHtml(job, p)}`}</td>
+          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — คีย์ราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')} เพื่อยืนยัน</span></div>` : ''}`}</td>
         <td class="center" data-label="รวม"><strong>${inPromo ? '—' : lineTotal}</strong></td>
         <td class="center"><button class="icon-btn" title="ลบรายการนี้" onclick="removeJobPart('${job.id}','${p.id}')">${icon('trash',13)}</button></td>
       </tr>`;
@@ -18801,6 +19073,7 @@ function cleanPromoNamedLearned(){
     if(mp.lastPriceByModel && Object.keys(mp.lastPriceByModel).length){
       n += Object.keys(mp.lastPriceByModel).length;
       delete mp.lastPriceByModel;
+      delete mp.lastPriceByModelBrand;
       delete mp.lastPrice;
     }
   });
@@ -20037,8 +20310,58 @@ function stuckResultsHtml(){
    elsewhere. Only counts jobs that actually reached ส่งแล้ว: a car still mid-repair
    might have its quote change before it's done, so counting it now would double-count
    or misstate revenue that hasn't actually landed yet. */
+/* ---------------------------------------------------------------------------
+   v4.3.2 — ข้อ M6: สถิติรายได้ "ปีนี้ / รวมสะสม" คิดจากใบงานไม่ครบ
+
+   ตัวฟัง jobs จำกัดไว้ RECENT_JOBS_LIMIT = 600 ใบล่าสุดโดยตั้งใจ (ค่าอ่าน
+   Firestore และหน่วยความจำ) ซึ่งถูกสำหรับการทำงานรายวัน แต่ financeStats
+   วนบน state.jobs ตัวเดียวกัน แล้วหน้าจอเขียนว่า "ส่งมอบแล้วทั้งหมด N คัน ·
+   รายได้รวมสะสม" ที่ 20-30 คัน/วัน 600 ใบ = ประมาณ 3-4 สัปดาห์ ยอดปีนี้จึง
+   ต่ำกว่าความจริงหลายแสนโดยไม่มีอะไรบอก เอาไปเทียบกับ Express แล้วไม่ตรง
+
+   แก้แบบไม่เพิ่มค่าอ่านรายวัน: ไม่แตะตัวฟัง แต่เปิดให้ "ดึงทั้งหมดครั้งเดียว"
+   เมื่อคนเปิดหน้าสถิติเท่านั้น แล้วเก็บไว้ในหน่วยความจำรอบนั้น
+   ถ้ายังไม่ดึง สถิติจะติดธง complete:false ให้หน้าจอบอกตรง ๆ ว่ายังไม่ครบ
+   ของที่ดึงมาใช้สำหรับยอดปี/ยอดรวม/เฉลี่ย/ช่าง/ยี่ห้อ ส่วนวันนี้ สัปดาห์นี้
+   เดือนนี้ อยู่ในหน้าต่าง 600 ใบอยู่แล้วเสมอ
+   --------------------------------------------------------------------------- */
+let statsAllJobs = null;      // ใบงานทั้งหมดจากเซิร์ฟเวอร์ (null = ยังไม่ได้ดึง)
+let statsLoading = false;
+
+function loadAllJobsForStats(){
+  if(statsAllJobs || statsLoading || !db) return Promise.resolve(statsAllJobs);
+  statsLoading = true;
+  safeRender();
+  return db.collection('jobs').get()
+    .then(snap => {
+      const rows = [];
+      snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
+      statsAllJobs = rows;
+      statsLoading = false;
+      safeRender();
+      return rows;
+    })
+    .catch(err => {
+      console.error('stats all jobs', err);
+      statsLoading = false;
+      flashToast('ดึงยอดทั้งหมดไม่สำเร็จ — ตัวเลขที่เห็นยังเป็นเฉพาะช่วงล่าสุด');
+      safeRender();
+      return null;
+    });
+}
+
+/* ใบงานที่ส่งมอบแล้ว ใช้ของที่ดึงครบถ้ามี ไม่งั้นใช้หน้าต่าง 600 ใบ */
+function statsDeliveredJobs(){
+  if(!statsAllJobs) return { jobs: deliveredJobs(), complete: false };
+  const jobs = statsAllJobs
+    .filter(j => !j.deletedAt && j.status === 'delivered')
+    .sort((a, b) => String(deliveredAtOf(b)).localeCompare(String(deliveredAtOf(a))));
+  return { jobs: jobs, complete: true };
+}
+
 function financeStats(){
-  const jobs = deliveredJobs();
+  const src = statsDeliveredJobs();
+  const jobs = src.jobs;
   const today = todayKey();
   const monthKey = today.slice(0, 7);
   const yearKey = today.slice(0, 4);
@@ -20048,7 +20371,11 @@ function financeStats(){
     todayRev:0, weekRev:0, monthRev:0, yearRev:0, allRev:0,
     todayCount:0, weekCount:0, monthCount:0, yearCount:0,
     totalCount: jobs.length,
-    byDay:{}, byTech:{}, byBrand:{}
+    byDay:{}, byTech:{}, byBrand:{},
+    // v4.3.2 — complete:false แปลว่าตัวเลขนี้คิดจากหน้าต่าง 600 ใบล่าสุดเท่านั้น
+    complete: src.complete,
+    loading: statsLoading,
+    windowLimit: RECENT_JOBS_LIMIT
   };
 
   jobs.forEach(job => {
@@ -20430,6 +20757,21 @@ function renderFinanceTab(){
     <button class="btn secondary small no-print" style="margin-left:auto;" onclick="doPrint()">${icon('printer',13)} พิมพ์</button>
   </div>`;
 
+  /* v4.3.2 — ข้อ M6: บอกตรง ๆ ว่าตัวเลขที่เห็นคิดจากกี่ใบ
+     ตัวฟังโหลดแค่ 600 ใบล่าสุด ยอด "ปีนี้" กับ "รวมสะสม" จึงต่ำกว่าความจริง
+     ถ้ายังไม่ได้ดึงทั้งหมด ให้ปุ่มกดดึง ไม่ดึงเองอัตโนมัติเพราะมีค่าอ่าน */
+  if(!stats.complete){
+    html += `<div class="card" style="border-color:var(--accent);">
+      <p class="muted" style="margin:0 0 8px;">
+        ตัวเลขข้างล่างคิดจากใบงาน <b>${stats.windowLimit}</b> ใบล่าสุดที่โหลดมา ไม่ใช่ทั้งหมด —
+        ยอด <b>ปีนี้</b> และ <b>รวมสะสม</b> จะต่ำกว่าความจริง
+      </p>
+      <button class="btn small no-print" onclick="loadAllJobsForStats()" ${stats.loading ? 'disabled' : ''}>
+        ${stats.loading ? 'กำลังรวมยอดทั้งหมด…' : 'รวมยอดทั้งหมดจากเซิร์ฟเวอร์'}
+      </button>
+    </div>`;
+  }
+
   html += `<div class="fin-cards">
     <div class="fin-card"><div class="fin-card-label">วันนี้</div><div class="fin-card-val">${fmtMoney(stats.todayRev)}</div><div class="fin-card-sub">${stats.todayCount} คัน</div></div>
     <div class="fin-card"><div class="fin-card-label">7 วันล่าสุด</div><div class="fin-card-val">${fmtMoney(stats.weekRev)}</div><div class="fin-card-sub">${stats.weekCount} คัน</div></div>
@@ -20478,7 +20820,7 @@ function renderFinanceTab(){
   </div>`;
 
   html += `<div class="card">
-    <h3>ภาพรวมสะสมทั้งหมด</h3>
+    <h3>ภาพรวมสะสม${stats.complete ? 'ทั้งหมด' : ' (เฉพาะช่วงที่โหลดมา)'}</h3>
     <p>งานที่ส่งมอบแล้วทั้งหมด <b>${stats.totalCount}</b> คัน &nbsp;·&nbsp; รายได้รวมสะสม <b>${fmtMoney(stats.allRev)}</b> บาท &nbsp;·&nbsp; เฉลี่ย <b>${fmtMoney(stats.avgJobValue)}</b> บาท/คัน</p>
   </div>`;
 
@@ -21206,6 +21548,19 @@ function fmtMoney(n){
   return num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/* v4.3.2 — ข้อ M8: ตัวจัดรูปเงินตัวเดียวที่ทุกหน้าใช้ร่วมกัน
+
+   ของเดิมมีสองสูตร: ใบที่พิมพ์ลงกระดาษ (ที่ลูกค้าเซ็น) ใช้ทศนิยม 2 ตำแหน่ง
+   ส่วนหน้า ?reception บนมือถือลูกค้า และรายการส่งมอบ/ไม่อนุมัติ ใช้ Math.round
+   ยอด 1,250 ลบส่วนลด 3% = 1,212.50 -> กระดาษพิมพ์ 1,212.50 และตัวอ่านเป็น
+   ตัวหนังสือพูดว่า "ห้าสิบสตางค์" แต่มือถือลูกค้าขึ้น 1,213
+   ลูกค้าถือกระดาษคนละเลขกับที่เห็นบนจอ ซึ่งเป็นเรื่องเงินที่เถียงกันได้
+   (เกิดได้อีกทางจาก pairUnitPriceShift หารคู่เป็นชิ้นของราคาเลขคี่)
+
+   เลือกให้ทุกที่ตรงกับ "ใบที่ลูกค้าเซ็น" เพราะใบนั้นคือเอกสารจริง
+   ผลข้างเคียงที่เห็นได้: หน้าลูกค้าขึ้นทศนิยมสองตำแหน่งแล้ว เช่น 1,250.00 */
+function fmtBaht(n){ return fmtMoney(n); }
+
 function renderPreviewPage(model){
   const s = state.shop;
   let html = `<div class="preview-page">
@@ -21867,7 +22222,7 @@ function receptionResultHtml(r){
   const carLine = [r.brand, r.model].filter(Boolean).join(' ') || 'ไม่ระบุรุ่น';
   const est = etaState(r.estMins, r.workStart, r.workEnd);
   const hasParts = r.parts && r.parts.length > 0;
-  const money = n => Math.round(Number(n) || 0).toLocaleString('th-TH');
+  const money = n => fmtBaht(n);   // v4.3.2 M8 — ตรงกับใบที่ลูกค้าเซ็น ไม่ปัดเศษทิ้ง
   const waitLabel = (r.status === 'received' || r.status === 'inspecting')
     ? 'ช่างกำลังตรวจเช็ค เมื่อประเมินเสร็จจะแจ้งราคาให้ทราบ'
     : 'อยู่ระหว่างจัดทำ';
@@ -21995,7 +22350,7 @@ function receptionQuoteSheetHtml(r){
   // A part entered as a set ("แท่นเครื่อง 3 ตัว ราคา 6,500") is stored per unit, so the
   // division leaves 2166.666 behind and the default toLocaleString happily printed
   // "6,499.998" back at the customer. Money on a customer document is whole baht.
-  const money = n => Math.round(Number(n) || 0).toLocaleString('th-TH');
+  const money = n => fmtBaht(n);   // v4.3.2 M8 — ตรงกับใบที่ลูกค้าเซ็น ไม่ปัดเศษทิ้ง
   const contact = r.shopLine ? 'Line: ' + r.shopLine : '';
   /* v3.27.0 — ใบนี้เรนเดอร์จากเอกสารบน board ไม่ได้อ่าน state.shop ของร้าน
      จึงมีได้เท่าที่ payload พกมา (ตอนนี้คือ shopPhone เบอร์เดียว) ยังใช้บล็อกเบอร์
@@ -22066,7 +22421,7 @@ function receptionQuoteSheetHtml(r){
                   <td class="rq-c-no mono">${i + 1}</td>
                   <td>${escapeHtml(p.name)}</td>
                   <td class="rq-c-qty mono">${escapeHtml(String(p.qty))} ${escapeHtml(p.unit || '')}</td>
-                  <td class="rq-c-num mono${line > 0 ? '' : ' rq-c-dash'}">${line > 0 ? money(line) : '—'}</td>
+                  <td class="rq-c-num mono${line > 0 ? '' : ' rq-c-dash'}">${line > 0 ? money(line) : (p.inPromo === true ? 'รวมในชุด' : 'รอยืนยัน')}</td>
                 </tr>`;
                 }).join('')}
               </tbody>
@@ -22078,8 +22433,14 @@ function receptionQuoteSheetHtml(r){
             ${discount > 0 ? `<div class="rq-t-row rq-t-disc"><span>ส่วนลด${r.discountType === 'percent' ? ` ${escapeHtml(String(r.discountValue))}%` : ''}</span><span class="mono">-${money(discount)}</span></div>` : ''}
             <div class="rq-t-row rq-t-net"><span>ยอดสุทธิ</span><span class="mono">${money(net)} บาท</span></div>
           </div>
-          ${parts.some(p => !(parseMoney(p.price) * parseQty(p.qty)))
-            ? `<div class="rq-dashnote">เครื่องหมาย — คือรายการที่รวมอยู่ในราคาชุดด้านบนแล้ว ไม่ได้คิดเงินเพิ่ม</div>` : ''}
+          ${/* v4.3.2 — ข้อ M3: เดิมประโยคนี้ขึ้นกับทุกบรรทัดที่ราคาเป็น 0 ซึ่งรวมบรรทัด
+                ที่ช่างยังไม่ได้ใส่ราคาเข้าไปด้วย ลูกค้าจึงอ่านว่าของชิ้นนั้นไม่คิดเงิน
+                แล้ววันรับรถถูกเก็บจริง แยกสองกรณีออกจากกันด้วยธง inPromo จาก board
+                (บรรทัดที่ board เก่ายังไม่มีธง จะถูกนับเป็น "รอยืนยัน" ซึ่งปลอดภัยกว่า) */''}
+          ${parts.some(p => p.inPromo === true && !(parseMoney(p.price) * parseQty(p.qty)))
+            ? `<div class="rq-dashnote">"รวมในชุด" คือรายการที่รวมอยู่ในราคาชุดด้านบนแล้ว ไม่ได้คิดเงินเพิ่ม</div>` : ''}
+          ${parts.some(p => p.inPromo !== true && !(parseMoney(p.price) * parseQty(p.qty)))
+            ? `<div class="rq-dashnote">"รอยืนยัน" คือรายการที่ทางอู่ยังไม่ได้ใส่ราคา (เช่น รออะไหล่เข้า) <b>ยังไม่รวมอยู่ในยอดด้านบน</b> ทางอู่จะแจ้งราคาให้ทราบก่อนทำ</div>` : ''}
         </div>
 
         ${rqCallBox}
