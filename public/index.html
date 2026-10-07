@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.3.3";
+  const APP_VERSION = "4.3.5";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2265,7 +2265,102 @@
 
               tests\guard.js (node ล้วน ไม่ต้องมีเบราว์เซอร์) 59/59 ที่นี่ · 43/59 บน
               v4.3.2 โดย 16 ข้อที่ตกคือห้าเรื่องข้างบน ข้อที่เหลือ 43 ข้อคือของที่
-              แก้ไปตั้งแต่ v4.2.8 ถึง v4.3.2 ซึ่งยังอยู่ครบ -->
+              แก้ไปตั้งแต่ v4.2.8 ถึง v4.3.2 ซึ่งยังอยู่ครบ
+
+     v4.3.4 — คิว วันเวลา และสถานะงาน 10 ข้อ (Q1-Q4, Q6-Q11 จากผลตรวจ 6 ต.ค. 2569)
+              Q5 ไม่อยู่ในรอบนี้ตามที่เจ้าของสั่ง
+
+              Q1 กดล้างฟอร์มรับรถแล้วเลขคิวหายถาวร — releaseQueueNo() คืนเลขแล้ว
+                 resetCheckin() ล้างเป็น '' แต่ไม่มีใครจองใหม่ให้ เพราะตัวจองถูกเรียก
+                 จาก goTab('checkin') จุดเดียว คนกดล้างฟอร์มยังยืนหน้าเดิม ไม่ได้ goTab
+                 ช่างจึงกรอกรถคันใหม่ด้วยช่องคิวว่างแล้วบันทึกผ่านไปจริง
+                 (ต้นเรื่องของ "คิวที่ 9-10 หายไปไหน แต่ช่างคีย์ไปแล้ว")
+                 ที่ถูกคือไม่ต้องคืนเลขเลย เลขที่จองไว้ยังเป็นของเครื่องนี้ ถือใช้ต่อ
+
+              Q2 คำเตือน "คิวซ้ำ" อยู่ในสายวาดจอ (renderCheckin) ไม่ได้อยู่ในข้อมูล
+                 submitCheckin() จึงมองไม่เห็น ช่างกดบันทึกทับคิวที่ใช้แล้วได้ปกติ
+                 ย้ายมาตั้งธงตอนพิมพ์ แล้วให้ checkinErrors() คิดใหม่เองอีกชั้น
+                 เลขคิวว่าง/ซ้ำ = ด่านบังคับ ไม่ใช่คำเตือนสีเหลือง
+
+              Q3 ตัวกรองวันค้างอยู่วันเก่าเมื่อข้ามเที่ยงคืน view.dayFilter ถูกตั้งเป็น
+                 วันนี้ครั้งเดียวตอน render รอบแรก เครื่องหน้าร้านที่เปิดค้างทั้งคืน
+                 เช้ามายังกรองด้วยวันเมื่อวาน รถที่รับเช้านี้ไม่ขึ้นบนจอเลย — อาการ
+                 ที่คนเห็นคือ "ลงข้อมูลแล้วหาย" ทั้งที่ข้อมูลอยู่ครบในฐาน
+                 rollDayFilterIfStale() + startDayRollWatch() (นาฬิกานาทีละครั้ง +
+                 visibilitychange) และ dayFilterPinned กันการแย่งวันที่คนเลือกเอง
+
+              Q4 หน้าให้คะแนนจับคู่ผิดคัน เลขคิวรีเซ็ตทุกคืน "คิว 6" จึงมีได้ทุกวัน
+                 ของเดิมหยิบ matched[0] = ลำดับที่ Firestore ส่งมา ลูกค้าประจำไปให้
+                 คะแนนใบของเดือนก่อน pickFeedbackCar() เลือกใบที่ยังอยู่ในอู่ก่อน
+                 แล้วเอาใบใหม่สุด แต่ถ้ามีใบเดียวและเป็นใบเก่า ยังเลือกได้
+
+              Q6 ensureJobFields ไม่เติม statusHistory / complaints / createdAt
+                 statusHistory ขาด = setJobStatus() โยน TypeError จอค้าง
+                 createdAt ขาด = listener หลัก orderBy('createdAt') ตัดเอกสารนั้น
+                 ออกจากผลลัพธ์ทั้งใบ ใบงาน "หาย" จากจอถาวรและกู้จากในแอปไม่ได้
+
+              Q7 นาฬิกาเครื่องเพี้ยนทำให้ตัวนับคิวรีเซ็ตกลางวัน ของเดิมถ้าวันของตัวนับ
+                 ไม่ตรงกับเครื่อง = เริ่มนับหนึ่งใหม่ แท็บเล็ตที่เวลาเพี้ยนย้อนหลังเห็น
+                 ตัวนับของ "พรุ่งนี้" แล้วรีเซ็ตเป็น 0 ออกเลข 1 ซ้ำคันที่รับไปแล้ว
+                 แล้วเขียน day ของตัวเองทับ เครื่องอื่นนับหนึ่งใหม่ตามไปทั้งอู่
+                 นี่คือทางที่สองของเลขคิวชน และ transaction กันไม่ได้เพราะมันกันการ
+                 แทรกกลางคัน ไม่ได้กันการตัดสินใจที่ผิดตั้งแต่ต้น
+                 queueDayForCounter(): ตัวนับที่ลงวันล่วงหน้ากว่าเครื่อง = เชื่อตัวนับ
+                 + เก็บ serverTimestamp ไว้ตามรอยว่านาฬิกาเครื่องไหนเพี้ยน
+
+              Q8 กดนัดวันมาทำแล้วรถไม่ลงจากแท่นยก ตรรกะนี้เป็น closure ใน
+                 decideScheduled() ที่ตั้ง status เองตรง ๆ ไม่เรียก freeBayIfLeaving()
+                 ซึ่งเป็นทางเดียวที่ปล่อยแท่น เส้นทางอื่นเดินผ่าน setJobStatus() หมด
+                 แท่นจึงแสดงว่าไม่ว่างทั้งที่ลูกค้าขับกลับบ้านไปแล้ว
+                 ยกออกมาเป็น applyScheduledDate() ให้ทดสอบและเรียกซ้ำได้
+
+              Q9 จอลูกค้าเลือกเจ้าของแท่นผิด เดิม "คันแรกที่เจอใน boardRows" ชนะ
+                 ซึ่งลำดับมาจาก Firestore ไม่สัมพันธ์กับความจริง ส่ง bayAt ขึ้น board
+                 แล้ว bayOwnerFromRows() เลือกคันที่ขึ้นแท่นทีหลัง
+
+              Q10 ป้ายคิวบนกระดานค้างเป็นของเมื่อวาน queueLabel ถูกคิดฝั่งแอปตอนเขียน
+                 board แล้วเก็บเป็นข้อความสำเร็จรูป รถค้างข้ามคืนไม่มีใครเขียนใหม่ให้
+                 จอทีวีที่เปิดค้างจึงโชว์ "คิว 5" ของเมื่อวาน ปนกับคิว 5 ของวันนี้
+                 queueLabelFromRow() ให้ฝั่งจอคิดใหม่เองจาก createdAt ที่ส่งไปอยู่แล้ว
+                 แก้ที่ฝั่งอ่าน ไม่ต้องยิง write เพิ่มวันละหลายร้อยครั้ง
+
+              Q11 "ค้างกี่วัน" นับเป็นช่วง 24 ชม. รับรถจันทร์ 17:00 เช้าพุธได้ 1 วัน
+                 ทั้งที่ค้างมาสองคืน STUCK_WARN_DAYS = 2 จึงเตือนช้าเกือบวันทุกใบ
+                 เปลี่ยนเป็นเทียบวันปฏิทิน + techOpenJobCount() ให้เห็นว่าช่างถืองาน
+                 กี่ใบก่อนมอบหมาย + technicianFilterNames() รวมชื่อช่างที่ถูกลบออกจาก
+                 รายชื่อแต่ยังมีงานค้าง ไม่งั้นกรองหางานของเขาไม่ได้เลย
+
+              tests\qguard.js 39/39 ที่นี่ · 6/39 บน v4.3.3 (พิสูจน์ว่าเทสต์มีฟันจริง)
+              tests\guard.js ยัง 59/59 ทั้งสองไฟล์ ไม่มีของเก่าพัง
+              แก้ harness ด้วย: runTransaction เคยเป็น no-op ไม่เคยรันตัว fn เลย
+              เทสต์อะไรที่พึ่ง reserveQueueNo จึงผ่านแบบไม่มีฟัน
+     v4.3.5 — บั๊กที่อยู่ในตัวแก้ของ v4.3.3 และ v4.3.4 เอง 5 ข้อ (ตรวจย้อน 7 ต.ค. 2569)
+
+              1. Q7 เชื่อตัวนับคิวทุกครั้งที่ลงวันล่วงหน้ากว่าเครื่อง เครื่องเดียวที่นาฬิกา
+                 เร็ว (หรือตั้งปีผิด) เขียนวันนั้นลงตัวนับ แล้วทั้งอู่เชื่อตามจนกว่าจะถึง
+                 วันนั้นจริง ตัวนับไม่รีเซ็ตเที่ยงคืน และออกเลขซ้ำคันที่รับไปแล้วเพราะ
+                 พื้นจากใบงานวันนี้ถูกทิ้ง ตอนนี้เชื่อต่อเมื่อ atServer ยืนยันว่าวันนั้น
+                 มาถึงแล้วจริง (queueDayForCounter + stampToDate)
+
+              2. Q10 queueLabelFromRow ถูกเขียนไว้แต่ไม่มีจุดไหนเรียก หน้าค้นรถของ
+                 ลูกค้ายังอ่านป้ายคิวที่ค้างเป็นของเมื่อวาน ต่อเข้าจริงแล้ว 2 จุดผ่าน
+                 boardQueueParts (ผลค้นรถ + ใบเสนอราคาบนมือถือ) จอกระดานทีวีไม่ต้องแก้
+                 เพราะแสดงรถแยกตามวันที่รับอยู่แล้ว เลขคิวบนจอไม่ปนข้ามวัน
+
+              3. ธง priceForeign ของ v4.3.3 ไม่มีทางยืนยันเลขเดิม พิมพ์เลขเดิมซ้ำแล้ว
+                 input ไม่ยิง onchange ธงจึงไม่หลุดและราคาที่ถูกไม่ถูกจำ เพิ่มปุ่ม
+                 "ราคานี้ถูกแล้ว" (confirmForeignPrice)
+
+              4. Q3 หมุดตัวกรองวันอยู่ตลอดไป กดย้อนดูเมื่อวานแล้วเปิดเครื่องค้างข้ามคืน
+                 เช้ามายังกรองวันเก่า หมุดอยู่ได้แค่วันที่ปัก (dayFilterPinnedOn)
+
+              5. Q11 techOpenJobCount ไม่ถูกเรียกใช้ ต่อเข้ารายชื่อช่างตอนมอบหมายแล้ว
+                 technicianFilterNames ยังไม่ได้ใช้ และไม่จำเป็น: ตัวกรองช่างในหน้า
+                 รายการงานอ่านชื่อจากใบงานของวันนั้นอยู่แล้ว ไม่ได้อ่านจากรายชื่อ
+
+              tests\rguard.js 24/24 ที่นี่ · 8/24 บน v4.3.4
+              tests\qguard.js: Q7-2 เคยยืนยันพฤติกรรมที่เป็นบั๊กข้อ 1 (ปี 2999 ไม่มี
+              atServer) แก้ให้ใช้ atServer และ seed ตัวนับไม่ผูกกับวันที่ 7 ต.ค. แล้ว -->
 
 
 
@@ -8954,6 +9049,8 @@ var view = {
   usersList:[], usersLoaded:false,
   jobPhotos:null, jobPhotosFor:null,
   dayFilter:null,  // set to today on first render; 'all' shows every day
+  dayFilterPinned:false,  // v4.3.4 Q3 — true = คนเลือกวันเอง ห้ามเลื่อนตามเที่ยงคืน
+  ci_queueClash:null,     // v4.3.4 Q2 — jobNumber ของคันที่ถือเลขคิวนี้อยู่แล้ววันนี้
   ci_partsOpen:false, ci_showErrors:false,
   modelEditOpen:false,
   bayBoardOpen:true,
@@ -9059,6 +9156,31 @@ function ensureJobFields(){
   let changed = false;
   const validStatuses = STATUS_FLOW.map(s => s.key);
   state.jobs.forEach(j => {
+    /* v4.3.4 — ข้อ Q6: สามฟิลด์ที่ถ้าขาด แอปพังหรือใบงานหายถาวร
+
+       statusHistory — setJobStatus() เรียก j.statusHistory.push() ตรง ๆ ไม่มี guard
+         ใบที่ขาดฟิลด์นี้ กดเปลี่ยนสถานะแล้วโยน TypeError กลางคัน จอค้าง/ขาว
+       complaints   — ทุกที่ที่อ่านอาการใช้ (job.complaints || []) ยกเว้นบางจุดที่ map
+         ตรง ๆ และ boardPayloadFor ก็ map ตรง ๆ ทำให้เขียน board ไม่ขึ้น
+       createdAt    — อันตรายสุด: listener หลักเรียง orderBy('createdAt') ซึ่ง Firestore
+         ตัดเอกสารที่ไม่มีฟิลด์นั้นออกจากผลลัพธ์ทั้งใบ ใบงานจะ "หาย" จากจอถาวร
+         ทั้งที่ยังอยู่ในฐาน และกู้คืนจากในแอปไม่ได้เลยเพราะมองไม่เห็น
+       เติมย้อนหลังจากเวลาแรกใน statusHistory ถ้ามี ไม่งั้นใช้เวลาปัจจุบัน — เวลาที่
+       เพี้ยนไปยังดีกว่าใบงานที่มองไม่เห็น */
+    if(!Array.isArray(j.statusHistory)){
+      j.statusHistory = j.status ? [{ status: j.status, changedAt: j.createdAt || nowIso() }] : [];
+      changed = true;
+    }
+    if(!Array.isArray(j.complaints)){
+      j.complaints = (j.complaint && String(j.complaint).trim())
+        ? [{ id: uid(), text: String(j.complaint).trim() }] : [];
+      changed = true;
+    }
+    if(!j.createdAt){
+      const first = j.statusHistory.find(h => h && h.changedAt);
+      j.createdAt = (first && first.changedAt) || nowIso();
+      changed = true;
+    }
     if(j.queueNo === undefined){ j.queueNo = ''; changed = true; }
     if(j.bay === undefined){ j.bay = ''; changed = true; }
     // v3.27.0 — รถค้าง: ขั้นที่ค้างไว้ + เวลาที่เริ่มพัก
@@ -9504,6 +9626,11 @@ function boardPayloadFor(job){
     // Note this is public: anyone with the board link can see these pictures.
     thumb: job.thumb || '',
     bay: job.bay || '',
+    /* v4.3.4 — ข้อ Q9: ส่งเวลาที่ขึ้นแท่นไปด้วย
+       ฝั่งจอเลือกเจ้าของแท่นด้วย "คันแรกที่เจอใน boardRows" ซึ่งลำดับมาจาก Firestore
+       ไม่ใช่เวลา ถ้ามีสองใบถือแท่นเดียวกัน (ช่างย้ายรถแล้วใบเก่ายังไม่ถูกเคลียร์)
+       จอจะโชว์ทะเบียนคันที่ลงไปแล้ว ต้องมี bayAt ขึ้นไปก่อน จอจึงตัดสินถูกได้ */
+    bayAt: job.bayAt || '',
     // Estimated time is safe to show — it's what the customer most wants to know.
     // estMins + workStart let the board run a live countdown instead of a static label.
     est: estLabel(job),
@@ -10568,11 +10695,60 @@ function dayLabel(key){
   return `${days[dt.getDay()]} ${d} ${months[m-1]} ${String(y+543).slice(-2)}`;
 }
 
-function setDayFilter(key){ view.dayFilter = key; view.apptFilterOnly = false; render(); }
+/* ---------------- v4.3.4 — ข้อ Q3: ตัวกรองวันค้างอยู่วันเก่าเมื่อข้ามเที่ยงคืน
+
+   view.dayFilter ถูกตั้งเป็น todayKey() ครั้งเดียว ตอน renderJobList รอบแรก
+   (`if(view.dayFilter === null) view.dayFilter = todayKey();`) หลังจากนั้นไม่มีใคร
+   ขยับมันอีกเลย เครื่องหน้าร้านที่เปิดแอปค้างไว้ทั้งคืน — ซึ่งคือสิ่งที่เกิดขึ้นทุกวัน
+   เพราะไม่มีใครปิดแท็บ — เช้ามายังกรองด้วยวันของเมื่อวาน รถที่รับเข้ามาเช้านี้
+   ไม่ขึ้นบนจอเลย อาการที่คนเห็นคือ "ลงข้อมูลแล้วหาย" ทั้งที่ข้อมูลอยู่ครบในฐาน
+
+   ตัวกันการแย่ง: view.dayFilterPinned ถ้าคนเลือกวันเองไว้ (กดลูกศรย้อนวัน หรือ
+   เลือกจากปฏิทิน) ห้ามเลื่อนให้ ไม่งั้นคนที่กำลังดูยอดเมื่อวานจะถูกดีดกลับมาวันนี้
+   กลางคัน การกดชิป "วันนี้" ไม่นับเป็นการปักหมุด เพราะเจตนาคือ "ตามวันนี้ไป"
+
+   ค้นแล้วยืนยัน: นาฬิกาใน background tab ถูก Chrome หน่วงเป็นหลักวินาทีถึงนาที
+   แต่ยังเดินอยู่ ฉะนั้น setInterval นาทีละครั้งเชื่อถือได้พอ และ visibilitychange
+   คือจังหวะที่คนกลับมามองจอจริง ๆ ซึ่งเป็นวินาทีที่ต้องถูกต้องที่สุด — ใช้ทั้งคู่ */
+function rollDayFilterIfStale(){
+  /* v4.3.5 — หมุดอยู่ได้แค่วันที่ปัก ของ v4.3.4 ปักแล้วอยู่ตลอดไป คนที่กดย้อนดู
+     เมื่อวานตอนปิดร้านแล้วเปิดเครื่องค้างไว้ เช้ามาจอยังกรองวันเก่า รถที่รับเช้านี้
+     ไม่ขึ้น — อาการเดียวกับที่ Q3 ตั้งใจแก้ แค่เข้าทางปุ่มลูกศร */
+  if(view.dayFilterPinned){
+    if(!view.dayFilterPinnedOn || view.dayFilterPinnedOn === todayKey()) return false;
+    view.dayFilterPinned = false;
+  }
+  if(!view.dayFilter || view.dayFilter === 'all') return false;
+  const t = todayKey();
+  if(view.dayFilter === t) return false;
+  view.dayFilter = t;
+  return true;
+}
+
+let dayRollWatchStarted = false;
+function startDayRollWatch(){
+  if(dayRollWatchStarted) return;
+  dayRollWatchStarted = true;
+  setInterval(() => { if(rollDayFilterIfStale()) safeRender(); }, 60000);
+  document.addEventListener('visibilitychange', () => {
+    if(!document.hidden && rollDayFilterIfStale()) safeRender();
+  });
+}
+
+function setDayFilter(key){
+  view.dayFilter = key;
+  // กด "วันนี้" = ตามวันนี้ไป ไม่ปักหมุด · เลือกวันอื่น = ปักหมุดไว้ ห้ามเลื่อนทับ
+  view.dayFilterPinned = !(key === todayKey() || key === 'all');
+  view.dayFilterPinnedOn = todayKey();
+  view.apptFilterOnly = false;
+  render();
+}
 function stepDayFilter(delta){
   view.apptFilterOnly = false;
   if(view.dayFilter === 'all') view.dayFilter = todayKey();
   else view.dayFilter = shiftDay(view.dayFilter, delta);
+  view.dayFilterPinned = (view.dayFilter !== todayKey());
+  view.dayFilterPinnedOn = todayKey();
   render();
 }
 
@@ -11043,6 +11219,62 @@ function maxQueueNoToday(){
    และ startSync ที่ฟังเฉพาะ main ก็ไม่เห็นเอกสารนี้ ไม่มีอะไรกวนกัน */
 function queueCounterRef(){ return db.collection('config').doc('queueCounter'); }
 
+/* v4.3.4 — ข้อ Q7: นาฬิกาเครื่องเพี้ยนทำให้ตัวนับคิวรีเซ็ตกลางวัน
+
+   ของเดิม: `const base = (d.day === day) ? d.n : 0` คือ "ถ้าวันของตัวนับไม่ใช่วันของ
+   เครื่องนี้ ให้เริ่มนับหนึ่งใหม่" ซึ่งถูกเฉพาะกรณีที่นาฬิกาเครื่องแม่น
+   แท็บเล็ตหน้าร้านที่ถูกปิดไว้หลายวันแล้วเปิดมา มักได้เวลาเพี้ยนย้อนหลังชั่วครู่ก่อน
+   จะ sync กับเน็ต ช่วงนั้นเครื่องเห็นตัวนับที่ลงวัน "พรุ่งนี้" (ของจริง) แล้วตีความว่า
+   คนละวัน → รีเซ็ตเป็น 0 → ออกเลข 1 ซ้ำกับคันที่รับไปแล้วเมื่อเช้า
+   แล้วเพราะมันเขียน day ของตัวเองทับลงไป เครื่องอื่นก็พลอยนับหนึ่งใหม่ตามไปด้วย
+   นี่คือทางที่สองของ "เลขคิวชนกันได้ 2 ทาง" และเป็นทางที่ transaction กันไม่ได้
+   เพราะ transaction กันการแทรกกลางคัน ไม่ได้กันการตัดสินใจที่ผิดตั้งแต่ต้น
+
+   กฎใหม่: ถ้าวันของตัวนับ "ล่วงหน้ากว่า" วันของเครื่อง ให้เชื่อตัวนับ เพราะตัวนับคือ
+   ของที่ทุกเครื่องเห็นร่วมกัน ส่วนนาฬิกาของเครื่องนี้คือสิ่งเดียวที่น่าสงสัย
+   ตัวนับที่เป็นวันก่อนหน้าจริง ๆ ยังรีเซ็ตได้ตามปกติ — เที่ยงคืนยังทำงานเหมือนเดิม
+
+   atServer: serverTimestamp() เอาไว้ให้มองย้อนได้ว่านาฬิกาเครื่องไหนเพี้ยน
+   (ค้นแล้วยืนยัน: serverTimestamp เป็น sentinel ที่เซิร์ฟเวอร์แทนค่าตอนเขียน
+   อ่านค่ากลับใน transaction เดียวกันไม่ได้ — เราจึงเขียนเก็บไว้เท่านั้น ไม่อ่านกลับ) */
+/* v4.3.5 — กฎของ v4.3.4 เชื่อตัวนับ "ทุกครั้ง" ที่ลงวันล่วงหน้ากว่าเครื่อง ซึ่งแก้เครื่อง
+   นาฬิกาช้าได้ แต่เปิดทางให้เครื่องนาฬิกา "เร็ว" ทำพังหนักกว่าเดิม: เครื่องเดียวที่
+   ตั้งวันผิดเป็นพรุ่งนี้ (หรือปีหน้า) เขียนวันนั้นลงตัวนับ แล้วทุกเครื่องที่นาฬิกาถูก
+   จะเชื่อตามไปจนกว่าจะถึงวันนั้นจริง — ตัวนับไม่รีเซ็ตตอนเที่ยงคืนอีกเลย และพื้นจาก
+   ใบงานของวันนี้ถูกทิ้ง (floor = 0) จึงออกเลขซ้ำกับคันที่รับไปแล้ว
+
+   ตัวตัดสินคือ atServer ที่ v4.3.4 เขียนเก็บไว้อยู่แล้วแต่ไม่เคยอ่าน: มันคือเวลาจริง
+   ของเซิร์ฟเวอร์ตอนที่ตัวนับถูกเขียนครั้งล่าสุด ถ้าวันของ atServer ยังมาไม่ถึงวันที่
+   ตัวนับอ้าง แปลว่าคนเขียนนาฬิกาเร็ว ไม่ใช่เครื่องนี้ช้า -> ไม่เชื่อ ใช้วันของเครื่อง
+   (อ่านกลับได้ เพราะเป็นค่าที่ commit ไปแล้วจาก transaction ครั้งก่อน ไม่ใช่ครั้งนี้)
+   ตัวนับรุ่นเก่าที่ยังไม่มี atServer ไม่มีหลักฐานให้เชื่อ จึงใช้วันของเครื่องตามเดิม */
+function stampToDate(v){
+  try{
+    if(!v) return null;
+    if(typeof v.toDate === 'function') return v.toDate();
+    if(typeof v.seconds === 'number') return new Date(v.seconds * 1000);
+  }catch(e){}
+  return null;
+}
+
+function queueDayForCounter(stored, deviceDay){
+  const sd = (stored && stored.day) || '';
+  if(!sd || sd <= deviceDay) return deviceDay;
+  const t = stampToDate(stored.atServer);
+  if(!t || isNaN(t.getTime())) return deviceDay;
+  return dayKey(t) >= sd ? sd : deviceDay;
+}
+
+function serverStamp(){
+  try{
+    if(typeof firebase !== 'undefined' && firebase.firestore
+       && firebase.firestore.FieldValue && firebase.firestore.FieldValue.serverTimestamp){
+      return firebase.firestore.FieldValue.serverTimestamp();
+    }
+  }catch(e){}
+  return null;
+}
+
 function reserveQueueNo(){
   if(!db) return Promise.reject(new Error('no-db'));
   const ref = queueCounterRef();
@@ -11051,9 +11283,15 @@ function reserveQueueNo(){
   return db.runTransaction(tx =>
     tx.get(ref).then(snap => {
       const d = (snap.exists && snap.data()) || {};
-      const base = (d.day === day) ? (Number(d.n) || 0) : 0;   // คนละวัน = เริ่มนับหนึ่งใหม่
-      const next = Math.max(base, seed) + 1;
-      tx.set(ref, { day: day, n: next, at: nowIso() }, { merge: true });
+      const useDay = queueDayForCounter(d, day);
+      const base = (d.day === useDay) ? (Number(d.n) || 0) : 0;   // คนละวันจริง = เริ่มนับหนึ่งใหม่
+      // พื้นจากใบงานในเครื่องใช้ได้เฉพาะตอนที่วันตรงกัน ไม่งั้นมันเป็นของคนละวัน
+      const floor = (useDay === day) ? seed : 0;
+      const next = Math.max(base, floor) + 1;
+      const payload = { day: useDay, n: next, at: nowIso() };
+      const st = serverStamp();
+      if(st) payload.atServer = st;
+      tx.set(ref, payload, { merge: true });
       return next;
     })
   );
@@ -11069,8 +11307,10 @@ function releaseQueueNo(no){
   return db.runTransaction(tx =>
     tx.get(ref).then(snap => {
       const d = (snap.exists && snap.data()) || {};
-      if(d.day === day && Number(d.n) === n){
-        tx.set(ref, { day: day, n: n - 1, at: nowIso() }, { merge: true });
+      // v4.3.4 Q7 — เทียบกับวันที่ตัวนับถืออยู่จริง ด้วยกฎเดียวกับตอนจอง
+      const useDay = queueDayForCounter(d, day);
+      if(d.day === useDay && Number(d.n) === n){
+        tx.set(ref, { day: useDay, n: n - 1, at: nowIso() }, { merge: true });
       }
     })
   ).catch(() => {});
@@ -11144,6 +11384,59 @@ function queueLabel(job){
   return queueIsFromToday(job) ? ('คิว ' + q) : ('ค้าง ' + fmtQueueDate(job.createdAt));
 }
 
+/* v4.3.4 — ข้อ Q10: ป้ายคิวบนกระดานค้างเป็นของเมื่อวาน
+
+   queueLabel ถูกคิดฝั่งแอปตอนเขียน board/{id} แล้วเก็บเป็น "ข้อความสำเร็จรูป"
+   รถที่ค้างข้ามคืนไม่มีใครไปเขียน board ใหม่ให้ — shouldReconcileBoardNow() ยิง
+   วันละครั้ง และยิงเฉพาะตอนมีคนเปิดแอปพนักงาน ส่วนจอทีวีที่เปิดค้างไว้ทั้งคืน
+   อ่าน board ตรง ๆ จึงยังแสดง "คิว 5" ของเมื่อวาน ปนอยู่กับ "คิว 5" ของวันนี้
+   บนกระดานเดียวกัน ลูกค้าสองคนมองหาเลขเดียวกันแล้วเห็นรถคนละคัน
+
+   แก้ที่ฝั่งอ่าน ไม่ใช่ฝั่งเขียน: createdAt ถูกส่งขึ้น board อยู่แล้ว จอคิดป้ายใหม่
+   เองได้ทุกครั้งที่วาด ไม่ต้องรอใครมาเขียนทับ และไม่ต้องยิง write เพิ่มวันละ 600 ครั้ง */
+function queueLabelFromRow(row){
+  if(!row) return '';
+  const q = ((row.queueNo || '')).toString().trim();
+  if(!q) return row.queueLabel || '';
+  const created = row.createdAt ? new Date(row.createdAt) : null;
+  if(!created || isNaN(created.getTime())) return row.queueLabel || ('คิว ' + q);
+  return dayKey(created) === todayKey() ? ('คิว ' + q) : ('ค้าง ' + fmtQueueDate(row.createdAt));
+}
+
+/* v4.3.5 — queueLabelFromRow ของ v4.3.4 ถูกเขียนไว้แต่ไม่มีจุดไหนเรียกใช้ หน้าค้นรถของ
+   ลูกค้า (?reception) จึงยังอ่าน r.queueLabel ที่ค้างเป็น "คิว 5" ของเมื่อวานเหมือนเดิม
+   ตัวนี้คือสิ่งที่หน้านั้นใช้จริง: รถค้างข้ามคืนได้ป้าย "ค้าง" กับวันที่รับรถ
+
+   จอกระดานทีวี "ไม่ใช้" ตัวนี้โดยตั้งใจ: กระดานแสดงรถแยกตามวันที่รับอยู่แล้ว
+   (boardVisibleRows) เลขคิวบนจอจึงเป็นของวันเดียวกันทั้งหมด ไม่ปนกัน และถ้าเปลี่ยน
+   เป็นป้าย "ค้าง" ตอนเปิดดูย้อนหลัง รถทุกคันของวันนั้นจะเสียเลขคิวไปหมด */
+function boardQueueParts(r){
+  const label = queueLabelFromRow(r) || '';
+  const stale = /^ค้าง/.test(label);
+  return {
+    stale: stale,
+    label: stale ? 'ค้าง' : 'คิว',
+    no: stale ? label.replace(/^ค้าง\s*/, '') : (((r && r.queueNo) || '').toString().trim() || '—')
+  };
+}
+
+/* v4.3.4 — ข้อ Q9: ใครคือเจ้าของแท่นจริง
+   เดิมเป็น `if(!bayOwner[r.bay]) bayOwner[r.bay] = r;` คือคันแรกที่เจอชนะ ซึ่งลำดับ
+   มาจาก Firestore ไม่ได้สัมพันธ์กับความจริงเลย — คันที่ขึ้นแท่นทีหลังคือคันที่อยู่บน
+   แท่นนั้นจริง ใช้ `>` ไม่ใช่ `>=` เพื่อให้ข้อมูลเก่าที่ไม่มี bayAt ยังได้พฤติกรรมเดิม
+   (คันแรกที่เจอชนะ) ไม่สลับไปมาเองหลังอัปเดต */
+function bayOwnerFromRows(rows){
+  const owner = {};
+  const t = x => { const n = new Date((x && x.bayAt) || 0).getTime(); return isFinite(n) ? n : 0; };
+  (rows || []).forEach(r => {
+    if(!r || !r.bay) return;
+    if(r.status === 'delivered' || r.status === 'carout') return;
+    const cur = owner[r.bay];
+    if(!cur || t(r) > t(cur)) owner[r.bay] = r;
+  });
+  return owner;
+}
+
 /* ---------------- Check-in ---------------- */
 function resetCheckin(){
   view.ci_plateQuery=''; view.ci_matchedVehicleId=null; view.ci_editMatch=false;
@@ -11153,6 +11446,7 @@ function resetCheckin(){
   view.ci_queueNo=''; view.ci_mileage=''; view.ci_checked=[]; view.ci_customComplaints=[]; view.ci_customInput=''; view.ci_photos=[]; view.ci_selectedParts=[];
   view.ci_estUnit='hour'; view.ci_estValue=0;
   view.ci_queueLocked=false; view.ci_queueBusy=false; view.ci_queueErr='';
+  view.ci_queueClash=null;   // v4.3.4 Q2
   clearCheckinDraft();
 }
 
@@ -11216,10 +11510,29 @@ function hasCheckinDraft(){
     || (view.ci_photos||[]).length);
 }
 
+/* v4.3.4 — ข้อ Q1: กดล้างฟอร์มแล้วเลขคิวหายถาวร
+
+   ของเดิมล้างฟอร์มแล้ว releaseQueueNo() คืนเลข จากนั้น resetCheckin() เซ็ต
+   ci_queueNo = '' แล้วจบ — ไม่มีใครจองเลขใหม่ให้ เพราะ ensureQueueReserved()
+   ถูกเรียกจากที่เดียวคือ goTab('checkin') แต่คนกดล้างฟอร์มยังยืนอยู่หน้าเดิม
+   ไม่ได้ goTab ใหม่ ช่างจึงกรอกรถคันใหม่ทั้งใบด้วยช่องคิวว่าง แล้วบันทึกผ่านไปจริง
+   (นี่คือต้นเรื่องของ "คิวที่ 9-10 หายไปไหน แต่ช่างคีย์ไปแล้ว")
+
+   ที่ถูกคือ "ไม่ต้องคืนเลขเลย" — คนกดล้างฟอร์มเพราะกรอกผิด ยังจะรับรถคันต่อไป
+   ทันทีอยู่แล้ว เลขที่จองไว้ยังเป็นของเครื่องนี้และยังไม่ถูกใช้ ถือไว้ใช้ต่อได้เลย
+   ไม่ต้องยิง transaction คืนแล้วจองใหม่ ซึ่งทั้งเสียเลขเป็นรูและชนกับเครื่องอื่นได้
+   releaseQueueNo() ยังถูกต้องสำหรับการ "ออกจากหน้ารับรถ" (leaveCheckin) ตามเดิม */
 function clearCheckinForm(){
   uiConfirm('ล้างฟอร์มรับรถทั้งหมด?', () => {
-    releaseQueueNo(view.ci_queueNo);   // คืนเลขให้คันถัดไป ก่อนล้างค่าออกจาก view
+    const keepQueue = (view.ci_queueNo || '').toString().trim();
     resetCheckin();
+    if(keepQueue){
+      view.ci_queueNo = keepQueue;
+      view.ci_queueLocked = true;
+      saveCheckinDraft();
+    } else {
+      ensureQueueReserved();   // ไม่มีเลขอยู่ก่อน (จองไม่ติด) — ลองออกเลขให้ใหม่
+    }
     flashToast('ล้างฟอร์มแล้ว');
     render();
   }, 'ล้างฟอร์ม');
@@ -11358,7 +11671,21 @@ function openModelPicker(){
   }, 'พิมพ์ยี่ห้อหรือรุ่น เช่น CIVIC, VIGO');
 }
 
-function onCiFieldInput(field, value){ view[field] = value; saveCheckinDraft(); }
+/* v4.3.4 — ข้อ Q2: คำเตือน "คิวซ้ำ" รู้แต่ตอนวาดจอ บันทึกไม่เคยถูกบล็อก
+
+   ของเดิมตัวตัดสินคิวซ้ำอยู่ใน renderCheckin() เท่านั้น (ป้าย q-warn) คือมันอยู่ใน
+   สายวาดจอ ไม่ใช่ในข้อมูล — submitCheckin() จึงมองไม่เห็นเลย ช่างที่กดปลดล็อกแล้ว
+   พิมพ์เลขที่เครื่องอื่นใช้ไปแล้ว เห็นคำเตือนสีเหลืองแล้วกดบันทึกต่อได้ปกติ
+   ได้รถสองคันคิวเดียวกันในวันเดียว ซึ่งหน้าให้คะแนน/หน้ารับรองแยกไม่ออก
+   ย้ายมาตั้งธงตอนพิมพ์ แล้วให้ checkinErrors() คิดใหม่เองอีกชั้น (ไม่เชื่อธงค้าง) */
+function onCiFieldInput(field, value){
+  view[field] = value;
+  if(field === 'ci_queueNo'){
+    const dup = queueNoTakenToday(value);
+    view.ci_queueClash = dup ? (dup.jobNumber || dup.id || '1') : null;
+  }
+  saveCheckinDraft();
+}
 
 /* Uppercase-locked fields (ยี่ห้อ / รุ่น). CSS text-transform only changes how text
    LOOKS — the value saved would still be whatever case was typed. This uppercases the
@@ -11884,6 +12211,16 @@ function checkinProvince(){
 // คืนรายการสิ่งที่ยังขาด เรียงตามลำดับที่คนกรอกเจอบนหน้าจอ
 function checkinErrors(){
   const errs = [];
+  /* v4.3.4 — ข้อ Q1 + Q2: เลขคิวเป็นด่านบังคับ ไม่ใช่คำเตือน
+     คิดใหม่จาก state ตรงนี้ ไม่อ่านธง view.ci_queueClash เพราะธงอาจค้างจากการพิมพ์
+     ครั้งก่อน ส่วน snapshot จากเครื่องอื่นเข้ามาระหว่างนั้นก็ทำให้ธงเก่าผิดได้ */
+  const qno = (view.ci_queueNo || '').toString().trim();
+  if(!qno){
+    errs.push({ field:'queue', msg:'ยังไม่มีเลขคิว — กดออกเลขคิวใหม่ หรือกรอกเลขเอง' });
+  } else {
+    const dup = queueNoTakenToday(qno);
+    if(dup) errs.push({ field:'queue', msg:`เลขคิว ${qno} มีรถใช้ไปแล้ววันนี้ (${dup.jobNumber || ''}) — เปลี่ยนเลขก่อนบันทึก` });
+  }
   if(!(view.ci_plateQuery || '').trim()) errs.push({ field:'plate', msg:'กรุณากรอกทะเบียนรถ' });
   if(!checkinProvince()) errs.push({ field:'province', msg:'กรุณากรอกจังหวัดทะเบียน' });
   const digits = checkinMileageDigits();
@@ -12080,6 +12417,33 @@ function setJobStatusFromList(jobId, statusKey, e){
    decision is made, and the same dialog doubles as an editor afterwards: the chip
    on the job card stays visible (and clickable) even once the car has moved on to
    เอารถลง, so "when's this one coming back" never depends on memory. */
+/* v4.3.4 — ข้อ Q8: กดนัดวันมาทำแล้วรถไม่ลงจากแท่นยก
+
+   ของเดิมตรรกะนี้เป็น closure ชื่อ applyDate ซ่อนอยู่ใน decideScheduled() และตั้ง
+   job.status = 'scheduled' เองตรง ๆ โดยไม่เรียก freeBayIfLeaving() — ซึ่งเป็นทางเดียว
+   ในแอปที่ปล่อยแท่นยก ทุกเส้นทางอื่น (ปุ่มบนการ์ด, เมนูย่อ, เปลี่ยนหลายใบพร้อมกัน)
+   เดินผ่าน setJobStatus() ที่เรียกให้แล้ว เส้นทางนี้เส้นเดียวที่หลุด
+   ผลจริง: 'scheduled' อยู่ใน BAY_FREEING_STATUSES อยู่แล้ว แต่รถที่นัดวันใหม่ยังค้าง
+   บนแท่น H4 บนกระดาน แท่นแสดงว่าไม่ว่างทั้งที่ลูกค้าขับกลับบ้านไปแล้ว
+   คันต่อไปที่ต้องใช้แท่นนั้นดูเหมือนไม่มีที่ลง
+
+   ยกออกมาเป็นฟังก์ชันระดับบนเพื่อให้ทดสอบได้และให้เส้นทางอื่นเรียกใช้ซ้ำได้
+   ส่วน flashToast/render ยังอยู่ในกล่องโต้ตอบ เพราะนั่นเป็นงานของชั้น UI */
+function applyScheduledDate(jobId, dateStr){
+  const job = getJob(jobId);
+  if(!job) return false;
+  const firstTime = job.status === 'quoted';
+  job.appointmentDate = dateStr || '';
+  if(firstTime){
+    freeBayIfLeaving(job, 'scheduled');
+    job.status = 'scheduled';
+    job.statusHistory = job.statusHistory || [];
+    job.statusHistory.push({ status:'scheduled', changedAt: nowIso() });
+  }
+  saveState(true);
+  return true;
+}
+
 function decideScheduled(jobId, e){
   if(e) e.stopPropagation();
   const job = getJob(jobId);
@@ -12103,13 +12467,7 @@ function decideScheduled(jobId, e){
   document.body.appendChild(root);
 
   const applyDate = (v) => {
-    job.appointmentDate = v || '';
-    if(isFirstTime){
-      job.status = 'scheduled';
-      job.statusHistory = job.statusHistory || [];
-      job.statusHistory.push({ status:'scheduled', changedAt: nowIso() });
-    }
-    saveState(true);
+    applyScheduledDate(jobId, v);   // v4.3.4 Q8 — ตัวเดียวกับที่เส้นทางอื่นใช้ ปล่อยแท่นให้ด้วย
     flashToast(job.appointmentDate ? `นัดวันที่ ${dayLabel(job.appointmentDate)} แล้ว` : 'ล้างวันนัดแล้ว');
     render();
   };
@@ -12311,7 +12669,7 @@ function assignTechnicianCustom(jobId, onDone){
       <div class="ui-modal-msg">มอบหมายช่าง — ${escapeHtml(job.jobNumber)}</div>
       <input type="text" id="tech-input" class="ui-modal-input" list="tech-suggestions"
         value="${escapeAttr(job.technician||'')}" placeholder="ชื่อช่าง" autocomplete="off">
-      <datalist id="tech-suggestions">${names.map(n => `<option value="${escapeAttr(n)}">`).join('')}</datalist>
+      <datalist id="tech-suggestions">${names.map(n => `<option value="${escapeAttr(n)}" label="${escapeAttr(n + ' · ถืออยู่ ' + techOpenJobCount(n) + ' งาน')}">`).join('')}</datalist>
       <div class="ui-modal-btns">
         <button type="button" class="btn secondary" id="ui-modal-cancel">ยกเลิก</button>
         ${job.technician ? `<button type="button" class="btn danger" id="tech-clear-btn">ล้างชื่อ</button>` : ''}
@@ -12918,7 +13276,7 @@ function bulkAssignTechnicianCustom(ids){
       <div class="ui-modal-msg">มอบหมายช่าง — ${ids.length} รายการที่เลือก</div>
       <input type="text" id="tech-input" class="ui-modal-input" list="tech-suggestions"
         placeholder="ชื่อช่าง" autocomplete="off">
-      <datalist id="tech-suggestions">${names.map(n => `<option value="${escapeAttr(n)}">`).join('')}</datalist>
+      <datalist id="tech-suggestions">${names.map(n => `<option value="${escapeAttr(n)}" label="${escapeAttr(n + ' · ถืออยู่ ' + techOpenJobCount(n) + ' งาน')}">`).join('')}</datalist>
       <div class="ui-modal-btns">
         <button type="button" class="btn secondary" id="ui-modal-cancel">ยกเลิก</button>
         <button type="button" class="btn" id="ui-modal-ok">บันทึก</button>
@@ -14662,6 +15020,8 @@ function queueBarHtml(dayJobs){
 
 function renderJobList(){
   if(view.dayFilter === null) view.dayFilter = todayKey();   // open on today
+  rollDayFilterIfStale();   // v4.3.4 Q3 — เปิดค้างข้ามคืน: เลื่อนมาวันนี้ก่อนวาด
+  startDayRollWatch();      // ...แล้วเฝ้าต่อเองไม่ต้องรอให้คนกดอะไร
   // ส่งแล้ว is no longer a stage on this page, so a filter left on it would show nothing
   if(view.statusFilter === 'delivered' || view.statusFilter === 'held') view.statusFilter = 'all';
   // Independent of dayFilter/apptFilterOnly on purpose — this count always reflects
@@ -15770,6 +16130,24 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   render();
 }
 
+/* v4.3.5 — ทางยืนยันเลขที่ติดธง priceForeign
+   v4.3.3 เขียนไว้ว่า "คีย์ราคาเองเพื่อยืนยัน" แต่ถ้าเลขเดิมถูกอยู่แล้ว ช่างพิมพ์เลขเดิม
+   ซ้ำ ช่อง input ไม่ยิง onchange (ค่าไม่เปลี่ยน) ธงจึงไม่มีวันหลุด และราคาที่ถูกต้อง
+   ไม่มีวันถูกจำ ต้องพิมพ์เลขอื่นแล้วพิมพ์กลับถึงจะผ่าน ปุ่มนี้คือคำยืนยันตรง ๆ */
+function confirmForeignPrice(jobId, partRowId){
+  const job = getJob(jobId);
+  if(!job) return;
+  const row = (job.partsNeeded || []).find(p => p.id === partRowId);
+  if(!row || !row.priceForeign) return;
+  delete row.priceForeign;
+  const mode = rememberJobPartPrice(job, row);
+  flashToast(mode
+    ? `จำ ฿${fmtMoney(parseMoney(row.price))} เป็นราคาของ ${row.brand || 'รายการนี้'} แล้ว`
+    : 'ยืนยันราคาแล้ว');
+  saveState(true);
+  render();
+}
+
 function onJobDiscountChange(jobId, field, value){
   const job = getJob(jobId);
   if(!job) return;
@@ -16648,7 +17026,7 @@ function renderJobPartsEditor(job){
         </td>
         <td class="center" data-label="ราคา/หน่วย">${inPromo
           ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>`
-          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — คีย์ราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')} เพื่อยืนยัน</span></div>` : ''}`}</td>
+          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
         <td class="center" data-label="รวม"><strong>${inPromo ? '—' : lineTotal}</strong></td>
         <td class="center"><button class="icon-btn" title="ลบรายการนี้" onclick="removeJobPart('${job.id}','${p.id}')">${icon('trash',13)}</button></td>
       </tr>`;
@@ -20014,10 +20392,51 @@ function rejectedResultsHtml(){
 const STUCK_WARN_DAYS = 2;     // shows yellow — worth a look
 const STUCK_DANGER_DAYS = 4;   // shows red — needs attention now
 
+/* v4.3.4 — ข้อ Q11: "ค้างกี่วัน" ต้องนับเป็นวันปฏิทิน ไม่ใช่ช่วง 24 ชั่วโมง
+
+   ของเดิมหาร 86400000 แล้วทิ้งเศษ รถที่รับเข้ามาจันทร์ห้าโมงเย็น เช้าพุธแปดโมงได้
+   "1 วัน" ทั้งที่ค้างมาสองคืนแล้ว เพราะยังไม่ครบ 48 ชั่วโมงเต็ม
+   ผลคือ STUCK_WARN_DAYS = 2 ไม่เตือนสักที รถที่ควรขึ้นสีเหลืองวันพุธเช้าจะขึ้นเอา
+   ตอนพุธเย็น และคันที่ควรขึ้นสีแดงก็เลื่อนไปทั้งหมดเช่นกัน — รายงานที่สร้างมาเพื่อ
+   จับงานที่นิ่งเงียบ จึงจับช้ากว่าความจริงเกือบวันทุกใบ
+   คนในอู่นับเป็น "คืนที่รถนอนอยู่" เทียบวันปฏิทินต่อวันปฏิทิน ไม่ได้นับชั่วโมง */
 function daysInShop(job){
-  const start = new Date(job.createdAt).getTime();
-  if(!isFinite(start)) return 0;
-  return Math.max(0, Math.floor((Date.now() - start) / 86400000));
+  const start = new Date(job && job.createdAt);
+  if(isNaN(start.getTime())) return 0;
+  const a = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+  const n = new Date();
+  const b = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+
+/* v4.3.4 — ข้อ Q11: งานที่ช่างถืออยู่ และรายชื่อช่างสำหรับตัวกรอง
+
+   techOpenJobCount — ก่อนจะมอบหมายงานให้ช่าง คนที่กดต้องเห็นว่าช่างคนนั้นถืออะไร
+     อยู่กี่ใบ ไม่งั้นงานไปกองที่ชื่อแรกในรายการเสมอ นับเฉพาะใบที่ยังไม่จบ
+   technicianFilterNames — รายชื่อใน state.technicians ลบได้ แต่ใบงานเก่าที่ผูกชื่อนั้น
+     ไว้ไม่ได้ถูกแก้ตาม ตัวกรองที่อ่านจาก state.technicians เพียงอย่างเดียวจึงกรอง
+     หางานของช่างที่ลาออกแล้วไม่ได้เลย ทั้งที่งานยังค้างอยู่ในอู่จริง
+     รวมสองแหล่งเข้าด้วยกัน ชื่อจากใบงานอยู่ครบไม่ว่ารายชื่อจะถูกแก้ไปแล้วแค่ไหน */
+const TECH_DONE_STATUSES = ['delivered', 'carout', 'rejected'];
+
+function techOpenJobCount(name){
+  const n = (name || '').toString().trim();
+  if(!n) return 0;
+  return (state.jobs || []).filter(j =>
+    j && !j.deletedAt
+    && (j.technician || '').toString().trim() === n
+    && TECH_DONE_STATUSES.indexOf(j.status) < 0).length;
+}
+
+function technicianFilterNames(){
+  const seen = {}, out = [];
+  const add = v => {
+    const n = (v || '').toString().trim();
+    if(n && !seen[n]){ seen[n] = 1; out.push(n); }
+  };
+  (state.technicians || []).forEach(t => add(t && t.name));
+  (state.jobs || []).forEach(j => { if(j && !j.deletedAt) add(j.technician); });
+  return out.sort((a, b) => a.localeCompare(b, 'th'));
 }
 
 function stuckSeverity(days){
@@ -22227,7 +22646,7 @@ function receptionResultHtml(r){
     ? 'ช่างกำลังตรวจเช็ค เมื่อประเมินเสร็จจะแจ้งราคาให้ทราบ'
     : 'อยู่ระหว่างจัดทำ';
   return `<div class="reception-result-card ${escapeAttr(r.statusCls||'')}">
-    <div class="reception-result-q">คิวที่ <span class="mono">${escapeHtml((r.queueLabel || '').replace(/^คิว /,'') || r.queueNo || '-')}</span></div>
+    <div class="reception-result-q">${boardQueueParts(r).stale ? 'รถ' : 'คิวที่'} <span class="mono">${escapeHtml(boardQueueParts(r).stale ? 'ค้าง ' + boardQueueParts(r).no : boardQueueParts(r).no)}</span></div>
     <div class="reception-result-car">${escapeHtml(carLine)}${r.color ? ' · '+escapeHtml(r.color) : ''}</div>
     ${(r.plate || r.plateMasked) ? plateHtml(r.plate || r.plateMasked, r.province, 'sm') : ''}
     <div class="reception-result-status ${escapeAttr(r.statusCls||'')}">${escapeHtml(r.statusLabel || '')}</div>
@@ -22382,7 +22801,7 @@ function receptionQuoteSheetHtml(r){
             <div class="rq-meta-title">ใบเสนอราคา</div>
             <dl class="rq-meta-list">
               <dt>เลขที่</dt><dd class="mono">${escapeHtml(r.jobNumber || '-')}</dd>
-              <dt>คิวที่</dt><dd class="mono">${escapeHtml((r.queueLabel || '').replace(/^คิว /,'') || r.queueNo || '-')}</dd>
+              <dt>คิวที่</dt><dd class="mono">${escapeHtml(boardQueueParts(r).stale ? 'ค้าง ' + boardQueueParts(r).no : boardQueueParts(r).no)}</dd>
               <dt>รับรถ</dt><dd>${escapeHtml(fmtDT(r.createdAt))}</dd>
               <dt>อัปเดต</dt><dd>${escapeHtml(fmtDT(r.updatedAt))}</dd>
             </dl>
@@ -22850,12 +23269,7 @@ function renderBoard(errorMsg){
        is — a car that came in yesterday and is still on a lift is still occupying that
        bay, and showing it as free would be wrong. Cars already handed back release
        their bay. Always drawn, even with an empty shop, so the layout is recognisable. */
-    const bayOwner = {};
-    boardRows.forEach(r => {
-      if(!r.bay) return;
-      if(r.status === 'delivered' || r.status === 'carout') return;
-      if(!bayOwner[r.bay]) bayOwner[r.bay] = r;
-    });
+    const bayOwner = bayOwnerFromRows(boardRows);   // v4.3.4 Q9 — ตัดสินด้วย bayAt
     const busy = WORK_BAYS.filter(b => bayOwner[b]).length;
     html += `<div class="board-bays">
       <div class="bb-head">
@@ -23765,6 +24179,24 @@ function fbEnsureAnon(){
   return auth.signInAnonymously();
 }
 
+/* v4.3.4 — ข้อ Q4: หน้าให้คะแนนจับคู่ผิดคันเมื่อเลขคิวซ้ำข้ามวัน
+
+   เลขคิวรีเซ็ตทุกเที่ยงคืน ฉะนั้น "คิว 6" มีได้ทุกวัน หน้านี้ค้น board ด้วย 4 หลัก
+   ท้ายเบอร์ แล้วกรองด้วยเลขคิว ซึ่งลูกค้าประจำที่เข้าอู่เดือนละครั้งจะได้หลายใบ
+   ของเดิมหยิบ matched[0] = ลำดับที่ Firestore ส่งมา (ไม่มีการเรียง) ลูกค้าจึงไป
+   ให้คะแนนใบของเดือนก่อน แล้วคอมเมนต์ไปลงผิดใบ อ่านรายงานแล้วตามไม่ได้
+
+   กฎการเลือก: ใบที่ยังอยู่ในอู่มาก่อนใบที่ส่งมอบไปแล้ว แล้วค่อยเอาใบที่ใหม่สุด
+   ถ้ามีใบเดียวและเป็นใบเก่า ต้องยังเลือกได้ — ไม่ตัดทิ้งจนลูกค้าให้คะแนนไม่ได้
+   (คนมักเปิดลิงก์ให้คะแนนหลังรับรถกลับบ้านไปแล้ว ซึ่ง status เป็น delivered อยู่ดี) */
+function pickFeedbackCar(rows, queueNo){
+  const matched = (rows || []).filter(r => r && sameQueueNo(r.queueNo, queueNo));
+  if(!matched.length) return null;
+  const ts = r => { const t = new Date((r && r.createdAt) || 0).getTime(); return isFinite(t) ? t : 0; };
+  const gone = r => (r && (r.status === 'delivered' || r.status === 'carout')) ? 1 : 0;
+  return matched.slice().sort((a, b) => (gone(a) - gone(b)) || (ts(b) - ts(a)))[0];
+}
+
 function feedbackLookup(){
   const last4 = (document.getElementById('fb-phone').value || '').replace(/\D/g, '').slice(-4);
   const queueNo = (document.getElementById('fb-queue').value || '').trim();
@@ -23787,7 +24219,7 @@ function feedbackLookup(){
           : 'ไม่พบข้อมูล กรุณาตรวจเลขทั้งสองช่องอีกครั้ง หรือสอบถามพนักงาน', 'error');
         return;
       }
-      fbState.car = matched[0];
+      fbState.car = pickFeedbackCar(rows, queueNo);
       fbState.stars = 0;
       feedbackRenderForm();
     })
