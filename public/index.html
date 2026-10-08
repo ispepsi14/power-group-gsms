@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.3.5";
+  const APP_VERSION = "4.3.6";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2360,7 +2360,37 @@
 
               tests\rguard.js 24/24 ที่นี่ · 8/24 บน v4.3.4
               tests\qguard.js: Q7-2 เคยยืนยันพฤติกรรมที่เป็นบั๊กข้อ 1 (ปี 2999 ไม่มี
-              atServer) แก้ให้ใช้ atServer และ seed ตัวนับไม่ผูกกับวันที่ 7 ต.ค. แล้ว -->
+              atServer) แก้ให้ใช้ atServer และ seed ตัวนับไม่ผูกกับวันที่ 7 ต.ค. แล้ว
+
+     v4.3.6 — บรรทัดหักลบในใบเสนอราคา (เทิร์นของเก่า) — สั่งโดยเจ้าของ 8 ต.ค. 2569
+
+              งานจริง: ลูกค้าเอาแร็คเก่าคืนให้ร้าน ร้านหักค่าของเก่าออกจากบิล
+              เดิมทำไม่ได้เลย ช่างต้องไปบวกลบในหัวแล้วคีย์ยอดที่ถูกหักแล้วลงไป
+              ซึ่งใบที่ลูกค้าถือจึงไม่มีบรรทัดบอกว่าหักอะไรไปเท่าไร
+
+              คีย์ "-500" ในช่องราคาได้ตรง ๆ ยอดรวมหักให้เอง
+              5,500 + 1,650 − 500 = 6,650 · ส่วนลดคิดจากยอดหลังหักเทิร์นแล้ว
+
+              ข้อควรรู้: v4.3.2 ข้อ M9 ปิดราคาติดลบไว้โดยตั้งใจ เพราะคนพิมพ์ '-'
+              ติดมาโดยไม่ตั้งใจแล้วยอดรวมติดลบ ทำให้ jobDiscountAmount คืน 0 เงียบ ๆ
+              ส่วนลดที่ช่างคีย์ไว้หายจากใบโดยไม่มีคำเตือน — รอบนี้ "ไม่ได้รื้อ M9 ทิ้ง"
+              แต่แยกตัวแปลงเป็นสองตัว แล้วกันผลข้างเคียงด้วยวิธีอื่นแทนการห้ามพิมพ์:
+
+                parsePrice      ช่องที่ติดลบไม่มีความหมาย (ราคาตั้งในตำราราคา) คงเดิม
+                parseLinePrice  ช่องราคาต่อบรรทัดในใบงาน ติดลบได้โดยตั้งใจ
+
+                1. ยอดสุทธิถูกตัดที่ 0 (jobGrandTotal) ใบไม่ติดลบ ส่วนลดจึงไม่หายเงียบ
+                2. ตำราราคาไม่จำเลขติดลบเด็ดขาด (rememberJobPartPrice ใช้ price > 0)
+                   ถ้าหลุดเข้าไป คันต่อไปที่ติ๊ก "เทิร์นแร็ค" จะได้ -500 เด้งมาเอง
+                3. บรรทัดติดลบขึ้นแถบแดง + ป้าย "หัก" บอกจำนวนที่หักออก พิมพ์ผิดจึง
+                   เห็นตั้งแต่บรรทัดนั้น ไม่ใช่ไปงงที่ยอดรวม — นี่คือตัวกันที่แทน M9
+                4. ใบที่พิมพ์ลงกระดาษขึ้นคำว่า "(หักออก)" ต่อท้ายชื่อรายการ เพราะเลข
+                   ติดลบเฉย ๆ บนกระดาษอ่านกำกวม ลูกค้าเซ็นแล้วเถียงกันทีหลังไม่ได้
+                5. หน้า ?reception ของลูกค้าได้ราคาติดลบจริง ตรงกับใบกระดาษ
+
+              tests\dguard.js 21/21 ที่นี่ · 7/21 บน v4.3.5
+              tests\guard.js D11 เปลี่ยนความหมาย (เดิมล็อกว่า "ยอดรวมไม่นับราคาติดลบ")
+              แตกเป็น D11/D11b/D11c แทนการลบทิ้ง เพื่อให้เหตุผลเดิมของ M9 ยังถูกเทสต์ -->
 
 
 
@@ -6419,6 +6449,21 @@ body.dark .pb-missing{color:#fbbf24;}
   background:rgba(31,157,85,.14);border-radius:999px;padding:3px 9px;white-space:nowrap;}
 .qt-in-promo-name{padding-left:9px;}
 .qt-in-promo-note{font-size:10px;color:#444;white-space:nowrap;}
+/* v4.3.6 — บรรทัดหักลบ (เทิร์นของเก่า) ใช้สีแดงคนละชุดกับชุดโปรที่เป็นสีเขียว
+   ตั้งใจให้สะดุดตา เพราะนี่คือตัวกันเดียวที่เหลือหลังยอมให้คีย์ราคาติดลบได้:
+   พิมพ์ '-' ติดมาโดยไม่ตั้งใจ ต้องเห็นทันทีตั้งแต่บรรทัดนั้น ไม่ใช่ไปงงที่ยอดรวม */
+.deduct-row > td{background:rgba(192,57,43,.06);}
+.deduct-tag{display:inline-block;font-size:11px;font-weight:700;color:#8f2d22;
+  background:rgba(192,57,43,.13);border-radius:999px;padding:3px 9px;white-space:nowrap;}
+.deduct-amt{color:#c0392b;font-weight:800;}
+.deduct-note{font-size:10.5px;color:#8f2d22;margin-top:3px;line-height:1.35;}
+body.dark .deduct-row > td{background:rgba(240,117,106,.10);}
+body.dark .deduct-tag{background:rgba(240,117,106,.22);color:#f3a79e;}
+body.dark .deduct-amt{color:#f0756a;}
+body.dark .deduct-note{color:#f3a79e;}
+.qt-deduct td{color:#8f2d22;}
+.qt-deduct-note{font-size:10px;white-space:nowrap;}
+
 body.dark .promo-child-row > td{background:rgba(31,157,85,.10);}
 body.dark .in-promo-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
 
@@ -7349,8 +7394,11 @@ function rememberJobPartPrice(job, row, opts){
      กันที่นี่เพราะเป็นจุดเดียวที่ทุกเส้นทางจำราคาเรียกผ่าน: แก้จำนวน เปลี่ยนหน่วย
      ปุ่ม "ใช้ราคานี้" และการเรียนรู้ย้อนหลังจากใบเก่า */
   if(row.priceForeign) return '';
+  /* v4.3.6 — บรรทัดหักลบ (เทิร์นของเก่า) ไม่ใช่ราคาสินค้า ห้ามเข้าตำราราคาเด็ดขาด
+     ถ้าหลุดเข้าไป คันต่อไปที่ติ๊ก "เทิร์นแร็ค" จะได้ -500 เด้งมาเอง และแย่กว่านั้น
+     คือชื่อที่คล้ายกันอาจดึงเลขติดลบไปใส่บรรทัดขายจริง */
   const price = parseMoney(row.price);
-  if(!price) return '';
+  if(!(price > 0)) return '';
   const name = String(row.partName || '').trim();
   if(!name) return '';
   const stamp = {
@@ -9604,7 +9652,7 @@ function boardPayloadFor(job){
     parts: (job.partsNeeded || [])
       .filter(p => (p.partName || '').trim())
       .map(p => ({ name: p.partName, qty: parseQty(p.qty), unit: p.unit || 'ชิ้น',
-                   price: parsePrice(p.price), inPromo: !!p.promoParent })),
+                   price: parseLinePrice(p.price), inPromo: !!p.promoParent })),  // v4.3.6 หักลบติดลบได้
     partsSubtotal: jobPartsTotal(job),
     discountType: job.discountType || 'amount',
     discountValue: Number(job.discountValue) || 0,
@@ -15622,6 +15670,30 @@ function parsePrice(v){
   return n > 0 ? n : 0;
 }
 
+/* v4.3.6 — บรรทัดหักลบในใบเสนอราคา (เทิร์นของเก่า)
+
+   งานจริงของอู่: ลูกค้าเอาแร็คเก่าคืนให้ร้าน ร้านหักค่าของเก่าออกจากบิล
+   เจ้าของสั่ง 8 ต.ค. 2569: คีย์ "-500" ในช่องราคาเลย แล้วยอดรวมลดลง 500
+
+   ตัวนี้ "ไม่ได้" ยกเลิกด่าน M9 ของ v4.3.2 — M9 ปิดราคาติดลบเพราะคนพิมพ์ '-'
+   ติดมาโดยไม่ตั้งใจ แล้วยอดรวมติดลบ ทำให้ jobDiscountAmount คืน 0 เงียบ ๆ
+   ส่วนลดที่ช่างคีย์ไว้หายจากใบโดยไม่มีคำเตือน ซึ่งยังเป็นปัญหาจริงอยู่
+
+   จึงแยกเป็นสองตัว แล้วใช้คนละที่:
+     parsePrice      — ช่องที่ติดลบไม่มีความหมาย (ราคาตั้งในตำราราคา) คงเดิม
+     parseLinePrice  — ช่องราคาต่อบรรทัดในใบงาน ที่ติดลบได้โดยตั้งใจ
+   และกันผลข้างเคียงของ M9 ไว้สามชั้น แทนที่จะกันด้วยการห้ามพิมพ์:
+     · ยอดสุทธิถูกตัดที่ 0 ไม่ปล่อยให้ใบติดลบ (jobGrandTotal)
+     · ตำราราคาไม่จำเลขติดลบเด็ดขาด (rememberJobPartPrice)
+     · บรรทัดติดลบขึ้นป้าย "หัก" สีแดงบนจอ พิมพ์ผิดจึงเห็นทันที ไม่เงียบ */
+function parseLinePrice(v){
+  const n = parseMoney(v);
+  return isFinite(n) ? n : 0;
+}
+
+// บรรทัดนี้เป็นการหักเงินออกจากบิล (เทิร์นของเก่า / คืนของ) ไม่ใช่รายการขาย
+function isDeductRow(p){ return parseLinePrice(p && p.price) < 0; }
+
 /* จำนวนชิ้น — อย่างน้อย 1 เสมอ
    ของเดิมเขียน parseFloat(p.qty) || 1 ซึ่ง "0" เป็น falsy เลยกลายเป็น 1 ในการคิดเงิน
    แต่ตอนพิมพ์ใบใช้ p.qty ดิบ ๆ ซึ่งเป็นสตริง "0" (truthy) จึงพิมพ์ว่า
@@ -15637,7 +15709,8 @@ function jobPartsTotal(job){
   return (job.partsNeeded || []).reduce((sum, p) => {
     // รายการในชุดโปร คิดเงินรวมไปในราคาชุดแล้ว ไม่นับซ้ำ
     if(p.promoParent) return sum;
-    const price = parsePrice(p.price);    // v4.3.2 M9 — ราคาติดลบไม่ถูกหักออกจากยอด
+    // v4.3.6 — ราคาติดลบ = บรรทัดหักลบ (เทิร์นของเก่า) หักออกจากยอดจริง
+    const price = parseLinePrice(p.price);
     if(!price) return sum;
     return sum + price * parseQty(p.qty);
   }, 0);
@@ -15655,8 +15728,11 @@ function jobDiscountAmount(job){
 }
 
 // What the customer actually pays: subtotal minus the discount.
+/* v4.3.6 — ตัดที่ 0 เพราะบรรทัดหักลบทำให้ยอดติดลบได้แล้ว (เทิร์นแพงกว่าค่าซ่อม)
+   ใบที่ขึ้นยอด -2,500 แปลว่าร้านต้องจ่ายลูกค้า ซึ่งไม่ใช่สิ่งที่ใบเสนอราคาสื่อ
+   ถ้าต้องคืนเงินลูกค้าจริง นั่นเป็นคนละเรื่องกับใบนี้ */
 function jobGrandTotal(job){
-  return jobPartsTotal(job) - jobDiscountAmount(job);
+  return Math.max(0, jobPartsTotal(job) - jobDiscountAmount(job));
 }
 
 /* ---------------- In-app signatures (เซ็นชื่อในแอป) ----------------
@@ -16067,7 +16143,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   /* v3.23.0 — ช่องเงินกับช่องจำนวนถูกทำให้เป็นตัวเลขตั้งแต่ตอนคีย์
      เดิมเก็บสตริงดิบ ๆ แล้วให้แต่ละหน้าจอไปแปลเอาเอง ซึ่งแปลไม่ตรงกัน
      เก็บเป็นตัวเลขตรงนี้ที่เดียว ทุกหน้าจอจึงได้เลขเดียวกันโดยอัตโนมัติ */
-  if(field === 'price')      row.price = parsePrice(value);   // v4.3.2 M9 — ติดลบไม่ได้
+  if(field === 'price')      row.price = parseLinePrice(value); // v4.3.6 — ติดลบได้ = บรรทัดหักลบ
   else if(field === 'qty')   row.qty   = parseQty(value);
   else                       row[field] = value;
   /* v3.40.0 — พิมพ์ชื่อรายการเอง (หรือเปลี่ยนแบรนด์/รุ่นย่อย) แล้วช่องราคายังว่าง
@@ -16991,11 +17067,15 @@ function renderJobPartsEditor(job){
       </tr></thead><tbody>`;
     parts.forEach((p, idx) => {
       const qtyNum = parseQty(p.qty);
-      const priceNum = parseMoney(p.price);
-      const lineTotal = priceNum ? fmtMoney(priceNum * qtyNum) : '-';
+      const priceNum = parseLinePrice(p.price);   // v4.3.6 — ติดลบได้
+      const deduct = isDeductRow(p);
+      const lineTotal = priceNum
+        ? (deduct ? `<span class="deduct-amt">${fmtMoney(priceNum * qtyNum)}</span>`
+                  : fmtMoney(priceNum * qtyNum))
+        : '-';
       const subOpts = PART_SUBOPTIONS[p.partName];
       const inPromo = isPromoChild(p);
-      html += `<tr class="${inPromo ? 'promo-child-row' : ''}">
+      html += `<tr class="${inPromo ? 'promo-child-row' : ''}${deduct ? ' deduct-row' : ''}">
         <td class="center">${idx+1}</td>
         <td data-label="รายการ">
           ${inPromo ? `<span class="promo-child-dash">└</span>` : ''}<input type="text" class="part-name-input${inPromo ? ' promo-child-name' : ''}" value="${escapeAttr(p.partName)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','partName', this.value)">
@@ -17026,7 +17106,7 @@ function renderJobPartsEditor(job){
         </td>
         <td class="center" data-label="ราคา/หน่วย">${inPromo
           ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>`
-          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
+          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${deduct ? `<div class="deduct-note"><span class="deduct-tag">หัก</span> หักออกจากยอดรวม ${fmtMoney(Math.abs(priceNum * qtyNum))} บาท</div>` : ''}${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
         <td class="center" data-label="รวม"><strong>${inPromo ? '—' : lineTotal}</strong></td>
         <td class="center"><button class="icon-btn" title="ลบรายการนี้" onclick="removeJobPart('${job.id}','${p.id}')">${icon('trash',13)}</button></td>
       </tr>`;
@@ -17398,16 +17478,20 @@ function renderJobQuotePage(job){
     } else {
       chunk.forEach((p, i) => {
         const qty = parseQty(p.qty);
-        const price = parseMoney(p.price);
+        const price = parseLinePrice(p.price);   // v4.3.6 — บรรทัดหักลบติดลบได้
+        const deduct = isDeductRow(p);
         const inPromo = isPromoChild(p);
         const baseName = p.variant
           ? `${escapeHtml(p.partName)} <span class="qt-sub">(${escapeHtml(p.variant)})</span>`
           : escapeHtml(p.partName);
         // รายการในชุดโปรเยื้องเข้ามา ลูกค้าจะได้เห็นว่าของพวกนี้อยู่ใต้ชุดข้างบน
         const name = inPromo ? `<span class="qt-in-promo-name">└ ${baseName}</span>` : baseName;
-        rows += `<tr class="${inPromo ? 'qt-in-promo' : ''}">
+        /* v4.3.6 — บรรทัดหักลบขึ้นคำว่า "หักออก" บนใบที่ลูกค้าเซ็น
+           เลขติดลบเฉย ๆ บนกระดาษอ่านกำกวม (ลูกค้าถามว่าติดลบคืออะไร)
+           คำกำกับทำให้เถียงกันทีหลังไม่ได้ว่าตกลงหักหรือไม่หัก */
+        rows += `<tr class="${inPromo ? 'qt-in-promo' : ''}${deduct ? ' qt-deduct' : ''}">
           <td class="center">${startIdx + i + 1}</td>
-          <td>${name}</td>
+          <td>${name}${deduct ? ' <span class="qt-deduct-note">(หักออก)</span>' : ''}</td>
           <td class="center">${escapeHtml(String(qty))} ${escapeHtml(p.unit || '')}</td>
           <td>${escapeHtml(p.brand || '-')}</td>
           <td class="right${inPromo ? ' qt-in-promo-note' : ' mono'}">${
