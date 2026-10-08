@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.3.6";
+  const APP_VERSION = "4.3.7";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2390,7 +2390,84 @@
 
               tests\dguard.js 21/21 ที่นี่ · 7/21 บน v4.3.5
               tests\guard.js D11 เปลี่ยนความหมาย (เดิมล็อกว่า "ยอดรวมไม่นับราคาติดลบ")
-              แตกเป็น D11/D11b/D11c แทนการลบทิ้ง เพื่อให้เหตุผลเดิมของ M9 ยังถูกเทสต์ -->
+              แตกเป็น D11/D11b/D11c แทนการลบทิ้ง เพื่อให้เหตุผลเดิมของ M9 ยังถูกเทสต์
+
+     v4.3.7 — ใบรับรถแยกสีตามประเภทลูกค้า — ทำตามแบบใน Figma
+              ไฟล์ "POWER GROUP — ใบรับรถแยกสี" (E5Vbzf6iE1DR3pNjOzzxy4)
+
+              กรอบ 7:2 หัวข้อ "สเปกนำไปใช้" ในแบบเขียนขอบเขตไว้เองสองข้อ:
+                1. ใหม่ = เขียว · เดิม = ส้ม
+                2. วัน เวลา สถานะ ดึงจาก job
+              ใบสองใบในแบบ (node 5:152 กับ 5:224) วางเหมือนกันทุกมิลลิเมตร ต่างกัน
+              แค่สี จึงแก้เฉพาะสี ไม่ไปรื้อเลย์เอาต์ที่มีอยู่ — การขยับอย่างอื่นคือ
+              การด้นสด ไม่ใช่การทำตามแบบ
+
+              ค่าสีไม่ได้เดาจากภาพ: get_design_context ของ node 5:228 ("ใบรับรถ"
+              บนใบส้ม) คืน #df6c1b ตรงกับค่าที่สุ่มจากพิกเซลภาพ render เป๊ะ จึงใช้
+              การสุ่มพิกเซลอ่านสีพื้นของ vector ที่เหลือได้ (Figma คืน vector เป็น
+              ไฟล์ SVG ไม่ได้คืนเลขสีมาให้)
+
+                        โทนเขียว (ลูกค้าใหม่)   โทนส้ม (ลูกค้าเดิม)
+                accent   #17804a                #df6c1b
+                tint     #e6f3eb                #fff0e2
+
+              จุดที่ย้อมสี 6 จุด (เท่าที่แบบระบายต่างกันจริง): แถบบนสุด · คำว่า
+              "ใบรับรถ" · แถบวันที่/เวลา/สถานะ · หัวกล่องอาการ · หัวตารางรายการ ·
+              กล่องเบอร์โทรท้ายใบ
+              แถบ "ข้อมูลลูกค้าและรถยนต์" คงสีกลางทั้งสองโทน ตามที่แบบทำไว้
+
+              โทนถูกเก็บไว้กับใบงาน (job.docTone) ไม่คิดสดตอนพิมพ์ ตามกรอบ 7:6
+              "สีถูกเก็บไว้กับใบรับรถ" — ลูกค้าที่วันนี้เป็นลูกค้าใหม่ พรุ่งนี้เป็น
+              ลูกค้าเดิม ถ้าคิดสดใบเดิมที่พิมพ์ซ้ำจะเปลี่ยนสีเอง ไม่ตรงกับใบที่
+              ลูกค้าถือกลับบ้านไปแล้ว
+
+              หน้ารับรถมีชิปเลือกประเภทลูกค้า (node 9:131) พร้อมคำอธิบาย "เลือกสีที่
+              จะใช้บนใบรับรถ" · เจอรถเดิมในระบบ ระบบ "เสนอ" โทนส้มให้พร้อมเหตุผล
+              "พบรถเดิม — ระบบเสนอเอกสารโทนส้ม" (node 7:22) แต่ช่างกดเปลี่ยนทับได้
+              คำว่าเสนอในแบบคือค่าตั้งต้น ไม่ใช่การบังคับ
+
+              ใบเสนอราคาไม่ถูกย้อมตาม ทั้งที่ใช้ renderJobFormHeader ร่วมกัน —
+              คลาสโทนอยู่บนรากของหน้าใบรับรถเท่านั้น มีเทสต์กันไว้ (F4-1)
+
+              ตรวจซ้ำสามรอบด้วย agent อิสระสามตัว (คนละ context ไม่รู้ว่าผู้เขียนคิดอะไร)
+              เจอของจริง 9 ข้อ แก้ครบแล้ว ที่หนักสุดสามข้อคือ:
+
+                · หน้า ?reception ของลูกค้าแสดงบรรทัดหักลบเป็น "รอยืนยัน" ไม่ใช่ -500
+                  เพราะตารางฝั่งลูกค้าเช็ก `line > 0` — บันทึกของ v4.3.6 เคลมไว้ว่า
+                  "หน้า ?reception ได้ราคาติดลบจริง" ซึ่งไม่จริง เทสต์ตอนนั้น (D5-5)
+                  วัดแค่ payload ที่ส่งขึ้น board ไม่ได้วัดสิ่งที่ลูกค้าเห็นจริง
+
+                · jobBestPrice กับ buildLineSummaryText ใช้ `total > 0` แทนความหมาย
+                  "มีรายการที่คีย์ราคาแล้ว" ซึ่งเคยถูกตอนยอดรวมติดลบไม่ได้ พอ v4.3.6
+                  ทำให้ติดลบได้ อะไหล่ 1,000 เทิร์น -1,500 → จอทีวี/หน้าลูกค้าโชว์
+                  ราคาประเมินเก่า 12,000 และสรุปที่โพสต์ลงไลน์ตัดยอดเงินทิ้งทั้งก้อน
+                  ขณะที่ใบที่พิมพ์บอก 0 → เปลี่ยนไปใช้ jobHasPricedLines()
+
+                · เลือกโทนบนฟอร์มเปล่าแล้วกดย้อนกลับ ร่างไม่ถูกลบ (hasCheckinDraft
+                  ไม่นับ ci_docTone) รถคันถัดไปที่เป็นลูกค้าใหม่จริง ๆ จึงได้โทนส้ม
+                  ติดมาเงียบ ๆ โดยไม่มีแถบเตือนว่ามีร่างค้าง แล้วสีผิดติดใบงานถาวร
+
+              ที่เหลือ: กฎโหมดมืดของ v4.3.6 เขียนเป็น body.dark ซึ่งไม่มีทางตรง (แอปนี้
+              ใช้ html[data-mode="dark"]) · ชิปเป็น <button> แต่ไม่ได้ font-family:inherit
+              ตัวหนังสือไทยเลยคนละแบบกับหัวข้อข้าง ๆ · --muted/--card ไม่มีอยู่จริง
+              (ของจริงคือ --text-2/--card-bg) · แถบ "ระบบเสนอโทนส้ม" ยังขึ้นหลังช่าง
+              เลือกเขียวทับ = จอโกหก · บรรทัดลูกชุดโปรที่ติดลบติดป้าย "หักออก" ทั้งที่
+              ไม่ได้เข้ายอด · DOC_TONES['constructor'] ผ่านด่านได้ (ไต่ prototype)
+
+              บทเรียนที่เอาเข้าเทสต์แล้ว: เคยใส่ inline style ให้ชิปเพื่อให้ค่าสีฝั่ง JS
+              "ถูกใช้จริง" ผลคือ inline ชนะ stylesheet เสมอ กฎ .ctp-new{--ctp-c} เลย
+              กลายเป็นของตาย ส่วนเทสต์ที่เช็กว่า "มีกฎนั้นอยู่" ก็ยังเขียว — ตอนนี้
+              ค่าสีมีที่เดียวคือ CSS และมีเทสต์กันไม่ให้เอากลับเข้าฝั่ง JS อีก
+
+              หมายเหตุ: renderJobEstimateForm (ใบรับรถแบบตรวจเช็คด่วน) ถูกย้อมสีให้
+              ด้วย แต่ฟังก์ชันนั้นไม่มีใครเรียกมาตั้งแต่ v4.1.3 — ของเดิม ไม่ได้เกิด
+              รอบนี้ แต่แปลว่า "ย้อมสองแบบฟอร์ม" จริง ๆ แล้วมีผลแบบเดียว
+
+              tests\fguard.js 49/49 ที่นี่ · 10/47 บน v4.3.5
+              tests\dguard.js 27/27 ที่นี่ · 10/27 บน v4.3.5
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22
+              ชุดเบราว์เซอร์ 35 ชุด เท่ากับ baseline ทุกชุด ไม่มี regression
+              วัดสีที่ render จริงบนเบราว์เซอร์เทียบกับค่าใน Figma: ตรงทั้ง 16 จุด -->
 
 
 
@@ -5046,8 +5123,35 @@
 
   /* อาการ: ป้าย = ลูกค้าแจ้ง · เส้นประ = ช่างตรวจเจอเพิ่ม */
   .ci-form .sym-box{border:1.6px solid #1b1f24; border-radius:6px; overflow:hidden; margin-top:2px;}
+  /* ===== v4.3.7 — ใบรับรถแยกสีตามประเภทลูกค้า (Figma E5Vbzf6iE1DR3pNjOzzxy4) =====
+     ตั้งค่าตั้งต้นไว้ที่ .ci-form เอง เพื่อให้ใบเก่าที่ยังไม่มีคลาสโทน (หรือ docTone
+     ที่อ่านไม่ออก) ยังได้สีครบ ไม่หลุดเป็นช่องขาว แล้วคลาสโทนค่อยทับทีหลัง
+     เปลี่ยนเฉพาะ "สี" ของหกจุดที่ Figma ระบายต่างกันระหว่างสองใบเท่านั้น
+     ความสูง เส้นขอบ ฟอนต์ และเลย์เอาต์ทั้งหมดคงเดิม — ใบสองใบใน Figma วางเหมือนกัน
+     ทุกมิลลิเมตร ต่างกันแค่สี การไปขยับอย่างอื่นคือการด้นสด ไม่ใช่การทำตามแบบ */
+  .ci-form{ --ci-accent:#17804a; --ci-tint:#e6f3eb; }
+  /* เขียนเป็น .ci-form.ci-tone-* ให้ specificity สูงกว่า .ci-form เฉย ๆ จะได้ไม่ต้อง
+     พึ่งลำดับบรรทัดในไฟล์ — ถ้าวันหน้ามีใครเพิ่ม .ci-form{--ci-accent} ไว้ท้ายไฟล์
+     ใบของลูกค้าเดิมจะกลายเป็นเขียวหมดโดยไม่มีอะไรเตือน */
+  .ci-form.ci-tone-new{    --ci-accent:#17804a; --ci-tint:#e6f3eb; }
+  .ci-form.ci-tone-repeat{ --ci-accent:#df6c1b; --ci-tint:#fff0e2; }
+
+  .ci-form .hazard-edge{
+    background:var(--ci-accent); box-shadow:none;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .ci-form .pv-doc-title{ color:var(--ci-accent) !important; }
+  .ci-form .pv-band{
+    background:var(--ci-tint);
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .ci-form .callbox{
+    background:var(--ci-tint); border-color:var(--ci-accent);
+  }
+  .ci-form .cb-lead, .ci-form .cb-digits{ color:#1b1f24 !important; }
+
   .ci-form .sym-head{
-    background:#dfe3e7; color:#1b1f24 !important; font-size:11.5px; font-weight:800;
+    background:var(--ci-tint); color:#1b1f24 !important; font-size:11.5px; font-weight:800;
     padding:4px 10px; border-bottom:1.4px solid #1b1f24;
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
@@ -5089,7 +5193,7 @@
     width:100%; height:100%; border-collapse:separate; border-spacing:0; table-layout:fixed;
   }
   .ci-form table.bl th{
-    background:#dfe3e7; color:#1b1f24 !important; font-size:10px; font-weight:800;
+    background:var(--ci-tint); color:#1b1f24 !important; font-size:10px; font-weight:800;
     border:1px solid #1b1f24; padding:3px 4px; height:6mm;
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
@@ -5126,8 +5230,8 @@
     width:100%; border-collapse:collapse; table-layout:fixed;
     border:1.2px solid #1b1f24; margin-top:2px;
   }
-  .qe-table th{
-    background:#dfe3e7; color:#1b1f24 !important; font-size:10px; font-weight:800;
+  .ci-form .qe-table th{
+    background:var(--ci-tint); color:#1b1f24 !important; font-size:10px; font-weight:800;
     border:1px solid #1b1f24; padding:3px 4px; height:6mm;
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
@@ -6445,6 +6549,40 @@ body.dark .pb-missing{color:#fbbf24;}
 .promo-child-row > td{background:rgba(31,157,85,.05);}
 .promo-child-dash{color:#1f9d55;font-weight:700;margin-right:4px;}
 .part-name-input.promo-child-name{width:calc(100% - 18px);font-weight:400;}
+/* v4.3.7 — ปุ่มเลือกประเภทลูกค้าบนหน้ารับรถ (Figma node 9:131 และ 7:11-7:18)
+   ชิปสองอัน แต่ละอันมีแถบสีซ้ายบอกโทนเอกสารที่จะได้ · อันที่เลือกอยู่ได้พื้นอ่อน
+   กับขอบสีโทนนั้น · ใช้ค่าสีชุดเดียวกับใบที่พิมพ์ จะได้ไม่เพี้ยนกันระหว่างจอกับกระดาษ */
+.ci-tone-pick .ctp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+.ctp-title{font-size:14px;font-weight:700;color:var(--text);}
+.ctp-sub{font-size:11.5px;color:var(--text-2);margin-top:2px;}
+.ctp-opts{display:flex;gap:10px;flex-wrap:wrap;}
+.ctp-opt{display:flex;align-items:center;gap:9px;padding:8px 13px 8px 9px;border-radius:9px;
+  border:1.5px solid var(--border);background:var(--card-bg);cursor:pointer;text-align:left;
+  font-family:inherit;}
+.ctp-bar{width:5px;align-self:stretch;min-height:27px;border-radius:3px;background:var(--ctp-c);}
+.ctp-txt{display:flex;flex-direction:column;line-height:1.25;}
+.ctp-lab{font-size:13.5px;font-weight:700;color:var(--text);}
+.ctp-doc{font-size:10.5px;color:var(--text-2);}
+.ctp-new{--ctp-c:#17804a;}
+.ctp-repeat{--ctp-c:#df6c1b;}
+.ctp-opt.on{border-color:var(--ctp-c);background:var(--ctp-bg);}
+.ctp-new.on{--ctp-bg:#e6f3eb;}
+.ctp-repeat.on{--ctp-bg:#fff0e2;}
+.ctp-new.on .ctp-lab{color:#17673a;}
+.ctp-new.on .ctp-doc{color:#49805e;}
+.ctp-repeat.on .ctp-lab{color:#8d4a15;}
+.ctp-repeat.on .ctp-doc{color:#a65312;}
+.ctp-why{margin-top:11px;padding:7px 11px;border-radius:7px;background:#fff0e2;
+  color:#a65312;font-size:11.5px;font-weight:600;}
+/* โหมดมืดของแอปนี้ตั้งที่ html[data-mode="dark"] (ดู applyDarkMode) ไม่ใช่ body.dark
+   — ในไฟล์มีกฎ body.dark ที่ไม่เคยทำงานค้างอยู่อีกราว 30 ข้อ ยังไม่ได้ตามเก็บรอบนี้ */
+html[data-mode="dark"] .ctp-opt.on{background:transparent;}
+html[data-mode="dark"] .ctp-new.on .ctp-lab{color:#8ee5b0;}
+html[data-mode="dark"] .ctp-new.on .ctp-doc{color:#7fc79b;}
+html[data-mode="dark"] .ctp-repeat.on .ctp-lab{color:#f0a56a;}
+html[data-mode="dark"] .ctp-repeat.on .ctp-doc{color:#d8926f;}
+html[data-mode="dark"] .ctp-why{background:rgba(223,108,27,.16);color:#e8a977;}
+
 .in-promo-tag{display:inline-block;font-size:11px;font-weight:700;color:#14532d;
   background:rgba(31,157,85,.14);border-radius:999px;padding:3px 9px;white-space:nowrap;}
 .qt-in-promo-name{padding-left:9px;}
@@ -6457,11 +6595,16 @@ body.dark .pb-missing{color:#fbbf24;}
   background:rgba(192,57,43,.13);border-radius:999px;padding:3px 9px;white-space:nowrap;}
 .deduct-amt{color:#c0392b;font-weight:800;}
 .deduct-note{font-size:10.5px;color:#8f2d22;margin-top:3px;line-height:1.35;}
-body.dark .deduct-row > td{background:rgba(240,117,106,.10);}
-body.dark .deduct-tag{background:rgba(240,117,106,.22);color:#f3a79e;}
-body.dark .deduct-amt{color:#f0756a;}
-body.dark .deduct-note{color:#f3a79e;}
+/* v4.3.7 — v4.3.6 เขียนกฎพวกนี้เป็น body.dark ซึ่งไม่มีทางตรง เพราะโหมดมืดของแอปนี้
+   ตั้งที่ html[data-mode="dark"] (ดู applyDarkMode) ผลคือในโหมดมืด แถวหักลบได้พื้น
+   แดงจาง ๆ บนการ์ดสีเกือบดำ = แทบมองไม่เห็น ซึ่งล้มเหตุผลของมันเองที่เขียนไว้ว่า
+   "นี่คือตัวกันเดียวที่เหลือหลังยอมให้คีย์ราคาติดลบ" */
+html[data-mode="dark"] .deduct-row > td{background:rgba(240,117,106,.10);}
+html[data-mode="dark"] .deduct-tag{background:rgba(240,117,106,.22);color:#f3a79e;}
+html[data-mode="dark"] .deduct-amt{color:#f0756a;}
+html[data-mode="dark"] .deduct-note{color:#f3a79e;}
 .qt-deduct td{color:#8f2d22;}
+.rq-c-deduct{color:#c0392b;font-weight:700;}
 .qt-deduct-note{font-size:10px;white-space:nowrap;}
 
 body.dark .promo-child-row > td{background:rgba(31,157,85,.10);}
@@ -9099,6 +9242,7 @@ var view = {
   dayFilter:null,  // set to today on first render; 'all' shows every day
   dayFilterPinned:false,  // v4.3.4 Q3 — true = คนเลือกวันเอง ห้ามเลื่อนตามเที่ยงคืน
   ci_queueClash:null,     // v4.3.4 Q2 — jobNumber ของคันที่ถือเลขคิวนี้อยู่แล้ววันนี้
+  ci_docTone:null,        // v4.3.7 — null = ยังไม่เลือกเอง ใช้ของที่ระบบเสนอ
   ci_partsOpen:false, ci_showErrors:false,
   modelEditOpen:false,
   bayBoardOpen:true,
@@ -9229,6 +9373,11 @@ function ensureJobFields(){
       j.createdAt = (first && first.changedAt) || nowIso();
       changed = true;
     }
+    /* v4.3.7 — ตั้งใจ "ไม่" เติม docTone ย้อนหลังให้ใบเก่า
+       docToneOf() มีค่าสำรองอยู่แล้ว ใบเก่าจึงพิมพ์ออกมาถูกโดยไม่ต้องแตะข้อมูล
+       ถ้าเติม: ใบงานทุกใบใน state (สูงสุด RECENT_JOBS_LIMIT = 600) ถูกมาร์กว่า
+       เปลี่ยน แล้ว flushState เขียน jobs 600 + board อีก 600 รวมพันกว่ารายการ
+       ในก้อนเดียวที่ล้มทั้งก้อนได้ — แลกกับการเติมฟิลด์ที่ไม่มีใครต้องใช้ */
     if(j.queueNo === undefined){ j.queueNo = ''; changed = true; }
     if(j.bay === undefined){ j.bay = ''; changed = true; }
     // v3.27.0 — รถค้าง: ขั้นที่ค้างไว้ + เวลาที่เริ่มพัก
@@ -11495,6 +11644,7 @@ function resetCheckin(){
   view.ci_estUnit='hour'; view.ci_estValue=0;
   view.ci_queueLocked=false; view.ci_queueBusy=false; view.ci_queueErr='';
   view.ci_queueClash=null;   // v4.3.4 Q2
+  view.ci_docTone=null;      // v4.3.7 — กลับไปใช้ค่าที่ระบบเสนอ
   clearCheckinDraft();
 }
 
@@ -11510,7 +11660,10 @@ const CI_DRAFT_FIELDS = [
   'ci_newModelKey','ci_newBrand','ci_newModel','ci_newYear','ci_newColor','ci_newProvince',
   'ci_newCustomerName','ci_newCustomerPhone','ci_mileage',
   'ci_checked','ci_customComplaints','ci_photos',
-  'ci_estUnit','ci_estValue'
+  'ci_estUnit','ci_estValue',
+  // v4.3.7 — โทนที่ช่างเลือกเองต้องติดไปกับร่างด้วย ไม่งั้นบันทึกร่างแล้วเปิดกลับมา
+  // suggestedDocTone() จะชนะ แล้วสีที่เลือกไว้เด้งกลับเงียบ ๆ = "เสนอ" กลายเป็น "บังคับ"
+  'ci_docTone'
 ];
 
 /* v3.23.0 — คืนค่าว่าเซฟผ่านจริงไหม
@@ -11548,7 +11701,13 @@ function clearCheckinDraft(){
 }
 
 function hasCheckinDraft(){
-  return !!((view.ci_plateQuery||'').trim()
+  /* v4.3.7 — ต้องนับ ci_docTone ด้วย ไม่งั้น: กดเลือก "ลูกค้าเดิม" บนฟอร์มเปล่า →
+     saveCheckinDraft() เขียนร่างลง localStorage → กดย้อนกลับ → leaveCheckin() เห็นว่า
+     "ไม่มีร่าง" เลยไม่ลบทิ้ง → รถคันถัดไปที่เป็นลูกค้าใหม่จริง ๆ เปิดหน้ารับรถมา
+     ได้โทนส้มติดมาเงียบ ๆ โดยไม่มีแถบ "มีร่างค้างอยู่" ขึ้นเตือนด้วย (ซ่อนด้วย
+     เงื่อนไขเดียวกันนี้) แล้วสีผิดนั้นติดใบงานถาวร เพราะแก้โทนได้แค่ตอนรับรถ */
+  return !!(hasDocTone(view.ci_docTone)
+    || (view.ci_plateQuery||'').trim()
     || (view.ci_queueNo||'').trim()
     || (view.ci_mileage||'').toString().trim()
     || (view.ci_newCustomerName||'').trim()
@@ -12367,6 +12526,8 @@ function submitCheckin(){
     photoCount: view.ci_photos.length,
     photos: [],
     createdAt: nowIso(),
+    // v4.3.7 — โทนเอกสารติดไปกับใบงาน ไม่คิดสดตอนพิมพ์ (ดูคอมเมนต์ที่ DOC_TONES)
+    docTone: effectiveCheckinDocTone(),
     statusHistory: [{ status:'received', changedAt: nowIso() }]
   };
   const fullPhotos = view.ci_photos.map(p => p.full).filter(Boolean);
@@ -15386,6 +15547,31 @@ function renderCheckin(){
     ${draft ? `<button class="btn secondary small" onclick="clearCheckinForm()">${icon('trash',13)} ล้างฟอร์ม</button>` : ''}
   </div>`;
 
+  /* v4.3.7 — เลือกประเภทลูกค้า = เลือกสีใบรับรถ (Figma node 9:131 และ 7:9-7:22)
+     วางไว้เหนือขั้นที่ 1 เพราะต้องตัดสินใจก่อนบันทึก และเพราะตอนพิมพ์ทีหลัง
+     จะแก้ไม่ได้แล้ว (โทนติดไปกับใบงาน) */
+  const tone = effectiveCheckinDocTone();
+  html += `<div class="card ci-tone-pick no-print">
+    <div class="ctp-head">
+      <div>
+        <div class="ctp-title">ประเภทลูกค้า</div>
+        <div class="ctp-sub">เลือกสีที่จะใช้บนใบรับรถ</div>
+      </div>
+      <div class="ctp-opts">
+        ${Object.keys(DOC_TONES).map(k => {
+          const t = DOC_TONES[k];
+          return `<button type="button" class="ctp-opt ctp-${t.key}${tone === t.key ? ' on' : ''}"
+            onclick="setCheckinDocTone('${t.key}')" aria-pressed="${tone === t.key}">
+            <span class="ctp-bar"></span>
+            <span class="ctp-txt"><span class="ctp-lab">${escapeHtml(t.label)}</span><span class="ctp-doc">${escapeHtml(t.doc)}</span></span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+    ${(matched && tone === suggestedDocTone())
+       ? `<div class="ctp-why">พบรถเดิม — ระบบเสนอเอกสารโทนส้ม</div>` : ''}
+  </div>`;
+
   html += `<div class="card">
     <h3><span class="ci-step">1</span>${icon('car',15)} รถคันนี้</h3>
     <div class="row3">
@@ -15601,6 +15787,62 @@ function fmtDateBE(iso){
 }
 
 // A customer counts as "ลูกค้าเดิม" (repeat) if they have any other job on file.
+/* ===========================================================================
+   v4.3.7 — ใบรับรถแยกสีตามประเภทลูกค้า
+   สเปกจาก Figma: "POWER GROUP — ใบรับรถแยกสี" (E5Vbzf6iE1DR3pNjOzzxy4)
+
+   กรอบ 7:2 หัวข้อ "สเปกนำไปใช้" เขียนไว้เองสองข้อ ซึ่งคือขอบเขตของงานนี้ทั้งหมด:
+     1. ใหม่ = เขียว · เดิม = ส้ม
+     2. วัน เวลา สถานะ ดึงจาก job
+   จึงไม่ไปรื้อเลย์เอาต์ใบรับรถที่มีอยู่ — ใบสองใบใน Figma (node 5:152 กับ 5:224)
+   วางเหมือนกันทุกมิลลิเมตร ต่างกันแค่สีเท่านั้น "แยกสี" คือสิ่งที่ออกแบบมาให้แก้
+
+   ค่าสีไม่ได้เดาจากภาพ: get_design_context ของ node 5:228 ("ใบรับรถ" ใบส้ม)
+   คืน #df6c1b ตรงกับค่าที่สุ่มจากพิกเซลภาพ render เป๊ะ จึงใช้การสุ่มพิกเซลอ่าน
+   สีพื้นของ vector ที่เหลือ (Figma คืน vector เป็นไฟล์ SVG ไม่ได้คืนเลขสี)
+
+   ทำไมต้องเก็บโทนไว้กับใบงาน ไม่คิดสดตอนพิมพ์: กรอบ 7:6 เขียนว่า "สีถูกเก็บไว้กับ
+   ใบรับรถ" ซึ่งถูกต้องตามงานจริง — ลูกค้าที่วันนี้เป็นลูกค้าใหม่ พรุ่งนี้กลายเป็น
+   ลูกค้าเดิม ถ้าคิดสดตอนพิมพ์ ใบเดิมที่พิมพ์ซ้ำจะเปลี่ยนสีเอง ไม่ตรงกับใบที่
+   ลูกค้าถือกลับบ้านไปแล้ว
+   =========================================================================== */
+const DOC_TONES = {
+  /* ตั้งใจไม่เก็บเลขสีไว้ที่นี่ — CSS เป็นแหล่งเดียวของค่าสี (.ci-tone-* และ .ctp-*)
+     เคยลองใส่ accent/tint ไว้ด้วยแล้วส่งเป็น inline style ให้ชิป ผลคือ inline ชนะ
+     กฎใน stylesheet เสมอ กฎ .ctp-new{--ctp-c} สี่ข้อเลยกลายเป็นของตายที่ไม่เคยทำงาน
+     และเทสต์ที่เช็กว่า "มีกฎนั้นอยู่" ก็ผ่านโดยไม่ได้พิสูจน์ว่ามันมีผล */
+  new:    { key:'new',    label:'ลูกค้าใหม่', doc:'เอกสารโทนเขียว' },
+  repeat: { key:'repeat', label:'ลูกค้าเดิม', doc:'เอกสารโทนส้ม' }
+};
+const DEFAULT_DOC_TONE = 'new';
+
+// DOC_TONES['constructor'] ตอบ truthy เพราะไต่ขึ้น prototype — เช็กเฉพาะคีย์ของตัวเอง
+function hasDocTone(k){ return Object.prototype.hasOwnProperty.call(DOC_TONES, k); }
+
+function docToneOf(job){
+  const t = job && job.docTone;
+  return hasDocTone(t) ? t : DEFAULT_DOC_TONE;
+}
+
+/* โทนที่ "ระบบเสนอ" ตอนรับรถ — Figma node 7:22 เขียนว่า "พบรถเดิม — ระบบเสนอ
+   เอกสารโทนส้ม" คำว่าเสนอสำคัญ: เป็นค่าตั้งต้น ไม่ใช่การบังคับ ช่างกดเปลี่ยนทับได้
+   เกณฑ์คือ "จับคู่กับรถในระบบได้" ซึ่งคือสิ่งที่หน้ารับรถรู้จริงตอนนั้น */
+function suggestedDocTone(){
+  return view.ci_matchedVehicleId ? 'repeat' : 'new';
+}
+
+// โทนที่จะใช้จริง: ของที่ช่างเลือกไว้ชนะเสมอ ถ้ายังไม่เลือกค่อยใช้ของที่ระบบเสนอ
+function effectiveCheckinDocTone(){
+  return hasDocTone(view.ci_docTone) ? view.ci_docTone : suggestedDocTone();
+}
+
+function setCheckinDocTone(tone){
+  if(!hasDocTone(tone)) return;
+  view.ci_docTone = tone;
+  saveCheckinDraft();
+  render();
+}
+
 function isRepeatCustomer(customerId, excludeJobId){
   return activeJobs().some(j => j.customerId === customerId && j.id !== excludeJobId);
 }
@@ -15692,7 +15934,12 @@ function parseLinePrice(v){
 }
 
 // บรรทัดนี้เป็นการหักเงินออกจากบิล (เทิร์นของเก่า / คืนของ) ไม่ใช่รายการขาย
-function isDeductRow(p){ return parseLinePrice(p && p.price) < 0; }
+function isDeductRow(p){
+  // บรรทัดลูกของชุดโปรไม่เข้ายอดรวมอยู่แล้ว ติดป้าย "หักออก" ไปก็ผิด — ใบที่ลูกค้า
+  // เซ็นจะบอกว่าหักเงินให้ ทั้งที่ช่องจำนวนเงินขึ้นว่า "อยู่ในรายการโปร"
+  if(!p || p.promoParent) return false;
+  return parseLinePrice(p.price) < 0;
+}
 
 /* จำนวนชิ้น — อย่างน้อย 1 เสมอ
    ของเดิมเขียน parseFloat(p.qty) || 1 ซึ่ง "0" เป็น falsy เลยกลายเป็น 1 ในการคิดเงิน
@@ -16306,9 +16553,18 @@ function addAllModelPartsToJob(jobId){
 // parts have been added, falling back to the rough priceEstimate jotted down before
 // that (both feed this so the LINE summary and รถค้างรายวัน never disagree on which
 // number is "the" price).
+/* v4.3.7 — ก่อน v4.3.6 ยอดรวมติดลบไม่ได้ `total > 0` จึงแปลว่า "ยังไม่มีรายการ"
+   พอมีบรรทัดหักลบ (เทิร์นของเก่า) ยอดรวมติดลบได้จริง เงื่อนไขเดิมจึงตีความผิดว่า
+   "ยังไม่ได้ตั้งราคา" แล้วเด้งกลับไปใช้ราคาประเมินคร่าว ๆ ตัวเก่า
+   เคสจริง: อะไหล่ 1,000 เทิร์น -1,500 → จอทีวี/หน้าลูกค้า/สรุปไลน์ โชว์ 12,000
+   (ราคาประเมินเดิม) ขณะที่ใบที่พิมพ์บอก 0 — คนละตัวเลขบนเอกสารกับบนจอ
+   ตัวตัดสินที่ถูกคือ "มีรายการที่คีย์ราคาแล้วหรือยัง" ไม่ใช่ "ยอดรวมเป็นบวกไหม" */
+function jobHasPricedLines(job){
+  return (job && job.partsNeeded || []).some(p => p && !p.promoParent && parseLinePrice(p.price));
+}
+
 function jobBestPrice(job){
-  const total = jobPartsTotal(job);
-  if(total > 0) return jobGrandTotal(job);
+  if(jobHasPricedLines(job)) return jobGrandTotal(job);
   return Number(job.priceEstimate) || 0;
 }
 
@@ -16349,8 +16605,12 @@ function buildLineSummaryText(job){
       const priceTxt = price ? ` = ${fmtMoney(price * qty)}` : '';
       lines.push(`- ${p.partName}${p.variant ? ' ('+p.variant+')' : ''}${qtyTxt}${brandTxt}${priceTxt}`);
     });
+    /* v4.3.7 — ของเดิม `total > 0` ใช้แทนความหมาย "มีรายการที่คีย์ราคาแล้ว" ซึ่งเคย
+       ถูกตอนที่ยอดรวมติดลบไม่ได้ พอมีบรรทัดหักลบ (v4.3.6) ยอดรวมติดลบได้จริง
+       ข้อความที่โพสต์ลงกลุ่มไลน์จึงตัดบล็อก รวม/ส่วนลด/ยอดสุทธิ ทิ้งทั้งก้อนเงียบ ๆ
+       ขณะที่ใบที่พิมพ์บอก 0 — จอกับกระดาษไม่ตรงกันอีกแบบหนึ่ง (ตัวเดียวกับ jobBestPrice) */
     const total = jobPartsTotal(job);
-    if(total > 0){
+    if(jobHasPricedLines(job)){
       const discountAmt = jobDiscountAmount(job);
       if(discountAmt > 0){
         lines.push(`รวม ${fmtMoney(total)} บาท`);
@@ -17219,6 +17479,24 @@ function renderJobPartsEditor(job){
    now belongs to ใบรับรถ alone. The field ORDER is still the shop's convention and the
    two sheets are still read side by side, so keep them in step by hand.
    --------------------------------------------------------------------------- */
+/* v4.3.7 — บรรทัดหัวใบรับรถ ตาม Figma node 7:30
+   "วันที่รับรถ 08/10/2026 · เวลา 14:53 น. · สถานะ: รับรถเข้า"
+   ของเดิมใช้ fmtDT ซึ่งคืน "08/10/2026 07:53" ติดกันเป็นก้อนเดียว อ่านยากบนกระดาษ
+   และไม่มีคำว่า "เวลา"/"น." ที่บอกว่าเลขชุดหลังคือเวลา ไม่ใช่ส่วนหนึ่งของวันที่
+   ข้อมูลยังมาจาก job.createdAt ตัวเดิมทั้งหมด ไม่ได้เพิ่มแหล่งข้อมูลใหม่ */
+function intakeSubLine(job){
+  const st = statusOf(job && job.status);
+  /* new Date(null) = epoch 1970 ไม่ใช่ NaN ตัว isNaN จึงจับไม่ได้ ต้องกันค่าว่างก่อน
+     ของเดิม fmtDT มี `if(!iso) return '-'` อยู่แล้ว ย้ายด่านนั้นมาด้วย */
+  if(!job || !job.createdAt) return `สถานะ: ${st.label}`;
+  const d = new Date(job.createdAt);
+  if(isNaN(d.getTime())) return `สถานะ: ${st.label}`;
+  const p = n => String(n).padStart(2, '0');
+  const date = `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `วันที่รับรถ ${date} · เวลา ${time} น. · สถานะ: ${st.label}`;
+}
+
 function renderJobFormHeader(job, docTitle, subLine){
   const s = state.shop;
   const v = getVehicle(job.vehicleId) || {};
@@ -17270,8 +17548,8 @@ function renderJobPrintPage(job){
      เดิมเป็นตารางตรวจเช็ค 40+ รายการที่พิมพ์ชื่ออะไหล่ไว้ให้แล้วกา ✓
      ของใหม่คือ "ตารางเปล่า" ช่างเขียนรายการเอง เพราะงานจริงของร้านไม่ได้ซ้ำ
      รายการเดิมทุกคัน และรายการที่พิมพ์ไว้ตายตัวก็มักไม่ตรงกับสิ่งที่ต้องทำ */
-  let html = `<div class="preview-page job-print-page ci-form">
-    ${renderJobFormHeader(job, 'ใบรับรถ', `วันที่รับรถ ${fmtDT(job.createdAt)} · สถานะ: ${st.label}`)}
+  let html = `<div class="preview-page job-print-page ci-form ci-tone-${escapeAttr(docToneOf(job))}">
+    ${renderJobFormHeader(job, 'ใบรับรถ', intakeSubLine(job))}
     <div class="pv-body">`;
 
   /* อาการ: แยกสองส่วนในกล่องเดียว — ป้ายคือสิ่งที่ "ลูกค้าแจ้ง" ตอนรับรถ
@@ -17342,8 +17620,8 @@ function renderJobEstimateForm(job){
   const st = statusOf(job.status);
   const manySym = job.complaints.length > 5;
 
-  let html = `<div class="preview-page job-print-page ci-form qe-form">
-    ${renderJobFormHeader(job, 'ใบรับรถ', `วันที่รับรถ ${fmtDT(job.createdAt)} · สถานะ: ${st.label}`)}
+  let html = `<div class="preview-page job-print-page ci-form qe-form ci-tone-${escapeAttr(docToneOf(job))}">
+    ${renderJobFormHeader(job, 'ใบรับรถ', intakeSubLine(job))}
     <div class="pv-body">
     <div class="sym-box">
       <div class="sym-head">อาการ / รายละเอียดที่ลูกค้าแจ้ง</div>`;
@@ -22924,7 +23202,9 @@ function receptionQuoteSheetHtml(r){
                   <td class="rq-c-no mono">${i + 1}</td>
                   <td>${escapeHtml(p.name)}</td>
                   <td class="rq-c-qty mono">${escapeHtml(String(p.qty))} ${escapeHtml(p.unit || '')}</td>
-                  <td class="rq-c-num mono${line > 0 ? '' : ' rq-c-dash'}">${line > 0 ? money(line) : (p.inPromo === true ? 'รวมในชุด' : 'รอยืนยัน')}</td>
+                  <td class="rq-c-num mono${line ? '' : ' rq-c-dash'}">${line
+                    ? (line < 0 ? `<span class="rq-c-deduct">${money(line)}</span>` : money(line))
+                    : (p.inPromo === true ? 'รวมในชุด' : 'รอยืนยัน')}</td>
                 </tr>`;
                 }).join('')}
               </tbody>
