@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.3.7";
+  const APP_VERSION = "4.3.10";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2467,7 +2467,270 @@
               tests\dguard.js 27/27 ที่นี่ · 10/27 บน v4.3.5
               ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22
               ชุดเบราว์เซอร์ 35 ชุด เท่ากับ baseline ทุกชุด ไม่มี regression
-              วัดสีที่ render จริงบนเบราว์เซอร์เทียบกับค่าใน Figma: ตรงทั้ง 16 จุด -->
+              วัดสีที่ render จริงบนเบราว์เซอร์เทียบกับค่าใน Figma: ตรงทั้ง 16 จุด
+
+     v4.3.8 — "ครั้งก่อน" ในสรุปข้อความลงกลุ่มไลน์ ดึงจากใบงานเก่าให้เอง
+
+              ของเดิมสามอย่างนี้ต้องพิมพ์มือทุกครั้ง — วันที่เข้าครั้งก่อน · รายการที่
+              เคยทำ · ราคาครั้งก่อน (ไม่มีช่องให้กรอกด้วยซ้ำ) ทั้งที่ข้อมูลอยู่ในใบงาน
+              เก่าของรถคันนั้นครบแล้ว คนหน้าร้านต้องเปิดใบเก่าหาเองแล้วพิมพ์ซ้ำ ซึ่ง
+              ในทางปฏิบัติแปลว่ามักไม่กรอก
+
+              เกณฑ์ที่เลือก และเหตุผล:
+                · ยึด "รถคันนี้" (vehicleId) ไม่ใช่ "ลูกค้าคนนี้" — ลูกค้าคนเดียวมี
+                  หลายคันได้ รายการที่เคยทำกับเก๋งไม่เกี่ยวกับกระบะของคนเดียวกัน
+                  (ของเดิมบล็อกนี้โชว์ตาม isRepeatCustomer ซึ่งยึดลูกค้า)
+                · นับเฉพาะใบที่ส่งมอบแล้ว — ใบที่ยังค้างหรือไม่อนุมัติยังไม่ได้ทำจริง
+                  จะบอกลูกค้าว่า "ครั้งก่อนทำนี่ไป" ไม่ได้
+                · ตัดบรรทัดลูกชุดโปรและบรรทัดหักลบ (เทิร์นของเก่า) ออกจากรายการ
+                · ราคาใช้ยอดที่เก็บจริงของใบเก่า หลังหักส่วนลดและเทิร์นแล้ว
+                · ราคาครั้งก่อนเป็นของอ่านอย่างเดียว พิมพ์ทับไม่ได้ ไม่งั้นตัวเลขที่
+                  โพสต์ลงกลุ่มไลน์จะเถียงกับใบที่ลูกค้าถืออยู่
+
+              เรื่องหน้าต่าง 600 ใบ (ปัญหาเดียวกับที่ทำให้สถิติเพี้ยนในข้อ M6):
+              ตัวฟัง jobs จำกัด RECENT_JOBS_LIMIT = 600 ที่ 20-30 คัน/วัน = ราวเดือนเดียว
+              ลูกค้าที่กลับมาซ่อมทุก 3-6 เดือนจึงอยู่นอกหน้าต่างแทบทุกราย ถ้าอ่านแค่
+              state.jobs ช่องจะว่างเงียบ ๆ แล้วคนอ่านจะเข้าใจว่ารถคันนี้ไม่เคยเข้า
+              loadVehicleHistory() จึงดึงเฉพาะใบของรถคันนั้นเพิ่มครั้งเดียวแล้วแคชไว้
+              (query เดียว where vehicleId == x ไม่ต้องมี composite index) และถ้าดึง
+              ไม่สำเร็จก็เงียบไว้ ช่องยังพิมพ์มือได้ตามเดิม
+
+              ค่าว่างกับ "ยังไม่เคยแตะ" ต้องแยกกัน: line_prevDate/line_prevWork ตั้งต้น
+              เป็น null ไม่ใช่ '' — ถ้าช่างลบทิ้งเอง (ได้ '') ต้องไม่เด้งกลับมาอีก
+
+              ตรวจซ้ำสามรอบด้วย agent อิสระสามตัว (คนละ context ไม่รู้ว่าผู้เขียนคิดอะไร)
+              รอบที่สามใช้ mutation testing คือแก้โค้ดให้พังทีละจุดแล้วดูว่าชุดเทสต์จับได้ไหม
+              ซึ่งจับได้ว่าชุดเทสต์อ่อนกว่าที่ตัวเลขบอกมาก แก้ครบแล้วทั้งหมด
+
+              บั๊กจริงที่เจอและแก้:
+
+                · วาด-ยิง-วาดวนลูปไม่จบ ตอนออฟไลน์ (ร้ายแรงที่สุด)
+                  ตัวเรียกอยู่ใน renderJobDetail ส่วนตัวจบงานเรียก safeRender() ต่อ
+                  เส้นทาง "ได้ผลจากแคชเครื่อง" ไม่ได้ล็อกอะไรไว้ จึงวนไม่จบ
+                  เกิดกับรถที่ยังไม่มีใบที่ทำเสร็จ = รถใหม่ทุกคัน และไม่โผล่ในบิล
+                  Firestore เลยเพราะอ่านจากแคชไม่เสียเงิน โผล่เป็นแท็บเล็ตที่วาดจอรัว
+                  จนกดอะไรไม่ติด (จำลองซ้ำได้: วาด 6 รอบ = ยิง 6 ครั้ง)
+
+                · .get() ที่ "สำเร็จ" จากแคช IndexedDB ตอนเน็ตหลุด ถูกนับว่าเป็น
+                  ประวัติครบ ป้ายบอกที่มาหายไป = ยืนยันความมั่นใจที่ไม่จริง
+                  ตอนนี้เช็ก metadata.fromCache และขึ้นป้ายว่า "ออฟไลน์"
+
+                · ยอด 0 บาท (เคลมฟรี / เทิร์นกลบยอดพอดี ซึ่งเกิดจริงบ่อยในร้านแร็ค)
+                  ไปโผล่สาขา "พิมพ์ทับเองแล้ว" ทั้งที่ไม่มีใครแตะ
+
+                · 'ready' ไม่ถูกนับเป็นงานที่ทำเสร็จ ทั้งที่แปลว่าเสร็จแล้วรอลูกค้ามารับ
+                  ร้านนี้มีใบค้างที่ ready จำนวนมาก (คอมเมนต์ที่ undeliverToHeld เขียนเอง
+                  ว่าต้องไล่ปิดใบย้อนหลังทีละสิบกว่าคัน) รถที่เปลี่ยนแร็คไป 8 เดือนก่อน
+                  แต่ใบค้างที่ ready จึงอ่านว่าไม่เคยเข้า
+
+                · ตัดราคาทิ้งทันทีที่แตะช่องใดช่องหนึ่ง — การแก้ที่พบบ่อยสุดคือตัดรายการ
+                  ยาว ๆ ให้สั้น ซึ่งไม่ได้เปลี่ยนว่าหมายถึงครั้งไหน ตอนนี้ผูกกับช่องวันที่
+                  ช่องเดียว
+
+                · ป้าย (ลูกค้าเดิม) ยังยึด isRepeatCustomer (ยึดลูกค้า + เห็นแค่ 600 ใบ)
+                  ข้อความเดียวกันจึงบอกว่าไม่ใช่ลูกค้าเดิม แล้วบรรทัดถัดมาบอกว่าเข้าทำเมื่อไร
+
+                · ธง "ของมาจากแคชเครื่อง" ไม่เคยถูกล้าง แถวที่มาจากตัวฟังสด ๆ จึงติดป้าย
+                  ออฟไลน์ค้าง และ map โตไม่จำกัด · แคชฝั่งออฟไลน์ไม่มีเพดาน
+                  · startSync ไม่ได้ล้างแคชประวัติ ล็อกอินใหม่ยังเห็นใบงานของรอบก่อน
+                  · ใบที่ลงวันที่ไว้ในอนาคต (ข้อมูลเก่าที่เผลอคีย์ปี พ.ศ.) ทำให้ใบจริงหาย
+
+              บทเรียนเรื่องชุดเทสต์ ซึ่งสำคัญกว่าบั๊กทุกข้อข้างบน:
+              รอบแรกผมห่อทุกการเรียกด้วย `typeof fn === 'function' ? fn() : null` เพื่อให้
+              ชุดนี้รันกับไฟล์เก่าได้โดยไม่ crash ผลคือ 20 ข้อจาก 57 "ผ่าน" บนไฟล์ที่ยัง
+              ไม่มีฟีเจอร์เลย เพราะ fallback บังเอิญคืนค่าเดียวกับที่ assertion อยากได้
+              = เทสต์ที่พิสูจน์ว่าชื่อนี้ไม่มีอยู่ แล้วนับเป็นผ่าน
+              เปลี่ยนเป็นด่านเดียวที่หัวชุด: ไม่มีฟีเจอร์ = บอกแล้วจบ 0 คะแนน
+              และ mutation testing ยังพบอีกว่า ลบแถบ "จากใบงานเก่า" ทั้งแถบออกจากจอ
+              หรือลบจุดต่อสายใน openJob/startSync ก็ยังเขียวครบ — เพราะข้อที่อ้างว่า
+              คุมแถบนั้นไปแมตช์กับป้ายชื่อช่องและกับข้อความใน <textarea> คนละที่กัน
+
+              tests\hguard.js 78/78 ที่นี่ · บน v4.3.7 ตอบว่า "ยังไม่มีฟีเจอร์" (0 คะแนน)
+              mutation 12 แบบ ตายทั้ง 12 (รวมลบจุดต่อสาย ลบแถบ ลบเพดาน ไม่เช็ก fromCache)
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 · fguard 49/49
+
+     v4.3.9 — ราคาต่อหน่วยของของที่ขายเป็นลิตร (น้ำมันเครื่องและของเหลวอื่น)
+
+              เคสจริงที่เจ้าของส่งมา: น้ำมันเครื่อง RAVENOL แกลลอน 4 ลิตร ราคา 1,890
+              ช่องในตารางคือ "ราคา/หน่วย" แต่ช่างคีย์ 1890 แล้วใส่จำนวน 4 ลิตร
+              ระบบคูณ 4 ได้ 7,560 — เกินจริงสี่เท่า และใบนั้นออกไปถึงมือลูกค้าแล้ว
+              ที่ถูก: ลิตรละ 472.50 · 4 ลิตร = 1,890 · 1 ลิตร = 472.50 (หารลงมา)
+
+              แก้สามชั้น เพราะแก้ชั้นเดียวไม่พอ:
+
+                1. แกนเลข — packPriceToUnit(ราคาแกลลอน, ขนาด) และ setRowPackPrice()
+                   ไม่ฝังเลข 4 ไว้ที่ไหนเลย เจ้าของยืนยันว่าแต่ละยี่ห้อ/รุ่นขนาดไม่เท่ากัน
+                   จดขนาดที่ใช้ไว้ในบรรทัด (packSize) และล้างธง priceForeign เพราะคีย์เองแล้ว
+                   ความจำราคา (lastPrice / lastPriceByBrand) เก็บ 472.50 ไม่ใช่ 1,890
+
+                2. หน้าแก้ย้อนหลัง ตั้งค่า → ราคาต่อหน่วย (view.tab = 'unitfix')
+                   จัดกลุ่มตาม ชื่ออะไหล่ + แบรนด์ + หน่วย โดยใช้ partNameKey()/mmNorm()
+                   ซึ่งเป็นนิยาม "ตัวตนของอะไหล่/แบรนด์" เดียวกับที่ไฟล์นี้ใช้อยู่แล้ว
+                   (ไม่งั้น "Ravenol" กับ "RAVENOL" แยกเป็นคนละกลุ่ม แล้วตัวจับราคาเพี้ยน
+                   จะตาบอดตรงรอยแยกนั้นพอดี)
+                   สามจังหวะบนจอตรงกับสามจังหวะในโค้ด: เห็นกลุ่ม → คีย์ราคา (หรือกด
+                   "คำนวณให้" จากราคาแกลลอน ÷ ขนาด) → ดู preview ทีละบรรทัดพร้อม
+                   ทะเบียน/เลขใบ/วันที่/สถานะ และ <s>ยอดเดิม</s> → ยอดใหม่ → แล้วจึงกดยืนยัน
+                   ปุ่มยืนยันไม่โผล่จนกว่าจะกดดู preview ก่อน และถ้าแก้ตัวเลขหลังจากนั้น
+                   ธง preview จะล้มทันที ต้องกดดูใหม่ — ไม่งั้น "ดูก่อนค่อยยืนยัน"
+                   ก็เหลือแค่ "ยืนยัน" เพราะเลขที่เขียนไม่ใช่เลขที่ตารางโชว์
+                   แก้ย้อนหลังได้เฉพาะแอดมิน (มันคือการแก้เงินทั้งร้านในคลิกเดียว)
+                   ขอบเขตที่เห็นคือ 600 ใบล่าสุดตาม RECENT_JOBS_LIMIT — เขียนบอกไว้บนหน้านั้น
+
+                3. ตัวกันไม่ให้เกิดซ้ำ ที่หน้าคีย์งาน
+                   คีย์ราคาในบรรทัดหน่วยลิตรแล้วเลขนั้นเป็นจำนวนเท่าพอดี (2-24 เท่า) ของ
+                   "ราคาต่อหน่วยที่ต่ำสุดที่ร้านนี้เคยคีย์เอง" → ขึ้นเตือนใต้ช่องราคาพร้อม
+                   ปุ่มหารให้ และบอกว่าราคานั้นเคยคีย์ไปกี่บรรทัด
+                   ใช้ "ต่ำสุด" ไม่ใช่ "ที่พบบ่อยที่สุด" โดยตั้งใจ: โจทย์ตั้งต้นคือร้านคีย์
+                   ราคาแกลลอนผิดมาหลายใบแล้ว ถ้ายึดตัวที่พบบ่อย ราคาแกลลอนจะกลายเป็น
+                   มาตรฐานของร้าน แล้วตัวเตือนจะเงียบสนิทพอดีกับร้านที่มันถูกเขียนมาเพื่อช่วย
+                   และ "ต้องกดเอง" — ร้านขึ้นราคาจริงก็ได้ การแก้ตัวเลขเงียบ ๆ ใต้มือช่าง
+                   คือวิธีทำให้ใบเสนอราคาผิดแบบไม่มีใครทันเห็น
+                   เงียบไว้เมื่อไม่แน่ใจ: ไม่มีประวัติเทียบ · หน่วยไม่ใช่ลิตร · ราคาติดลบ
+                   · ไม่ลงตัวเป็นเท่า · ต่างกันไม่ถึงเท่า · เกิน 24 เท่า
+
+              ขอบเขตของเครื่องมือนี้ (ด่านเดียวที่ unitPriceRowsOf) — ข้อที่ทำเงินพังได้
+              มากที่สุดถ้าพลาด: ตัดบรรทัดเทิร์นของเก่า (ราคาติดลบโดยตั้งใจตั้งแต่ v4.3.6)
+              บรรทัดแม่และบรรทัดลูกของชุดโปร และบรรทัดที่ยังไม่ใส่ราคา ออกทั้งหมด
+              ถ้าไม่ตัด การกดยืนยันครั้งเดียวจะเปลี่ยนเครดิตเทิร์น -400 เป็นเรียกเก็บ 1,890
+              (สวิงบนใบที่ส่งมอบไปแล้ว 2,290 บาท) และจะใส่ราคาให้บรรทัดที่ร้านตั้งใจเว้นว่าง
+
+              การแก้ย้อนหลังทำครบเท่าการคีย์มือ: ล้างธง priceForeign · ปัดเป็นสองตำแหน่ง
+              ก่อนเขียน (คีย์ 472.555 แล้วปล่อยเข้าไปดิบ ๆ เลขบนใบที่พิมพ์จะไม่บวกกัน —
+              บทเรียนเดียวกับข้อ M8 ใน v4.3.2) · ลง editLog · และอัปเดตความจำราคาจาก
+              ทุกใบที่แก้ ไม่ใช่ใบล่าสุดใบเดียว เพราะ rememberJobPartPrice เขียนลงตำราของ
+              "รุ่นรถของใบนั้น" ใบล่าสุดอาจเป็นรถที่ยังไม่ผูกรุ่น แล้วตำราของรุ่นที่ผูกไว้
+              จะไม่ถูกแก้เลย — แก้ใบเก่าเสร็จตอนเช้า บ่ายคันต่อไปก็ได้ 1,890 เด้งกลับมาอีก
+
+              ปุ่มทุกปุ่มบนหน้านี้ส่ง "เลขลำดับกลุ่ม" ไม่ใช่ตัวคีย์ คีย์มีชื่ออะไหล่กับแบรนด์
+              ที่คนพิมพ์เอง ถ้าวางลงใน onclick="fn('...')" ตัว ' ที่ escapeHtml แปลงเป็น
+              &#39; จะถูกเบราว์เซอร์ถอดกลับ "ก่อน" JS อ่าน = ชื่อแบบ O'ring ทำให้ปุ่มพัง
+              ทั้งกลุ่มแบบเงียบ ๆ หรือรันโค้ดที่แทรกมาได้ ไฟล์นี้ปิดคลาสนี้ไปแล้วตั้งแต่
+              v3.23.x (เทสต์ B-1b) รอบแรกของ v4.3.9 เปิดใหม่ 5 จุด ตอนนี้ปิดแล้ว
+
+              แคช: unitPriceAudit() ถูกเรียกทุกครั้งที่วาดหน้าตั้งค่า (ป้ายบนปุ่ม) และ
+              ทุกบรรทัดลิตรในหน้าใบงาน จึงแคชแบบเดียวกับ __promoNameCache และล้างที่
+              render() · saveState() · mergeSnapshotRows() · emptyState()
+              ครบทุกทางที่ข้อมูลเปลี่ยน (ที่ 600 ใบ: 13 ms รอบแรก · 0 ms รอบถัดไป)
+
+              ของเล็กที่เจอระหว่างทางและแก้ไปด้วย ไม่ใช่ของใหม่ของเวอร์ชันนี้:
+                · ข้อความยืนยัน (toast) ลอยทับแถบล่างบนมือถือมาตลอด พื้นหลังสีเข้มทั้งคู่
+                  จึงอ่านแทบไม่ออก เจอเพราะปุ่ม "หารเป็น..." ใช้ toast ยืนยันผล
+                · ใบงานที่ไม่มี createdAt เคยอ่านเป็น "วันนี้" ในคอลัมน์วันที่ (fmtDateBE
+                  ไม่มีอาร์กิวเมนต์ = วันนี้) ตอนนี้โชว์ขีด
+
+              เทสต์: tests\uguard.js 136/136 ที่นี่ · บน v4.3.8 ตอบว่า "ยังไม่มีฟีเจอร์"
+              mutation 51 แบบ ตาย 49 — สองตัวที่รอดพิสูจน์แล้วว่าเป็น equivalent mutant
+              (ด่าน typed > 0 ซ้ำกับด่าน n < 2 และ plan.length กับ n ต่างกันไม่ได้ใน
+              การเรียกแบบ synchronous) จึงไม่เขียนเทสต์หลอกมาฆ่ามัน
+
+              บทเรียนรอบนี้ หนักกว่าบั๊กทุกข้อข้างบน: รอบแรกชุดนี้ 70/70 แต่ agent อิสระ
+              ที่รับหน้าที่หา mutant ที่ยังไม่เคยลอง ยิงมา 52 แบบ รอด 48
+              เพราะเกือบทุกข้อที่อ้างว่าคุมหน้าจอ ที่จริงไป grep หาตัวอักษรในไฟล์:
+                · U8-5 เช็ก router ด้วย String(render) — ซึ่ง session() ทับเป็น no-op
+                  ไปแล้ว และตัวจริงก็ถูกห่ออีกชั้น เติม `&& view.someFlag` ลงในสาขา
+                  router ปิดหน้าทิ้งทั้งหน้า ก็ยังเขียวครบ
+                · U11-7 เช็กว่ามีข้อความ "packHintHtml(job, p)" อยู่ในไฟล์ — ครอบด้วย
+                  ternary ที่เป็นเท็จเสมอก็ยังเจอ
+                · U8-6 ที่เขียนมาเพื่อจับ "markup ไม่มี CSS" เช็กแค่ว่าชื่อคลาสโผล่ใน
+                  ไฟล์ — ตั้ง .upf-grp{display:none} ซ่อนทั้งหน้าก็ผ่าน
+                · U8-2 แมตช์คำว่า "น้ำมันเครื่อง" ที่บังเอิญมีอยู่ในย่อหน้าอธิบายข้างบน
+                  ลบชื่อกลุ่มออกจากการ์ดก็ยังผ่าน
+                · ไม่มีข้อไหนเลยที่ดูตัวเลขในตาราง preview — สลับคอลัมน์ ก่อน/หลัง ได้
+                  โดยไม่มีใครจับได้ ทั้งที่ตารางนั้นคือสิ่งเดียวที่คนใช้ตัดสินใจกดยืนยัน
+                · ช่องกรอกทั้งสามช่องกับปุ่ม "คำนวณให้" ไม่เคยถูกเรียกเลยสักครั้ง
+              แก้ที่ต้นเหตุ: ใส่ registry ของ element ลงใน harness ให้ document จำของ
+              ตาม id ได้จริง แล้วเก็บ render ตัวจริงไว้ก่อนที่ session() จะทับ
+              ตอนนี้ชุดนี้วาดผ่าน router จริง อ่านค่าในช่องตารางจริง และกดปุ่มจริง
+
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78
+
+     v4.3.10 — รวมรุ่นรถที่ซ้ำกัน: เลิกยกอะไหล่มาทั้งกอง
+
+              เคสจริงที่เจ้าของส่งรูปมา 12 ต.ค. 69: HONDA CIVIC ซ้ำ 2 ใบ
+              ใบหนึ่ง 100 อะไหล่ 0 มีราคา อีกใบ 101 อะไหล่ 9 มีราคา
+              กดรวมแล้วได้ใบเดียวที่มี ~200 รายการ ชื่อซ้ำ/คล้ายกันเต็มไปหมด
+              คำพูดเขาคือ "ไม่งั้นมันจะมั่วละ" — และมั่วจริง เพราะของเดิมยกมาทุกแถว
+              โดยจับคู่ด้วยชื่อตรงเป๊ะอย่างเดียว ("ลูกหมากกันโคลง" กับ "กันโคลง"
+              จึงกลายเป็นสองแถวทั้งที่ร้านยืนยันว่าเป็นของชิ้นเดียวกัน)
+
+              กติกาใหม่ ตามที่เขาสั่งมาเอง:
+
+                1. เก็บใบที่ "มีราคา" มากกว่า
+                   richestModel() เดิมดูเวลาที่คีย์ล่าสุดก่อน ซึ่งทำให้ใบที่มีราคาอยู่
+                   9 รายการ แพ้ใบที่มีราคาเดียวแต่เพิ่งคีย์เมื่อวาน
+                   ตอนนี้ยึดจำนวนรายการที่มีราคาเป็นหลัก เวลาเหลือไว้ตัดสินตอนเท่ากัน
+                   (เลขที่ใช้ตัดสิน = เลข "มีราคา" ที่โชว์บนการ์ดพอดี ไม่ใช่คนละตัว)
+
+                2. อะไหล่ตัวเดียวกัน ราคาไม่เท่ากัน -> เอาเลขที่มากกว่า
+                   เปลี่ยนจากกฎเดิม "ใหม่กว่าชนะ" ตามที่ร้านสั่ง ใช้กับทั้งสามชั้น:
+                   ราคาที่ช่างคีย์ · ราคาแยกตามแบรนด์ · ราคาที่ร้านตั้งเอง
+                   mergeHigherPrice() เทียบเป็นตัวเลขเสมอ ไม่ใช่สตริง —
+                   ถ้าเทียบแบบสตริง "900" จะชนะ "1200" ซึ่งเป็นบั๊กที่มองไม่เห็น
+                   ราคา <= 0 ไม่นับเป็นราคา บรรทัดเทิร์นติดลบจึงไม่หลุดเข้าตำรา
+                   ยังรายงานทุกจุดที่ราคาไม่ตรงกันเหมือนเดิม — เอาเลขมากกว่าไม่ได้แปลว่า
+                   ไม่ต้องบอก ถ้าเงียบ คนจะไม่รู้ว่า 5,500 ที่ตัวเองตั้งไว้ถูกเปลี่ยนตอนไหน
+
+                3. ชื่อซ้ำหรือคล้ายของที่มีอยู่แล้ว -> ไม่เอามา แต่ขึ้นรายชื่อให้ดู
+                   ใช้ similarPartNames() ตัวเดียวกับที่เตือนตอนเพิ่มอะไหล่ทีละตัว
+                   ตรวจแล้วว่ามันแยก "ลูกหมากปลายแร็ค" กับ "ลูกหมากแร็ค" ·
+                   "ลูกหมากปีกนกบน" กับ "ลูกหมากปีกนกล่าง" · "โช้คหน้า" กับ "โช้คหลัง"
+                   ว่าเป็นคนละชิ้นได้ถูกต้องอยู่แล้ว
+                   ไม่เอาราคาของตัวที่ข้ามไปทับของเดิมด้วย เพราะถ้าเดาผิดคือเอาราคา
+                   ไปแปะผิดชิ้น · ตารางที่ขึ้นบอกชื่อและราคาทั้งสองฝั่ง และไฮไลต์แถวที่
+                   "ตัวที่ข้ามมีราคา แต่ของเดิมยังไม่มี" ซึ่งคือจุดที่ควรเข้าไปดูที่สุด
+
+                4. ที่ไม่ซ้ำไม่คล้าย -> ย้ายมา ถึงจะยังไม่มีราคาก็ตาม
+
+                5. อะไหล่ที่อยู่ในชุดโปร -> ย้ายมาเสมอ แม้ชื่อจะคล้ายของเดิม
+                   ชุดโปรมีราคาของทั้งชุด ถ้าตัวข้างในหาย ชุดจะเหลือแต่ชื่อกับราคารวม
+                   แล้วไม่มีใครรู้ว่าราคานั้นครอบคลุมอะไรบ้าง
+
+              ข้อที่เจอตอนทดสอบบนเบราว์เซอร์ ไม่ได้อยู่ในแผนเดิม:
+              ชั้น "สะกดต่างกันนิดเดียว" (edit distance <= 2) ออกแบบไว้สำหรับตอนเพิ่ม
+              อะไหล่ทีละตัวโดยมีคนกดยืนยัน พอเอามาใช้ตอนรวมทีเดียวร้อยรายการ
+              "น็อตล้อ 10" กับ "น็อตล้อ 12" และ "โช้คหน้า 1" กับ "โช้คหน้า 2"
+              ถูกกลืนหายไปเงียบ ๆ · เพิ่มกติกา sameDigitRun(): ตัวเลขในชื่อไม่เหมือนกัน
+              = คนละชิ้น ไม่ว่าจะสะกดใกล้แค่ไหน ส่วน "เบ้าโช๊คหน้า" กับ "เบ้าโช้คหน้า"
+              ไม่มีตัวเลข จึงยังนับเป็นตัวเดียวกันเหมือนเดิม
+
+              classifyDropParts() เป็นตัวจัดประเภทตัวเดียว ใช้ทั้งตอนบอกล่วงหน้า
+              ในกล่องยืนยัน ("ย้ายมาใหม่ 97 · รวมกับของเดิม 0 · ไม่เอามา 3")
+              และตอนลงมือทำจริง — บทเรียนจาก v4.3.9: หน้า preview กับของที่เขียนจริง
+              ต้องมาจากฟังก์ชันเดียวกัน ไม่งั้นสองที่จะพูดคนละเรื่องโดยไม่มีใครจับได้
+
+              รอบแรกผมทำกติกาข้อ 2 กลับข้าง และ agent อิสระจับได้ก่อนส่ง:
+              ตัวที่ "ไม่เอามาเพราะชื่อคล้าย" ผมทิ้งราคาของมันไปด้วย ทั้งที่เจ้าของ
+              บอกเองว่า "ลูกหมากกันโคลง กันโคลง คือเหมือนกัน" — ถ้าเป็นของชิ้นเดียวกัน
+              กติกาข้อ 2 ต้องมีผล คือไม่เพิ่มแถวใหม่ แต่เก็บราคาที่มากกว่าไว้
+              ของจริงที่รันออกมาคือ 1,200 ถูกทิ้งแล้วเหลือ 800 ซึ่งผิดคำสั่งตรง ๆ
+              ข้ออื่นที่จับได้ในรอบเดียวกันและแก้ไปด้วย:
+                · ชื่อซ้ำกันเองภายในใบที่ยุบ หลุดมาเป็นสองแถว (คือ "มั่ว" ที่เขาบ่นเลย)
+                  กองชื่อที่ใช้เทียบต้องโตไปเรื่อย ๆ ระหว่างไล่ ไม่ใช่ถ่ายไว้ครั้งเดียว
+                · กฎตัวเลขคุมแค่ชั้น "สะกดต่างกันนิดเดียว" ชั้น "ชื่อหนึ่งอยู่ในอีกชื่อ"
+                  ยังกลืน "น้ำมันเกียร์ 75W90" เข้า "น้ำมันเกียร์" และ
+                  "ลูกปืนล้อหน้า 38x74" เข้า "ลูกปืนล้อหน้า" — ตอนนี้คุมทุกชั้น
+                · at ถอยหลังตามราคาที่แพงกว่า ทำให้การเรียนราคาย้อนหลังรอบถัดไป
+                  มาทับคืน = รวมเสร็จแล้วพังเองในอีกไม่กี่วัน (เก็บ at ที่ใหม่กว่าไว้)
+                · ขอชื่อคล้ายมาดูแค่ตัวเดียว ถ้าตัวนั้นถูกกฎตัวเลขตัด ตัวที่ซ้ำจริง
+                  ซึ่งอยู่อันดับถัดไปจะหลุดเป็นแถวซ้ำ (ขอ 8 ตัวแล้วคัดเอง)
+                · id อะไหล่ชนกันได้ถ้าสองใบมาจากตัวตั้งต้นเดียวกัน แล้วชุดโปรจะชี้ผิดชิ้น
+                · แบรนด์ที่ร้านเพิ่มไว้แต่ยังไม่ใส่ราคา ถูกทิ้งหายไปตอนรวม
+                · ชุดโปรที่ซ้ำกับของเดิมถูกทิ้ง แต่ยังลากอะไหล่ชื่อซ้ำเข้ามาฟรี ๆ
+                · กล่องยืนยันคิดจากใบเดียว พอรวมสามใบตัวเลขไม่ตรงกับของจริง
+                  (ตอนนี้จำลองแบบสะสมทีละใบบนสำเนา)
+                · doMergeDupGroup ไม่มีด่าน isAdmin ทั้งที่จบด้วยการลบการ์ดรุ่นรถ
+                  ซึ่งกฎ Firestore ยอมให้เฉพาะแอดมิน — ถ้าพนักงานกดได้ batch ล้มทั้งก้อน
+                  แล้วทุกการบันทึกของเครื่องนั้นตายไปทั้งวัน (กลไกเดียวกับบั๊ก v4.2.9)
+
+              เทสต์: tests\mguard.js 72/72 · บน v4.3.9 ตอบว่า "ยังไม่มีกติกาใหม่"
+              mutation 34 แบบ ตายทั้ง 34
+              shot70.py ทดสอบบนเบราว์เซอร์จริงด้วยใบ 100 + 101 รายการ: เหลือ 198 รายการ
+              ไม่มีชื่อซ้ำเหลืออยู่เลย · ราคาเดิม 9 รายการไม่หาย และได้เพิ่มอีก 1 รายการ
+              จากราคาของตัวที่ไม่ได้เอามา (2,100 ที่เดิมถูกทิ้ง) · โหมดมืด contrast 6.94:1
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 -->
 
 
 
@@ -4539,6 +4802,20 @@
   .dup-panel .dup-last{font-size:11.5px; color:var(--text-2); margin-top:8px;}
   .dup-panel .svc-chips{margin-top:9px;}
   .dup-panel .btn{margin-top:11px; width:100%;}
+
+  /* v4.3.10 — รายชื่อที่ไม่ได้เอามาเพราะชื่อซ้ำ/คล้าย
+     เขียนโหมดมืดบน html[data-mode="dark"] ไม่ใช่ body.dark (โหมดมืดย้ายไปอยู่บน
+     แอตทริบิวต์ที่ <html> ตั้งแต่ v4.2.10 กฎ body.dark ที่ค้างในไฟล์นี้ตายหมดแล้ว) */
+  .dup-skip-card{border-left:3px solid #d97706;}
+  .dup-skip-tbl{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .dup-skip-tbl th{background:var(--surface); color:var(--text-2); font-size:11px; font-weight:700;
+    text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); white-space:nowrap;}
+  .dup-skip-row > td{padding:6px 8px; border-bottom:1px solid var(--border); color:var(--text);}
+  .dup-skip-warn > td{background:rgba(217,119,6,.08);}
+  .dup-skip-warn-tag{display:inline-block; font-size:10.5px; font-weight:700; color:#92400e;
+    background:rgba(217,119,6,.14); border-radius:999px; padding:2px 8px; white-space:nowrap;}
+  html[data-mode="dark"] .dup-skip-warn > td{background:rgba(217,119,6,.14);}
+  html[data-mode="dark"] .dup-skip-warn-tag{background:rgba(217,119,6,.26); color:#fbbf24;}
   .model-card .year{color:var(--text-2); font-size:13px;}
   .model-card .count{color:var(--navy); font-size:12px; margin-top:8px; font-weight:600;}
   .model-card .del{
@@ -4843,6 +5120,12 @@
     .bn-btn.active{color:#fff; border-top-color:var(--red);}
     .bn-btn span{line-height:1.1;}
 
+    /* v4.3.9 — ข้อความยืนยัน (toast) เคยลอยทับแถบล่างบนมือถือ: z-index สูงกว่าก็จริง
+       แต่ bottom:18px อยู่ในระยะแถบที่สูง 56px พื้นหลังสีเข้มทั้งคู่จึงอ่านแทบไม่ออก
+       เป็นของเดิมมาก่อน v4.3.9 ไม่ใช่ของใหม่ แต่เจอเพราะปุ่ม "หารเป็น..." ใช้ toast
+       ยืนยันผล ถ้าอ่านไม่ออก ช่างจะไม่รู้ว่ากดติดแล้ว แล้วกดซ้ำ */
+    .toast, .undo-toast{bottom:calc(72px + env(safe-area-inset-bottom));}
+
     /* Finger-sized hit areas everywhere */
     .card{padding:14px; margin-bottom:12px;}
     .btn{padding:12px 16px;}
@@ -4948,6 +5231,23 @@
       position:absolute; top:4px; right:34px; width:auto; padding:0;
     }
     table.job-parts-table .qty-inline{flex-direction:row; gap:8px;}
+
+    /* v4.3.9 — ตาราง preview ของหน้าราคาต่อหน่วย ซ้อนเป็นการ์ดเหมือนตารางใบงาน
+       ไม่ปล่อยให้เลื่อนแนวนอน เพราะคอลัมน์ที่สำคัญที่สุด (ราคาเดิม → ราคาใหม่)
+       อยู่ขวาสุด ถ้าซ่อนไว้นอกจอ คนจะกดยืนยันโดยไม่เคยเห็นตัวเลขที่กำลังจะเปลี่ยน */
+    .upf-tbl, .upf-tbl tbody, .upf-tbl tr, .upf-tbl td{display:block; width:100%;}
+    .upf-tbl thead{display:none;}
+    .upf-tbl tr{
+      border:1px solid var(--border); border-radius:8px; margin-bottom:10px;
+      padding:8px 10px; background:var(--card-bg);
+    }
+    .upf-tbl td{border:none; padding:4px 0; text-align:left !important;}
+    .upf-tbl td[data-label]::before{
+      content:attr(data-label); display:block; font-size:11px; color:var(--text-2);
+      font-weight:600; margin-bottom:2px;
+    }
+    .upf-calc{gap:8px 10px;}
+    .upf-calc .btn.small{flex:1 1 auto;}
     .job-total-row{font-size:14.5px;}
     .job-total-row strong{font-size:17px;}
 
@@ -6605,7 +6905,66 @@ html[data-mode="dark"] .deduct-amt{color:#f0756a;}
 html[data-mode="dark"] .deduct-note{color:#f3a79e;}
 .qt-deduct td{color:#8f2d22;}
 .rq-c-deduct{color:#c0392b;font-weight:700;}
+
+/* v4.3.8 — แถบ "จากใบงานเก่า" ใต้ช่องครั้งก่อน บอกที่มาของตัวเลขที่เติมให้เอง
+   ทำเป็นอ่านอย่างเดียวโดยตั้งใจ: ราคาครั้งก่อนคือยอดที่เก็บไปจริงตามใบเก่า
+   ถ้าพิมพ์ทับได้ ตัวเลขที่โพสต์ลงกลุ่มไลน์จะเถียงกับใบที่ลูกค้าถืออยู่ */
+.prev-svc{display:flex;flex-wrap:wrap;align-items:center;gap:7px 14px;margin-top:10px;
+  padding:8px 12px;border-radius:8px;background:var(--surface);
+  border:1px solid var(--border);font-size:12px;}
+.ps-lab{font-weight:700;color:var(--text-2);font-size:11px;letter-spacing:.2px;}
+.ps-item{color:var(--text);}
+.ps-item b{font-weight:700;}
+.ps-ref{color:var(--text-2);font-size:11px;}
+.ps-note{color:var(--text-2);font-size:11px;font-style:italic;}
+.ps-partial{color:#a65312;background:#fff0e2;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600;}
+html[data-mode="dark"] .ps-partial{background:rgba(223,108,27,.16);color:#e8a977;}
 .qt-deduct-note{font-size:10px;white-space:nowrap;}
+
+/* v4.3.9 — หน้าตรวจราคาต่อหน่วย (ของที่ขายเป็นแกลลอน/ชุด)
+   เขียนใต้ html[data-mode="dark"] ไม่ใช่ body.dark เพราะโหมดมืดของแอพนี้อยู่บน
+   แอตทริบิวต์ที่ <html> ตั้งแต่ v4.2.10 — กฎ body.dark ที่ค้างอยู่ในไฟล์นี้ตายทั้งหมด */
+.upf-grp{padding:14px 16px;}
+.upf-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.upf-name{font-weight:700;font-size:14px;color:var(--text);}
+.upf-brand{font-weight:600;font-size:11.5px;color:#14532d;background:rgba(31,157,85,.14);
+  border-radius:999px;padding:2px 8px;white-space:nowrap;}
+.upf-sub{margin-top:3px;font-size:11.5px;color:var(--text-2);}
+.upf-warn{font-size:11px;font-weight:700;color:#8f2d22;background:#fdecea;
+  border-radius:999px;padding:3px 10px;white-space:nowrap;}
+.upf-calc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 9px;margin-top:11px;
+  padding:9px 11px;border-radius:8px;background:var(--surface);
+  border:1px solid var(--border);font-size:12px;color:var(--text-2);}
+/* ขนาดเดียวกับช่องกรอกอื่นทั้งแอพ: 16px คือเส้นที่ iOS ใช้ตัดสินว่าจะซูมหน้าจอ
+   ตอนแตะช่องไหม และความสูงราว 44px คือขนาดนิ้วคนจริง เคยตั้งไว้ 13px/29px แล้วชนะ
+   กฎกลางเพราะบล็อกนี้อยู่ท้ายไฟล์ ผลคือหน้าที่แก้ราคาทั้งร้านกดยากที่สุดในแอพ
+   (จอแคบไม่ช่วยอะไรด้วย เพราะ media query ของ touch tier อยู่ "ก่อน" บล็อกนี้) */
+.upf-calc input{width:104px;padding:12px 13px;border-radius:6px;border:1px solid var(--border);
+  background:var(--card-bg,#fff);color:var(--text);font-size:16px;text-align:right;
+  font-variant-numeric:tabular-nums;}
+.upf-calc .upf-pack{width:120px;}
+.upf-calc .upf-size{width:82px;}
+.upf-calc .upf-price{width:128px;font-weight:700;}
+.upf-prev-head{margin-top:12px;font-size:12.5px;font-weight:600;color:var(--text);}
+.upf-del{color:#8f2d22;font-weight:700;}
+.upf-tbl{width:100%;border-collapse:collapse;margin-top:7px;font-size:12px;}
+.upf-tbl th{background:var(--surface);color:var(--text-2);font-size:11px;font-weight:700;
+  text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
+.upf-tbl th.num,.upf-tbl td.num{text-align:right;}
+.upf-row > td{padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text);}
+.upf-row s{color:var(--text-2);}
+.upf-row b{font-weight:700;color:#14532d;}
+.upf-row-del > td{background:rgba(207,74,56,.07);}
+.upf-apply{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.upf-scope{font-size:11px;margin-bottom:0;}
+.pack-hint .ph-txt{line-height:1.45;}
+.pack-hint{align-items:flex-start;}
+html[data-mode="dark"] .upf-brand{background:rgba(31,157,85,.22);color:#8ee5b0;}
+html[data-mode="dark"] .upf-warn{background:rgba(240,117,106,.18);color:#f3a79e;}
+html[data-mode="dark"] .upf-del{color:#f0756a;}
+html[data-mode="dark"] .upf-row b{color:#8ee5b0;}
+html[data-mode="dark"] .upf-row-del > td{background:rgba(240,117,106,.10);}
+html[data-mode="dark"] .upf-calc input{background:rgba(255,255,255,.04);}
 
 body.dark .promo-child-row > td{background:rgba(31,157,85,.10);}
 body.dark .in-promo-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
@@ -7041,6 +7400,50 @@ function unitSelectOptions(current, canAdd){
    แล้วกดกลับจะเหลือราคาครึ่งเดียวค้างไว้ถาวรโดยไม่มีอะไรบอก */
 const PAIR_UNIT = 'คู่';
 const SINGLE_UNITS = ['ชิ้น','ข้าง','อัน','ตัว'];
+
+/* ===========================================================================
+   v4.3.9 — ของที่ขายเป็นแกลลอน/ชุด แต่คิดเงินเป็นหน่วยย่อย
+
+   เคสจริงที่เจ้าของส่งมา 10 ต.ค. 2569:
+     น้ำมันเครื่อง RAVENOL แกลลอน 4 ลิตร = 1,890 บาท
+     ช่องในตารางคือ "ราคา/หน่วย" แต่ช่างรู้ราคาแกลลอน ไม่ได้รู้ราคาต่อลิตร
+     จึงคีย์ 1890 ลงไปแล้วใส่จำนวน 4 ลิตร → ระบบคูณ 4 ได้ 7,560 เกินจริงสี่เท่า
+     ที่ถูก: ลิตรละ 472.50 · 4 ลิตร = 1,890 · 1 ลิตร = 472.50 (หารลงมา)
+
+   ทำไมไม่เดาให้เองว่า "ถ้าหน่วยเป็นลิตรแล้วราคาสูงผิดปกติ ให้หารด้วยจำนวน":
+   เพราะแยกไม่ออกระหว่าง "คีย์ราคาแกลลอนผิดช่อง" กับ "ของมันแพงลิตรละเท่านั้นจริง"
+   การเดาผิดคือการแก้ตัวเลขเงินบนใบที่ลูกค้าถืออยู่ จึงต้องให้คนบอกขนาดแกลลอนเอง
+
+   ขนาดแกลลอนไม่เท่ากันทุกยี่ห้อ (เจ้าของยืนยัน) จึงห้ามฝังเลข 4 ไว้ในโค้ด
+   =========================================================================== */
+const PACK_UNITS = ['ลิตร'];
+
+function isPackUnit(u){ return PACK_UNITS.indexOf(String(u || '').trim()) >= 0; }
+
+/* ราคาต่อหน่วยจากราคาทั้งแกลลอน — คืน null เมื่อคำนวณไม่ได้ ห้ามคืนเลขมั่ว
+   เพราะปลายทางคือการเขียนทับราคาบนใบงาน */
+function packPriceToUnit(packPrice, packSize){
+  const p = parseLinePrice(packPrice);
+  const n = parseMoney(packSize);
+  if(!isFinite(p) || !isFinite(n) || n <= 0 || !p) return null;
+  return Math.round((p / n) * 100) / 100;
+}
+
+/* คีย์ราคาแกลลอนลงบรรทัดในใบงาน แล้วเก็บเป็นราคาต่อหน่วย
+   จำขนาดแกลลอนไว้กับบรรทัดด้วย (packSize) เพื่อให้ช่องช่วยคีย์เติมให้ครั้งหน้า
+   และเพื่อให้คนเปิดใบย้อนหลังรู้ว่า 472.50 มาจาก 1,890 หาร 4 */
+function setRowPackPrice(jobId, partRowId, packSize, packPrice){
+  const job = getJob(jobId);
+  if(!job) return null;
+  const row = (job.partsNeeded || []).find(p => p.id === partRowId);
+  if(!row) return null;
+  const unit = packPriceToUnit(packPrice, packSize);
+  if(unit === null) return null;
+  row.price = unit;
+  row.packSize = parseMoney(packSize);
+  delete row.priceForeign;          // คนคีย์ราคาเองแล้ว ธง "ราคาของแบรนด์อื่น" ต้องหลุด
+  return unit;
+}
 
 /* คืนรายละเอียดการแปลงถ้าทำจริง คืน null ถ้าไม่เข้าเงื่อนไข (ไม่แตะราคาเลย) */
 function pairUnitPriceShift(row, fromUnit, toUnit){
@@ -7772,11 +8175,15 @@ function modelDataScore(m){
 
 function richestModel(list){
   if(!list || !list.length) return null;
+  /* v4.3.10 — ยึด "จำนวนรายการที่มีราคา" เป็นหลัก ตามที่ร้านสั่ง
+     ของเดิมดูเวลาที่คีย์ล่าสุดก่อน ซึ่งทำให้ใบที่มีราคาอยู่ 9 รายการ แพ้ใบที่มี
+     ราคาเดียวแต่เพิ่งคีย์เมื่อวาน — ใบที่ควรเก็บคือใบที่มีของจริงอยู่ในนั้นมากกว่า
+     เวลาเหลือไว้เป็นตัวตัดสินตอนจำนวนเท่ากัน */
   let best = list[0], bs = modelDataScore(best);
   for(let i = 1; i < list.length; i++){
     const s = modelDataScore(list[i]);
-    const better = (s.newest !== bs.newest) ? (s.newest > bs.newest)
-                 : (s.priced !== bs.priced) ? (s.priced > bs.priced)
+    const better = (s.priced !== bs.priced) ? (s.priced > bs.priced)
+                 : (s.newest !== bs.newest) ? (s.newest > bs.newest)
                  : (s.promos !== bs.promos) ? (s.promos > bs.promos)
                  : (s.parts  >  bs.parts);
     if(better){ best = list[i]; bs = s; }
@@ -7927,6 +8334,70 @@ function usePriceHint(jobId, rowId){
     flashToast(`ใส่ราคา ฿${fmtMoney(parseMoney(h.price))} แล้ว`);
   }
   saveState(true);
+  render();
+}
+
+/* ---------- v4.3.9 ตัวกันคีย์ราคาทั้งแกลลอนลงช่อง "ราคา/หน่วย" ----------
+   ไม่เดาขนาดแกลลอนเอง เพราะเจ้าของยืนยันว่าแต่ละยี่ห้อ/รุ่นไม่เท่ากัน
+   เทียบกับราคาต่อหน่วยที่ "ร้านนี้เคยคีย์เองในใบอื่น" ถ้าเลขที่คีย์ตอนนี้เป็น
+   จำนวนเท่าพอดีของราคานั้น (2-24 เท่า) ก็น่าจะเป็นราคาทั้งแกลลอน
+   ขึ้นเตือนให้กดหาร — จงใจไม่หารให้เอง เพราะร้านอาจขึ้นราคาจริง ๆ ก็ได้
+   และการแก้ตัวเลขเงียบ ๆ ใต้มือช่างคือวิธีทำให้ใบเสนอราคาผิดแบบไม่มีใครเห็น */
+function establishedUnitPrice(job, row){
+  if(!row) return null;
+  const key = unitPriceGroupKey(row.partName, row.brand, row.unit);
+  const g = unitPriceAudit().find(x => x.key === key);   // แคชอยู่แล้ว ไม่สแกนซ้ำทุกบรรทัด
+  if(!g) return null;
+  const tally = {};
+  g.rows.forEach(r => {
+    if(job && r.jobId === job.id && r.rowId === row.id) return;   // ไม่นับบรรทัดตัวเอง
+    const k = String(Math.round(r.price * 100));
+    tally[k] = (tally[k] || 0) + 1;
+  });
+  const keys = Object.keys(tally);
+  if(!keys.length) return null;
+  /* เลือก "ราคาต่ำสุดที่เคยคีย์" ไม่ใช่ราคาที่พบบ่อยที่สุด
+     เพราะโจทย์ตั้งต้นคือร้านคีย์ราคาแกลลอนผิดมาหลายใบแล้ว ถ้าใช้ตัวที่พบบ่อยที่สุด
+     ราคาแกลลอนจะกลายเป็น "มาตรฐานของร้าน" แล้วตัวเตือนจะเงียบสนิทพอดีกับร้านที่
+     มันถูกเขียนขึ้นมาเพื่อช่วย · บอกจำนวนใบที่เคยคีย์ราคานั้นไปด้วย คนจะได้ชั่งเองได้ */
+  let best = keys[0];
+  keys.forEach(k => { if(Number(k) < Number(best)) best = k; });
+  return { price: Number(best) / 100, seen: tally[best] };
+}
+
+function packHintHtml(job, row){
+  if(!row || row.promoParent || row.promoId) return '';
+  if(!isPackUnit(row.unit)) return '';
+  const typed = parseLinePrice(row.price);
+  if(!(typed > 0)) return '';
+  const base = establishedUnitPrice(job, row);
+  if(!base) return '';
+  if(Math.abs(typed - base.price) <= 0.004) return '';
+  const factor = typed / base.price;
+  const n = Math.round(factor);
+  if(n < 2 || n > 24) return '';
+  if(Math.abs(factor - n) > 0.01) return '';
+  const u = row.unit || 'หน่วย';
+  return `<div class="price-hint other-model pack-hint">
+    <span class="ph-txt">ร้านเคยคีย์${escapeHtml(u)}ละ ฿${escapeHtml(fmtMoney(base.price))} (${base.seen} บรรทัด) ·
+      เลขนี้เท่ากับ ${n} ${escapeHtml(u)}พอดี — ใช่ราคาทั้งแกลลอนหรือเปล่า?</span>
+    <button class="add-brand-btn" onclick="usePackDivide('${job.id}','${row.id}',${n})">หารเป็น ฿${escapeHtml(fmtMoney(Math.round((typed / n) * 100) / 100))}/${escapeHtml(u)}</button>
+  </div>`;
+}
+
+function usePackDivide(jobId, rowId, size){
+  const job = getJob(jobId);
+  if(!job) return;
+  const row = (job.partsNeeded || []).find(p => p.id === rowId);
+  if(!row) return;
+  const before = row.price;
+  const v = setRowPackPrice(jobId, rowId, size, row.price);
+  if(v === null) return;
+  rememberJobPartPrice(job, row);
+  saveState(true);
+  pushEditLog('แก้ราคาทั้งแกลลอนเป็นราคาต่อหน่วย', job.jobNumber || '', '',
+    `${row.partName || ''}${row.brand ? ' ('+row.brand+')' : ''} ฿${before} ÷ ${size} = ฿${v}`);
+  flashToast(`แก้เป็น ฿${fmtMoney(v)} ต่อ${row.unit || 'หน่วย'} แล้ว`);
   render();
 }
 
@@ -9234,7 +9705,9 @@ var view = {
   je_customerName:'', je_customerPhone:'', je_brand:'', je_model:'', je_year:'', je_color:'', je_province:'',
   je_mileage:'', je_checked:[], je_customComplaints:[],
   ai_jobId:'', ai_loading:false, ai_result:null, ai_error:'',
-  line_queueNo:'', line_priceNote:'', line_prevDate:'', line_prevWork:'', printMode:'checkin',
+  // v4.3.8 — line_prevDate/line_prevWork ตั้งต้นเป็น null ไม่ใช่ '' เพราะต้องแยก
+  // "ยังไม่เคยแตะ" (เติมจากใบเก่าให้) ออกจาก "ลบทิ้งเอง" (ต้องปล่อยว่างไว้)
+  line_queueNo:'', line_priceNote:'', line_prevDate:null, line_prevWork:null, printMode:'checkin',
   pb_query:'', pb_brand:'all', pb_selectMode:false, pb_selectedIds:[], pb_printFilterIds:null,
   pb_edit:false, pb_onlyUnpriced:false,
   usersList:[], usersLoaded:false,
@@ -9921,6 +10394,7 @@ v3.23.0 — ของที่เพิ่งกดแต่ยังไม่�
          แถวที่ shadow ไม่เคยรู้จักเลย คือแถวที่เพิ่งสร้างในเครื่อง -> เก็บไว้เช่นกัน
          ส่วนแถวที่ shadow เคยรู้จักแต่หายไปจาก snapshot คือถูกลบจริงบนเซิร์ฟเวอร์ -> ปล่อยหาย */
 function mergeSnapshotRows(col, incoming){
+  __unitAuditCache = null;   // v4.3.9 — snapshot เข้ามา ราคาอาจเปลี่ยนโดยที่จำนวนใบเท่าเดิม
   const prevShadow = shadow[col] || {};
   const localById = {};
   (Array.isArray(state[col]) ? state[col] : []).forEach(r => {
@@ -10017,6 +10491,7 @@ function shopContactInlineHtml(cls){
 }
 
 function emptyState(){
+  __unitAuditCache = null;   // v4.3.9 — เปลี่ยนชุดข้อมูลทั้งก้อน (ล็อกอินใหม่/สลับผู้ใช้)
   return {
     shop:{ name:"POWER GROUP", sub:"ระบบจัดการอู่บริการ (GSMS)", phone:"", line:"", site:"", adminName:"", adminPhone:"", adminLine:"" },
     settings:{ aiApiKey:"", geminiApiKey:"", aiModel:"claude", themeId:"default" },
@@ -10231,6 +10706,10 @@ function startSync(){
   shadow = {};
   shadowConfig = '';
   dataReady = false;
+  /* v4.3.8 — ล้างแคชประวัติรถด้วย ทุกอย่างรอบ ๆ ถูกรีเซ็ตที่นี่หมดแล้ว ยกเว้นตัวนี้
+     มันถือเอกสารใบงานที่ดึงมาเองจาก Firestore ไม่ได้ผ่านตัวฟัง ถ้าไม่ล้าง การล็อกอิน
+     ใหม่ (หรือสลับบัญชี) จะยังเห็นใบงานชุดเดิมที่ดึงไว้ก่อนออกจากระบบ */
+  resetVehicleHistory();
   SYNC_COLLECTIONS.forEach(col => { shadow[col] = {}; });
 
   let pending = SYNC_COLLECTIONS.length + 1;
@@ -10343,6 +10822,7 @@ function runSafeMigrations(){
    Writes only the documents whose JSON actually changed since the last server
    snapshot, so simultaneous edits on different records don't clobber each other. */
 function saveState(showToast){
+  __unitAuditCache = null;   // v4.3.9 — ข้อมูลเพิ่งเปลี่ยน แคชกลุ่มราคาต่อหน่วยใช้ไม่ได้แล้ว
   if(!db || !dataReady) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { flushState(showToast); }, 250);
@@ -10843,7 +11323,10 @@ function goTab(tab){
 }
 function openJob(id){
   view.jobId = id; view.tab = 'detail'; view.je_editing = false; view.je_jobId = null;
-  view.line_queueNo=''; view.line_priceNote=''; view.line_prevDate=''; view.line_prevWork='';
+  view.line_queueNo=''; view.line_priceNote=''; view.line_prevDate=null; view.line_prevWork=null;
+  // v4.3.8 — การกดเปิดใบคือเจตนาของคน ไม่ใช่รอบวาดอัตโนมัติ จึงให้ลองดึงประวัติใหม่ได้
+  const jb = getJob(id);
+  if(jb) retryVehicleHistory(jb.vehicleId);
   render();
   loadJobPhotos(id);
 }
@@ -15008,6 +15491,7 @@ function hubContactHtml(){
 
 function render(){
   __promoNameCache = null;   // v3.44.0 — ชื่อชุดโปรอาจถูกแก้ที่หลังบ้าน
+  __unitAuditCache = null;   // v4.3.9 — กลุ่มราคาต่อหน่วย คิดใหม่รอบละครั้ง
   const app = document.getElementById('app');
   // ?reception, ?board and ?home draw their own screen and own the DOM from then on.
   // render() belongs to the staff app, and its first line sends anyone without a
@@ -15142,6 +15626,8 @@ function render(){
     html += renderSettingsTab();
   } else if(view.tab === 'reviews'){
     html += renderReviewsTab();
+  } else if(view.tab === 'unitfix'){
+    html += settingsBackLink('ตรวจราคาต่อหน่วย') + renderUnitPriceFixTab();
   } else if(view.tab === 'ai'){
     html += renderAiTab();
   } else {
@@ -16563,9 +17049,572 @@ function jobHasPricedLines(job){
   return (job && job.partsNeeded || []).some(p => p && !p.promoParent && parseLinePrice(p.price));
 }
 
+/* ---------- ตรวจและแก้ราคาต่อหน่วยย้อนหลัง (v4.3.9) ----------
+
+   เจ้าของเลือกเองว่า "มีหน้าให้ดูก่อน แล้วผมกดยืนยันเอง" ไม่ใช่ migration เงียบ ๆ
+   ซึ่งถูกต้อง: นี่คือการแก้ตัวเลขเงินบนใบที่ลูกค้าบางคนถือกระดาษอยู่
+   โค้ดจึงแยกเป็นสามจังหวะชัด ๆ — ดูภาพรวม / ดูว่าจะเปลี่ยนอะไรเป็นอะไร / เขียน
+   สองจังหวะแรกไม่แตะข้อมูลเลย */
+
+/* คีย์กลุ่มต้องใช้นิยาม "ตัวตนของอะไหล่/แบรนด์" เดียวกับที่ไฟล์นี้ใช้อยู่แล้ว
+   partNameKey() (ตัดวงเล็บ/เครื่องหมาย/ช่องว่าง แต่เก็บเนื้อในวงเล็บ) + mmNorm() ของแบรนด์
+   ถ้าใช้ trim() เฉย ๆ "Ravenol" กับ "RAVENOL" จะเป็นคนละกลุ่ม (ช่องแบรนด์เพิ่มชื่อซ้ำ
+   แบบต่างตัวพิมพ์ได้จริง) แล้วตัวจับ "ราคาไม่เป็นมาตรฐานเดียวกัน" จะตาบอดตรงรอยแยกนั้น */
+function unitPriceGroupKey(partName, brand, unit){
+  return [partNameKey(partName), mmNorm(brand), mmNorm(unit)].join('\u0001');
+}
+
+/* ด่านเดียวที่ตัดสินว่า "บรรทัดไหนอยู่ในขอบเขตของเครื่องมือนี้"
+   ทั้งหน้าตรวจย้อนหลังและตัวเตือนหน้าคีย์งานใช้ตัวนี้ตัวเดียว จะได้ไม่เพี้ยนจากกัน
+     · promoParent / promoId — บรรทัดลูกและบรรทัดแม่ของชุดโปร ราคาเป็นของทั้งชุด
+       ไม่ใช่ราคาต่อหน่วย ถ้าหารมันจะพังทั้งชุดโปร
+     · ราคา <= 0 — บรรทัดเทิร์นของเก่า (ติดลบโดยตั้งใจ ตั้งแต่ v4.3.6) และบรรทัดที่
+       ยังไม่ได้ใส่ราคา ถ้านับเข้ามา การกดยืนยันจะเปลี่ยนเครดิต -400 เป็นเรียกเก็บ
+       1,890 และจะใส่ราคาให้บรรทัดที่ร้านตั้งใจเว้นว่างไว้ */
+function unitPriceRowsOf(job){
+  return (job.partsNeeded || []).filter(r =>
+    r && !r.promoParent && !r.promoId && isPackUnit(r.unit) && parseLinePrice(r.price) > 0);
+}
+
+/* "รถออกจากร้านไปแล้ว" ในไฟล์นี้คือ delivered หรือ carout (ปลายทางของ scheduled
+   กับ rejected) ไม่ใช่ delivered อย่างเดียว — ใบที่ไม่อนุมัติคือใบที่ลูกค้าถือ
+   ใบเสนอราคาเลขเดิมกลับบ้านไปมากที่สุด */
+function unitPriceGone(job){
+  return job.status === 'delivered' || job.status === 'carout';
+}
+
+/* จัดกลุ่มบรรทัดที่ขายเป็นหน่วยย่อยของแกลลอน ตามชื่ออะไหล่+แบรนด์+หน่วย
+   ไม่ตัดสินว่าอันไหนผิด — แค่เอามากองให้คนดูว่าราคาที่เคยคีย์มีกี่แบบ
+   ถ้าเห็นทั้ง 1,890 และ 472.50 ในกลุ่มเดียวกัน นั่นคือสัญญาณว่าคีย์กันคนละมาตรฐาน
+
+   แคชไว้แบบเดียวกับ __promoNameCache: ล้างที่หัว render() และที่ saveState()
+   เพราะตัวนี้ถูกเรียกทุกครั้งที่วาดหน้าตั้งค่า (ป้ายบนปุ่ม) และทุกบรรทัดลิตร
+   ในหน้าใบงาน — ไม่แคชแล้วสแกน 600 ใบซ้ำทุกบรรทัด */
+var __unitAuditCache = null, __unitAuditLen = -1;   // var: ถูก hoist (saveState อยู่ก่อนบรรทัดนี้ในไฟล์)
+function unitPriceAudit(){
+  const len = (state.jobs || []).length;
+  if(__unitAuditCache && __unitAuditLen === len) return __unitAuditCache;
+  const by = Object.create(null);
+  (state.jobs || []).forEach(job => {
+    if(!job || job.deletedAt) return;
+    const rows = unitPriceRowsOf(job);
+    if(!rows.length) return;                   // หา vehicle ต่อเมื่อมีของให้ดูจริง
+    const v = getVehicle(job.vehicleId) || {};
+    rows.forEach(r => {
+      const k = unitPriceGroupKey(r.partName, r.brand, r.unit);
+      if(!by[k]) by[k] = { key:k, partName:(r.partName||'').trim(), brand:(r.brand||'').trim(),
+                           unit:(r.unit||'').trim(), rows:[], prices:[] };
+      const price = parseLinePrice(r.price);
+      const qty = parseQty(r.qty);
+      by[k].rows.push({
+        jobId: job.id, rowId: r.id, jobNumber: job.jobNumber || job.id,
+        plate: v.plate || '-',
+        date: job.createdAt ? fmtDateBE(job.createdAt) : '—',   // ไม่มีวันที่ ต้องไม่กลายเป็นวันนี้
+        status: statusOf(job.status).label, delivered: unitPriceGone(job),
+        qty: qty, price: price, lineTotal: Math.round(price * qty * 100) / 100,
+        packSize: r.packSize || null
+      });
+      if(by[k].prices.indexOf(price) < 0) by[k].prices.push(price);
+    });
+  });
+  const out = Object.keys(by).map(k => {
+    by[k].prices.sort((a, b) => b - a);
+    by[k].rows.sort((a, b) => (b.price - a.price) || String(a.date).localeCompare(String(b.date)));
+    return by[k];
+  }).sort((a, b) => b.rows.length - a.rows.length);
+  __unitAuditCache = out; __unitAuditLen = len;
+  return out;
+}
+
+/* เฉพาะแถวที่ "ราคาจะเปลี่ยนจริง" — แถวที่ถูกอยู่แล้วไม่ต้องเอามากวนสายตา
+   และที่สำคัญกว่า: จะได้ไม่เขียนทับของที่ถูกอยู่แล้วโดยไม่จำเป็น */
+function unitPriceFixPreview(key, newUnitPrice){
+  const want = unitPriceWanted(newUnitPrice);
+  if(want === null) return [];
+  const g = unitPriceAudit().find(x => x.key === key);
+  if(!g) return [];
+  return g.rows
+    .filter(r => Math.abs(r.price - want) > 0.004)
+    .map(r => ({
+      jobId: r.jobId, rowId: r.rowId, jobNumber: r.jobNumber, plate: r.plate,
+      date: r.date, status: r.status, delivered: r.delivered, qty: r.qty,
+      beforePrice: r.price, afterPrice: want,
+      beforeTotal: r.lineTotal,
+      afterTotal: Math.round(want * r.qty * 100) / 100
+    }));
+}
+
+/* ราคาที่จะเขียนลงไป ต้องเป็นสตางค์จริง — คีย์ 472.555 แล้วปล่อยเข้าไปดิบ ๆ
+   ใบที่พิมพ์จะโชว์ 472.56 แต่ยอดรวมคิดจาก 472.555 แล้วเลขบนกระดาษจะไม่บวกกัน
+   (บทเรียนเดียวกับข้อ M8 ใน v4.3.2) · ติดลบหรือศูนย์ = ไม่ใช่ราคาต่อหน่วย ปฏิเสธไปเลย */
+function unitPriceWanted(v){
+  const n = parseLinePrice(v);
+  if(!isFinite(n) || n <= 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/* จังหวะเดียวที่เขียนจริง — และเฉพาะแอดมิน
+   นี่คือการแก้เงินย้อนหลังทั้งร้านในคลิกเดียว ไม่ใช่สิ่งที่ควรอยู่ในมือทุกเครื่อง
+   (กฎ Firestore ยอมให้พนักงานแก้ jobs อยู่แล้ว ด่านนี้จึงต้องอยู่ฝั่งแอปด้วย) */
+function applyUnitPriceFix(key, newUnitPrice){
+  if(!isAdmin()) return 0;
+  const want = unitPriceWanted(newUnitPrice);
+  if(want === null) return 0;
+  const plan = unitPriceFixPreview(key, want);
+  if(!plan.length) return 0;
+  let n = 0, sample = '';
+  const fixed = [];
+  plan.forEach(p => {
+    const job = getJob(p.jobId);
+    if(!job) return;
+    const row = (job.partsNeeded || []).find(x => x.id === p.rowId);
+    if(!row) return;
+    row.price = want;
+    /* ธง "ราคาของแบรนด์อื่น" ต้องหลุด เหมือนทุกเส้นทางที่คนคีย์ราคาเอง
+       ไม่งั้นบรรทัดที่เพิ่งแก้ให้ถูกจะยังขึ้นคำเตือนค้าง แล้วช่างจะเลิกเชื่อคำเตือน */
+    delete row.priceForeign;
+    if(!sample) sample = `${row.partName || ''}${row.brand ? ' ('+row.brand+')' : ''}`;
+    fixed.push({ job: job, row: row });
+    n++;
+  });
+  if(!n) return 0;
+  /* ความจำราคาต้องตามไปด้วย ไม่งั้นคันต่อไปจะถูกเติมราคาแกลลอนกลับมาอีก
+     แล้วบั๊กเดิมก็กลับมาในวันเดียวกับที่เพิ่งแก้ใบเก่าเสร็จ
+
+     จำจาก "ทุกใบที่แก้" ไม่ใช่เฉพาะใบล่าสุด เพราะ rememberJobPartPrice เขียนลง
+     ตำราของ "รุ่นรถของใบนั้น" (getJobModel) ใบล่าสุดอาจเป็นรถที่ยังไม่ผูกรุ่น
+     แล้วตำราของรุ่นที่ผูกไว้จะไม่ถูกแก้เลย — ราคาเป็นเลขเดียวกันหมด เขียนซ้ำไม่เสียหาย
+     เรียงเก่าไปใหม่ เพื่อให้ใบใหม่สุดเป็นคนเขียนทับคนสุดท้ายในช่องที่ใช้ร่วมกัน */
+  fixed.sort((a, b) => String(a.job.createdAt || '').localeCompare(String(b.job.createdAt || '')));
+  fixed.forEach(f => { try { rememberJobPartPrice(f.job, f.row); } catch(e){} });
+  saveState(true);
+  /* เส้นทางเดียวในแอพที่เขียนราคาทับใบหลายสิบใบในคลิกเดียว รวมถึงใบที่ส่งมอบไปแล้ว
+     ทุกเส้นทางที่แก้ราคาในไฟล์นี้ลง editLog หมด เส้นทางนี้ยิ่งต้องลง */
+  const del = plan.filter(x => x.delivered).length;
+  pushEditLog('แก้ราคาต่อหน่วยย้อนหลัง', '', '',
+    `${sample} → ฿${want}/หน่วย · ${n} บรรทัด` + (del ? ` · ส่งมอบไปแล้ว ${del} ใบ` : ''));
+  return n;
+}
+
+/* ---------- หน้าตรวจราคาต่อหน่วย (v4.3.9) ----------
+   สามจังหวะบนจอให้ตรงกับสามจังหวะในโค้ด: เห็นกลุ่ม → คีย์ราคาที่ถูก → ดู preview
+   → กดยืนยัน  ปุ่มยืนยันไม่โผล่จนกว่าจะกดดู preview ก่อน จงใจให้กดพลาดยาก
+
+   ทุกปุ่มส่ง "เลขลำดับกลุ่ม" ไม่ใช่ตัวคีย์ — คีย์ประกอบด้วยชื่ออะไหล่กับแบรนด์ที่
+   คนพิมพ์เอง ถ้าวางลงใน onclick="fn('...')" ตัว ' ที่ escapeHtml แปลงเป็น &#39;
+   จะถูกเบราว์เซอร์ถอดกลับก่อน JS อ่าน = ปุ่มพังทั้งกลุ่ม หรือแย่กว่านั้นคือรันโค้ดได้
+   ไฟล์นี้ปิดคลาสนี้ไปแล้วตั้งแต่ v3.23.x (เทสต์ B-1b) อย่าเปิดใหม่ */
+function renderUnitPriceFixTab(){
+  const groups = unitPriceAudit();
+  view.upf_keys = groups.map(g => g.key);     // ปุ่มอ้างถึงกลุ่มตามที่วาดไว้รอบนี้
+  let html = `<div class="card">
+    <h3>ตรวจราคาต่อหน่วย (ของที่ขายเป็นลิตร)</h3>
+    <p class="muted" style="margin-top:-6px;">
+      ช่องราคาในใบงานคือ <b>ราคาต่อหน่วย</b> ถ้าคีย์ราคาทั้งแกลลอนลงไป ระบบจะคูณจำนวนซ้ำ
+      เช่น แกลลอน 4 ลิตร 1,890 ถ้าคีย์ 1,890 แล้วใส่ 4 ลิตร จะได้ 7,560
+      ที่ถูกคือคีย์ลิตรละ 472.50
+    </p>`;
+
+  if(!groups.length){
+    html += `<div class="empty-state" style="padding:18px;">ยังไม่พบรายการที่ขายเป็นลิตรในใบงานที่โหลดอยู่</div></div>`;
+    return html;
+  }
+
+  html += `<p class="muted upf-scope">ดูจากใบงาน ${state.jobs.length} ใบที่โหลดอยู่ (${RECENT_JOBS_LIMIT} ใบล่าสุด) · ใบที่เก่ากว่านั้นไม่อยู่ในรายการนี้ · บรรทัดเทิร์น (ราคาติดลบ) บรรทัดชุดโปร และบรรทัดที่ยังไม่ใส่ราคา ไม่ถูกนับ</p></div>`;
+
+  groups.forEach((g, i) => {
+    const mixed = g.prices.length > 1;
+    const typed = view.upf_price && view.upf_price[g.key];
+    const plan = (view.upf_preview === g.key && typed) ? unitPriceFixPreview(g.key, typed) : null;
+    const delivered = plan ? plan.filter(x => x.delivered).length : 0;
+
+    html += `<div class="card upf-grp">
+      <div class="upf-head">
+        <div>
+          <div class="upf-name">${escapeHtml(g.partName)}${g.brand ? ` <span class="upf-brand">${escapeHtml(g.brand)}</span>` : ''}</div>
+          <div class="upf-sub">หน่วย ${escapeHtml(g.unit)} · ${g.rows.length} บรรทัด · ราคาที่เคยคีย์: ${g.prices.map(v => fmtMoney(v)).join(' / ')}</div>
+        </div>
+        ${mixed ? `<span class="upf-warn">ราคาไม่เป็นมาตรฐานเดียวกัน</span>` : ''}
+      </div>
+
+      <div class="upf-calc">
+        <span>ราคาทั้งแกลลอน</span>
+        <input type="text" inputmode="decimal" class="upf-pack" placeholder="1890"
+          value="${escapeAttr((view.upf_pack && view.upf_pack[g.key]) || '')}"
+          oninput="onUnitFixField('upf_pack',${i}, this.value)">
+        <span>แบ่งเป็น</span>
+        <input type="text" inputmode="decimal" class="upf-size" placeholder="4"
+          value="${escapeAttr((view.upf_size && view.upf_size[g.key]) || '')}"
+          oninput="onUnitFixField('upf_size',${i}, this.value)">
+        <span>${escapeHtml(g.unit)} → ราคาต่อ${escapeHtml(g.unit)}</span>
+        <input type="text" inputmode="decimal" class="upf-price" placeholder="472.50"
+          value="${escapeAttr(typed || '')}"
+          oninput="onUnitFixField('upf_price',${i}, this.value)">
+        <button type="button" class="btn secondary small" onclick="unitPriceCalc(${i})">คำนวณให้</button>
+        <button type="button" class="btn secondary small" onclick="unitPriceShowPreview(${i})">ดูว่าจะเปลี่ยนอะไรบ้าง</button>
+      </div>`;
+
+    if(plan){
+      if(!plan.length){
+        html += `<div class="empty-state" style="padding:14px;">ทุกบรรทัดเป็นราคานี้อยู่แล้ว ไม่มีอะไรต้องแก้</div>`;
+      } else {
+        html += `<div class="upf-prev-head">จะแก้ ${plan.length} บรรทัด${delivered ? ` · <b class="upf-del">ในนั้นเป็นใบที่รถออกจากร้านไปแล้ว ${delivered} ใบ — ลูกค้าอาจถือใบกระดาษที่เป็นเลขเดิมอยู่</b>` : ''}</div>
+          <div class="table-wrap"><table class="upf-tbl"><thead><tr>
+            <th>ทะเบียน</th><th>เลขที่</th><th>วันที่</th><th>สถานะ</th>
+            <th class="num">จำนวน</th><th class="num">ราคา/หน่วย</th><th class="num">ยอดบรรทัด</th>
+          </tr></thead><tbody>`;
+        plan.forEach(x => {
+          html += `<tr class="upf-row${x.delivered ? ' upf-row-del' : ''}">
+            <td class="mono" data-label="ทะเบียน">${escapeHtml(x.plate)}</td>
+            <td class="mono" data-label="เลขที่">${escapeHtml(x.jobNumber)}</td>
+            <td data-label="วันที่">${escapeHtml(x.date)}</td>
+            <td data-label="สถานะ">${escapeHtml(x.status)}</td>
+            <td class="num mono" data-label="จำนวน">${escapeHtml(String(x.qty))}</td>
+            <td class="num mono" data-label="ราคา/หน่วย"><s>${escapeHtml(fmtMoney(x.beforePrice))}</s> → <b>${escapeHtml(fmtMoney(x.afterPrice))}</b></td>
+            <td class="num mono" data-label="ยอดบรรทัด"><s>${escapeHtml(fmtMoney(x.beforeTotal))}</s> → <b>${escapeHtml(fmtMoney(x.afterTotal))}</b></td>
+          </tr>`;
+        });
+        html += `</tbody></table></div>
+          <div class="upf-apply">
+            ${isAdmin()
+              ? `<button type="button" class="btn danger" onclick="unitPriceApply(${i})">ยืนยันแก้ ${plan.length} บรรทัด</button>`
+              : `<span class="muted">แก้ย้อนหลังได้เฉพาะแอดมิน</span>`}
+          </div>`;
+      }
+    }
+    html += `</div>`;
+  });
+  return html;
+}
+
+/* ปุ่มส่งเลขลำดับมา แปลงกลับเป็นคีย์ของกลุ่มที่วาดไว้รอบล่าสุด
+   ถ้ารายการเปลี่ยนไประหว่างนั้น (snapshot เข้ามา) ก็จะได้คีย์ที่ไม่มีจริง แล้วทุก
+   เส้นทางข้างล่างหยุดเอง — ดีกว่าไปแก้กลุ่มที่คนไม่ได้มอง */
+function unitFixKeyAt(i){
+  const k = (view.upf_keys || [])[Number(i)];
+  if(k === undefined) return null;
+  return unitPriceAudit().some(g => g.key === k) ? k : null;
+}
+
+function onUnitFixField(bag, i, value){
+  const key = unitFixKeyAt(i);
+  if(key === null) return;
+  view[bag] = view[bag] || {};
+  view[bag][key] = value;
+  /* ไม่ render ทั้งหน้า — คนกำลังพิมพ์อยู่ เดี๋ยวช่องเด้ง (เหตุผลเดียวกับ safeRender)
+     แต่ถ้าแก้ราคาหลังจากกดดู preview ไปแล้ว ตารางบนจอจะเป็นของเลขเก่า
+     จึงล้มธง preview ทิ้ง ปุ่มยืนยันจะหายไปจนกว่าจะกดดูใหม่ (เช็กอีกชั้นใน
+     unitPriceApply เผื่อ render ไม่ทัน) */
+  if(bag === 'upf_price' && view.upf_preview === key){
+    view.upf_preview = null;
+    view.upf_previewAt = null;
+    safeRender();
+  }
+}
+
+// เติมราคาต่อหน่วยให้จากราคาแกลลอน ÷ ขนาด — คนยังแก้ตัวเลขนั้นเองได้ก่อนกดต่อ
+function unitPriceCalc(i){
+  const key = unitFixKeyAt(i);
+  if(key === null) return;
+  const pack = (view.upf_pack || {})[key];
+  const size = (view.upf_size || {})[key];
+  const unit = packPriceToUnit(pack, size);
+  if(unit === null || unit <= 0){ flashToast('ใส่ราคาทั้งแกลลอนกับขนาดให้ครบ และต้องมากกว่า 0'); return; }
+  view.upf_price = view.upf_price || {};
+  view.upf_price[key] = String(unit);
+  view.upf_preview = null;          // ราคาเปลี่ยน preview เก่าใช้ไม่ได้แล้ว
+  view.upf_previewAt = null;
+  render();
+}
+
+function unitPriceShowPreview(i){
+  const key = unitFixKeyAt(i);
+  if(key === null) return;
+  const typed = (view.upf_price || {})[key];
+  const want = unitPriceWanted(typed);
+  if(want === null){ flashToast('ใส่ราคาต่อหน่วยที่มากกว่า 0 ก่อน'); return; }
+  view.upf_preview = key;
+  view.upf_previewAt = String(want);   // ตัวเลขที่ตารางบนจอถูกวาดจากมัน
+  render();
+}
+
+function unitPriceApply(i){
+  const key = unitFixKeyAt(i);
+  if(key === null) return;
+  const typed = (view.upf_price || {})[key];
+  const want = unitPriceWanted(typed);
+  if(want === null){ flashToast('ใส่ราคาต่อหน่วยที่มากกว่า 0 ก่อน'); return; }
+  /* ต้องเขียนเลขเดียวกับที่ตารางบนจอโชว์ไว้เป๊ะ ๆ ไม่งั้นระบบ "ดูก่อนแล้วค่อยยืนยัน"
+     ก็เหลือแค่ "ยืนยัน" — คนแก้เลขต่อหลังกดดู preview แล้วกดยืนยันได้ */
+  if(view.upf_preview !== key || view.upf_previewAt !== String(want)){
+    view.upf_preview = key;
+    view.upf_previewAt = String(want);
+    render();
+    flashToast('ราคาเปลี่ยนหลังจากกดดูแล้ว — ดูตารางอีกรอบก่อนยืนยัน');
+    return;
+  }
+  const plan = unitPriceFixPreview(key, want);
+  if(!plan.length){ flashToast('ไม่มีบรรทัดที่ต้องแก้'); return; }
+  const del = plan.filter(x => x.delivered).length;
+  uiConfirm(`แก้ราคา ${plan.length} บรรทัดเป็น ${fmtMoney(want)} ต่อหน่วย?` +
+            (del ? `\n\nในนั้นเป็นใบที่รถออกจากร้านไปแล้ว ${del} ใบ — ตัวเลขในระบบจะไม่ตรงกับใบกระดาษที่ลูกค้าถืออยู่` : ''), () => {
+    const n = applyUnitPriceFix(key, want);
+    view.upf_preview = null;
+    view.upf_previewAt = null;
+    flashToast(n ? `แก้แล้ว ${n} บรรทัด` : 'ไม่ได้แก้อะไร (ต้องเป็นแอดมิน)');
+    render();
+  }, 'ยืนยันแก้');
+}
+
 function jobBestPrice(job){
   if(jobHasPricedLines(job)) return jobGrandTotal(job);
   return Number(job.priceEstimate) || 0;
+}
+
+/* ===========================================================================
+   v4.3.8 — "ครั้งก่อน" ดึงจากใบงานเก่าให้เอง (สรุปข้อความลงกลุ่มไลน์)
+
+   ของเดิมสามอย่างนี้ต้องพิมพ์มือทุกครั้ง: วันที่เข้าครั้งก่อน · รายการที่เคยทำ ·
+   ราคาครั้งก่อน (ไม่มีช่องด้วยซ้ำ) ทั้งที่ข้อมูลอยู่ในใบงานเก่าของรถคันนั้นครบแล้ว
+   คนหน้าร้านต้องไปเปิดใบเก่าหาเอง แล้วพิมพ์ซ้ำ — ซึ่งแปลว่าในทางปฏิบัติมักไม่กรอก
+
+   เกณฑ์ที่เลือก และเหตุผล:
+     · ยึด "รถคันนี้" (vehicleId) ไม่ใช่ "ลูกค้าคนนี้" — ลูกค้าคนเดียวมีหลายคันได้
+       รายการที่เคยทำกับเก๋งไม่เกี่ยวกับกระบะของคนเดียวกัน
+     · นับเฉพาะใบที่ "ส่งมอบแล้ว" — ใบที่ยังค้างหรือไม่อนุมัติ ยังไม่ได้ทำจริง
+       จะเอามาบอกลูกค้าว่า "ครั้งก่อนทำนี่ไป" ไม่ได้
+     · ตัดบรรทัดลูกชุดโปรและบรรทัดหักลบ (เทิร์นของเก่า) ออกจากรายการ — อย่างแรก
+       ซ้ำกับหัวชุด อย่างหลังไม่ใช่งานที่ทำ
+     · ราคาใช้ jobGrandTotal ของใบเก่า (ยอดหลังหักส่วนลดและเทิร์น) และเฉพาะเมื่อใบนั้น
+       มีรายการที่คีย์ราคาไว้จริง — จงใจไม่ใช้ jobBestPrice เพราะมันถอยไปใช้
+       priceEstimate ซึ่งเป็นเลขที่เดาไว้ตอนรับรถ ไม่ใช่เงินที่ลูกค้าจ่าย
+
+   เรื่องหน้าต่าง 600 ใบ (ข้อเดียวกับที่ทำให้สถิติเพี้ยนใน M6):
+   ตัวฟัง jobs จำกัด RECENT_JOBS_LIMIT = 600 ที่ 20-30 คัน/วัน = ราวเดือนเดียว
+   ลูกค้าที่กลับมาซ่อมทุก 3-6 เดือนจึงอยู่ "นอกหน้าต่าง" แทบทุกราย ถ้าอ่านแค่
+   state.jobs ช่องจะว่างเงียบ ๆ แล้วคนอ่านจะเข้าใจว่ารถคันนี้ไม่เคยเข้า ซึ่งผิด
+   จึงมี loadVehicleHistory() ดึงเฉพาะใบของรถคันนั้นเพิ่มครั้งเดียว (query เดียว
+   where vehicleId == x ไม่ต้องมี composite index) แล้วแคชไว้
+   =========================================================================== */
+/* ต้องรวม 'ready' ด้วย ไม่ใช่แค่ 'delivered' — 'ready' แปลว่างานเสร็จแล้ว รอลูกค้ามารับ
+   ของจริงในร้านนี้คือใบจำนวนมากค้างที่ ready เพราะลูกค้ามารับแล้วแต่ไม่มีใครกดปิดใบ
+   (ดูคอมเมนต์ที่ undeliverToHeld ซึ่งเขียนเองว่าต้องไล่ปิดใบย้อนหลังทีละสิบกว่าคัน)
+   และ WORK_DONE_STATUSES ในไฟล์นี้ก็นับ ready เป็น "งานเสร็จ" อยู่แล้ว
+   ถ้าไม่รวม: รถที่เปลี่ยนแร็คไปเมื่อ 8 เดือนก่อนแต่ใบค้างที่ ready จะอ่านว่าไม่เคยเข้า
+   ซึ่งคือความผิดพลาดแบบเดียวกับที่ฟีเจอร์นี้สร้างมาเพื่อกำจัด
+   ส่วน carout/rejected/scheduled ไม่นับถูกแล้ว — สามอย่างนั้นแปลว่ายังไม่ได้ลงมือทำ */
+const LAST_SERVICE_DONE_STATUSES = ['delivered', 'ready'];
+
+/* แคชใช้ Object.create(null) ไม่ใช่ {} — คีย์คือ vehicleId ที่มาจากข้อมูล ถ้าบังเอิญ
+   เป็น 'constructor' การเช็กด้วย obj[k] จะไต่ขึ้น prototype แล้วตอบ truthy
+   (บั๊กตระกูลเดียวกับที่ v4.3.7 เจอใน DOC_TONES) */
+let vehicleHistory = Object.create(null);       // vehicleId -> แถวที่ดึงมาครบแล้ว
+let vehicleHistoryBusy = Object.create(null);   // กำลังดึงอยู่ กันยิงซ้ำ
+let vehicleHistoryFailed = Object.create(null); // ดึงแล้วไม่สำเร็จ อย่ายิงซ้ำทุกรอบวาด
+let vehicleHistoryPartial = Object.create(null);// ได้มาจากแคชออฟไลน์ ใช้ได้แต่ยังไม่ครบ
+let vehicleHistoryOffline = Object.create(null);// คันที่ข้อมูลมาจากแคชเครื่อง ไม่ใช่เซิร์ฟเวอร์
+const VEHICLE_HISTORY_MAX = 60;                 // กันแคชโตไม่จำกัดในกะยาว ๆ
+const VEHICLE_HISTORY_ROWS = 20;                // ใบต่อคันที่เก็บพอ (ใหม่สุดก่อน)
+
+function vehicleHistoryComplete(vehicleId){
+  return Object.prototype.hasOwnProperty.call(vehicleHistory, vehicleId);
+}
+
+/* ของใน state.jobs คือของสด (ตัวฟัง onSnapshot อัปเดตตลอด) ส่วนแคชเป็นภาพนิ่งตอนดึง
+   จึงให้ของสดทับของในแคชเสมอ แทนที่จะไปทำระบบล้างแคชแยกต่างหาก — ไม่งั้นใบที่เพิ่ง
+   ถูกกด "เอากลับเข้าคิว" (undeliverJob) จะยังขึ้นเป็น "ครั้งก่อนทำไปแล้ว" ทั้งกะ */
+function vehicleHistoryRows(vehicleId){
+  const live = (state.jobs || []).filter(j => j && j.vehicleId === vehicleId);
+  const cached = vehicleHistoryComplete(vehicleId)
+    ? vehicleHistory[vehicleId]
+    : (vehicleHistoryPartial[vehicleId] || null);
+  if(!cached) return live;
+  const seen = Object.create(null);
+  live.forEach(j => { seen[j.id] = 1; });
+  return live.concat(cached.filter(j => j && !seen[j.id]));
+}
+
+/* ล้างด่าน "เคยดึงไม่สำเร็จ" ของรถคันนั้นตอนคนกดเปิดใบงาน
+   ด่านนั้นมีไว้กันการยิง query ซ้ำทุกรอบวาด (ซึ่งเกิดทุกการกดสถานะ) ไม่ได้มีไว้
+   ปิดตายทั้งกะ — เน็ตสะดุดครั้งเดียวตอนเปิดใบ ไม่ควรแปลว่ารถคันนั้นเติมให้ไม่ได้
+   อีกเลยจนกว่าจะรีโหลดแอป และบนจอก็ไม่มีอะไรบอกด้วยว่าเป็นเพราะดึงไม่สำเร็จ */
+function retryVehicleHistory(vehicleId){
+  if(!vehicleId) return;
+  delete vehicleHistoryFailed[vehicleId];
+  // ของที่ได้จากแคชออฟไลน์ก็ต้องปลดด้วย ไม่งั้นคำตอบครึ่งใบติดอยู่ทั้งกะ
+  // ถึงเน็ตกลับมาแล้วก็ไม่มีใครไปดึงของจริงมาทับ
+  delete vehicleHistoryPartial[vehicleId];
+  /* ...รวมถึงธงบอกที่มาด้วย ไม่งั้นแถวที่มาจากตัวฟังสด ๆ จะยังติดป้าย
+     "ออฟไลน์ — เท่าที่เครื่องนี้มี" ทั้งที่ไม่ได้มาจากแคชแล้ว และป้าย
+     "ดูจาก 600 ใบล่าสุด" จะไม่มีวันขึ้นให้รถคันนั้นอีกเลยทั้งกะ */
+  delete vehicleHistoryOffline[vehicleId];
+}
+
+function resetVehicleHistory(){
+  vehicleHistory = Object.create(null);
+  vehicleHistoryBusy = Object.create(null);
+  vehicleHistoryFailed = Object.create(null);
+  vehicleHistoryPartial = Object.create(null);
+  vehicleHistoryOffline = Object.create(null);
+}
+
+/* ด่านต้องครอบ "ได้ผลมาจากแคชออฟไลน์แล้ว" ด้วย ไม่ใช่แค่ complete/busy/failed
+
+   ตัวเรียกอยู่ใน renderJobDetail และตัวจบงานเรียก safeRender() ต่อ = เป็นวงปิด
+   ถ้าเส้นทาง fromCache ไม่ล็อกอะไรเลย: วาด → ยิง → safeRender → วาด → ยิง ... ไม่จบ
+   เกิดกับรถที่ยังไม่มีใบที่ทำเสร็จ ซึ่งคือรถใหม่ทุกคัน และเกิดเฉพาะตอนออฟไลน์
+   ซึ่งเป็นโหมดที่รองรับอยู่ (เปิด enablePersistence ไว้) — แท็บเล็ตจะวาดจอรัว ๆ
+   จนกดอะไรไม่ติด และไม่โผล่ในบิล Firestore เลยเพราะอ่านจากแคชไม่เสียเงิน
+   (ยืนยันด้วยการจำลอง: วาด 6 รอบ = ยิง 6 ครั้ง)
+   ล็อกไว้ก่อน แล้วให้ retryVehicleHistory() ปลดตอนคนกดเปิดใบใหม่ ซึ่งเป็นเจตนาของคน
+   ไม่ใช่รอบวาดอัตโนมัติ */
+function loadVehicleHistory(vehicleId){
+  if(!vehicleId || vehicleHistoryComplete(vehicleId)
+     || vehicleHistoryPartial[vehicleId]
+     || vehicleHistoryBusy[vehicleId] || vehicleHistoryFailed[vehicleId] || !db){
+    return Promise.resolve(vehicleHistoryComplete(vehicleId) ? vehicleHistory[vehicleId] : null);
+  }
+  vehicleHistoryBusy[vehicleId] = true;
+  return db.collection('jobs').where('vehicleId', '==', vehicleId).get()
+    .then(snap => {
+      /* เปิด offline persistence ไว้ (ดู enablePersistence) ฉะนั้น .get() ตอนเน็ตหลุด
+         จะ "สำเร็จ" โดยตอบจากแคช IndexedDB ของเครื่องนี้ ซึ่งมีแต่ของที่เคยรับมาแล้ว
+         = ราว 600 ใบล่าสุด — ตรงกับที่เรากำลังพยายามหลีกเลี่ยงพอดี
+         ถ้านับว่าครบ: ป้าย "ดูจาก 600 ใบล่าสุด" จะหายไป (ยืนยันความมั่นใจที่ไม่จริง)
+         และด่านกันยิงซ้ำจะล็อกไว้ทั้งกะ เน็ตกลับมาก็ไม่ดึงใหม่
+         metadata.fromCache คือบิตเดียวที่แยก "ของจากเซิร์ฟเวอร์" ออกจาก "ของที่เครื่อง
+         บังเอิญมี" — ถ้ามาจากแคช ใช้ข้อมูลได้แต่ห้ามปิดประตูการดึงรอบหน้า */
+      const fromCache = !!(snap.metadata && snap.metadata.fromCache);
+      const rows = [];
+      snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
+      /* ใบเก่าสุดไม่จำเป็นต่อการตอบ "ครั้งก่อนทำอะไร" และใบงานพกลายเซ็นเป็น base64
+         ติดมาด้วย รถประจำที่เข้ามา 80 ครั้งจึงกินหน่วยความจำฟรี ๆ — เก็บเท่าที่ใช้
+         (ตัดทิ้งฝั่งนี้ ไม่ใช่ใส่ limit ใน query เพราะ where+orderBy ต้องมี
+         composite index ซึ่งต้องไปสร้างในคอนโซลก่อน ไม่งั้น query ล้มทั้งอัน) */
+      rows.sort((a, b) => (usableVisitTime(b) || 0) - (usableVisitTime(a) || 0));
+      const kept = rows.slice(0, VEHICLE_HISTORY_ROWS);
+      delete vehicleHistoryBusy[vehicleId];
+      if(fromCache){
+        /* ใช้ได้รอบนี้ แต่ไม่บันทึกเป็นของครบ — ป้ายบอกที่มาต้องยังขึ้นอยู่
+           ล็อกไว้กันวาด-ยิงวนลูป แล้วปลดตอนคนกดเปิดใบใหม่ (retryVehicleHistory)
+           เพดานเดียวกับฝั่งออนไลน์ ไม่งั้นตอนเน็ตแย่ซึ่งเป็นตอนที่ต้องการเพดานที่สุด
+           กลับไม่มีเพดานเลย */
+        const pk = Object.keys(vehicleHistoryPartial);
+        if(pk.length >= VEHICLE_HISTORY_MAX){
+          delete vehicleHistoryOffline[pk[0]];   // ไล่ออกคู่กัน ไม่งั้นธงค้างสะสม
+          delete vehicleHistoryPartial[pk[0]];
+        }
+        vehicleHistoryPartial[vehicleId] = kept;
+        vehicleHistoryOffline[vehicleId] = true;
+        safeRender();
+        return kept;
+      }
+      delete vehicleHistoryPartial[vehicleId];
+      delete vehicleHistoryOffline[vehicleId];
+      const keys = Object.keys(vehicleHistory);
+      if(keys.length >= VEHICLE_HISTORY_MAX) delete vehicleHistory[keys[0]];
+      vehicleHistory[vehicleId] = kept;
+      safeRender();
+      return kept;
+    })
+    .catch(err => {
+      /* จำไว้ว่าเจ้านี้ดึงไม่ผ่าน ไม่งั้นมันยิง query ใหม่ทุกครั้งที่หน้าถูกวาด
+         ซึ่งเกิดทุกการกดสถานะและทุกครั้งที่ snapshot เด้ง = ค่าอ่านบานโดยไม่มีใครรู้ */
+      vehicleHistoryFailed[vehicleId] = true;
+      delete vehicleHistoryBusy[vehicleId];
+      console.error('[vehicle history]', (err && err.code) || err);
+      return null;   // เงียบไว้ — ช่องยังพิมพ์มือได้ตามเดิม ไม่ต้องกวนคนหน้าร้าน
+    });
+}
+
+// ใบเก่าของรถคันนี้ที่รับเข้ามา "ก่อน" ใบปัจจุบัน ใหม่สุดขึ้นก่อน
+/* วันที่ต้องอ่านออกจริง ไม่ใช่แค่ "มีค่า"
+   ตัวฟังหลักเรียง orderBy('createdAt') ซึ่ง Firestore ตัดเอกสารที่ไม่มีฟิลด์นั้นทิ้ง
+   แต่ query ของเราเป็น where('vehicleId') เฉย ๆ ไม่มี orderBy จึง "เห็น" ใบพวกนั้น
+   และใบเหล่านั้นไม่เคยผ่าน ensureJobFields เพราะไม่ได้อยู่ใน state.jobs
+   ถ้าปล่อยผ่าน fmtDateBE(undefined) จะคืน "วันนี้" แล้วข้อความที่โพสต์ลงกลุ่มไลน์
+   จะบอกว่า "เข้าทำ 8/10/69" ให้กับการเข้าที่ไม่ได้เกิดวันนี้ */
+function usableVisitTime(j){
+  if(!j || !j.createdAt) return NaN;
+  const t = new Date(j.createdAt).getTime();
+  if(!isFinite(t)) return NaN;
+  /* ใบที่ลงวันที่ไว้ในอนาคต = ข้อมูลเสีย ไม่ใช่การเข้าจริง ที่พบได้คือข้อมูลเก่าที่
+     เผลอคีย์ปี พ.ศ. ลงไป ("2569-03-03" parse ผ่าน แล้วไปโผล่อีก 543 ปีข้างหน้า)
+     ถ้าปล่อยผ่าน ตัวเทียบ t < cutoff จะตัดใบนั้นทิ้งเงียบ ๆ แล้วข้ามไปหยิบใบที่เก่ากว่า
+     หรือไม่เจออะไรเลย — ซึ่งเป็นกับดักของฟีเจอร์นี้โดยเฉพาะ เพราะของที่เราตั้งใจไป
+     ขุดมาคือใบเก่าที่สุด ซึ่งก็คือใบที่มีโอกาสเป็นข้อมูลนำเข้ามากที่สุด
+     เผื่อ 1 วันไว้กันนาฬิกาเครื่องเร็วเล็กน้อย (ดูข้อ Q7 เรื่องนาฬิกาเพี้ยน) */
+  if(t > Date.now() + 86400000) return NaN;
+  return t;
+}
+
+function previousJobsForVehicle(job){
+  if(!job || !job.vehicleId) return [];
+  const cutoff = usableVisitTime(job);
+  if(!isFinite(cutoff)) return [];
+  return vehicleHistoryRows(job.vehicleId)
+    .filter(j => {
+      // vehicleHistoryRows กรองตาม vehicleId มาให้แล้วทั้งฝั่งสดและฝั่งแคช ไม่ต้องกรองซ้ำ
+      if(!j || j.deletedAt || j.id === job.id) return false;
+      const t = usableVisitTime(j);
+      return isFinite(t) && t < cutoff;
+    })
+    .sort((a, b) => usableVisitTime(b) - usableVisitTime(a));
+}
+
+function lastServiceFor(job){
+  return previousJobsForVehicle(job)
+    .find(j => LAST_SERVICE_DONE_STATUSES.indexOf(j.status) >= 0) || null;
+}
+
+function lastServiceSummary(job){
+  const prev = lastServiceFor(job);
+  if(!prev) return null;
+  const items = (prev.partsNeeded || [])
+    .filter(p => p && !p.promoParent && !isDeductRow(p))
+    .map(p => String((p && p.partName) || '').trim())
+    .filter(Boolean);
+  /* ราคาต้องเป็น "ยอดที่เก็บไปจริง" เท่านั้น
+     jobBestPrice() ถอยไปใช้ job.priceEstimate เมื่อใบนั้นไม่มีรายการที่คีย์ราคา
+     ซึ่งถูกสำหรับการโชว์ราคาคร่าว ๆ ของใบที่กำลังทำ แต่ผิดสำหรับที่นี่ —
+     priceEstimate คือเลขที่เดาไว้ตอนรับรถ ไม่ใช่เงินที่ลูกค้าจ่าย เอาไปบอกใน
+     กลุ่มไลน์ว่า "ค่าซ่อมครั้งก่อน 12,000" ทั้งที่ไม่เคยออกบิลเลข นั้นคือการ
+     สร้างตัวเลขขึ้นมาเอง · ใบที่ไม่มีรายการราคา = ไม่รู้ว่าเก็บเท่าไร → null */
+  const billed = jobHasPricedLines(prev) ? jobGrandTotal(prev) : null;
+  return {
+    jobNumber: prev.jobNumber || '',
+    date: fmtDateBE(prev.createdAt),
+    items: items.join(', '),
+    price: billed,
+    complete: vehicleHistoryComplete(job.vehicleId),
+    offline: !!vehicleHistoryOffline[job.vehicleId]
+  };
+}
+
+/* ค่าที่จะโชว์ในช่อง: null/undefined = ยังไม่เคยแตะ → เติมจากใบเก่าให้
+   สตริงว่าง = ช่างลบทิ้งเอง ซึ่งเป็นเจตนา ต้องไม่เด้งกลับมา */
+/* ราคาครั้งก่อนที่ "ใช้ได้" — null เมื่อไม่ควรแสดง
+   เงื่อนไขเดียวกันนี้ถูกใช้ทั้งในข้อความที่คัดลอกและในแถบบนจอ ถ้าแยกกันเขียน
+   จะเพี้ยนกันได้ (จอโชว์ราคา แต่ข้อความที่ช่างกดคัดลอกไปวางไม่มี) */
+/* ผูกกับช่อง "วันที่" ช่องเดียว ไม่ใช่ทั้งสองช่อง
+   วันที่คือสิ่งที่ชี้ว่า "หมายถึงการเข้าครั้งไหน" ส่วนรายการเป็นคำบรรยายของครั้งนั้น
+   การแก้ที่พบบ่อยที่สุดคือตัดรายการยาว ๆ ให้สั้นลง ซึ่งไม่ได้เปลี่ยนว่าหมายถึงครั้งไหน
+   ของเดิมตัดราคาทิ้งทันทีที่แตะช่องใดช่องหนึ่ง = เลขที่ฟีเจอร์นี้สร้างมาเพื่อเพิ่ม
+   หายไปตั้งแต่พิมพ์ตัวแรก และไม่มีทางเอากลับมานอกจากปิดใบแล้วเปิดใหม่ */
+function autoPrevPrice(job){
+  if(view.line_prevDate !== null && view.line_prevDate !== undefined) return null;
+  const s = lastServiceSummary(job);
+  // ไม่ต้องเช็ก < 0 — jobGrandTotal เป็น Math.max(0, …) อยู่แล้ว กิ่งนั้นไปไม่ถึง
+  if(!s || s.price === null) return null;
+  return s.price;   // 0 ใช้ได้ = เคลมฟรี/เทิร์นกลบยอด เป็นข้อเท็จจริง ไม่ใช่ "ไม่รู้"
+}
+
+function lineFieldValue(job, field){
+  const typed = view[field];
+  if(typed !== null && typed !== undefined) return String(typed);
+  const s = lastServiceSummary(job);
+  if(!s) return '';
+  return field === 'line_prevDate' ? s.date : s.items;
 }
 
 function buildLineSummaryText(job){
@@ -16575,14 +17624,32 @@ function buildLineSummaryText(job){
   const q = (job.queueNo || view.line_queueNo || '').trim();
   const lines = [];
   lines.push(`คิวที่${q ? ' ('+q+')' : ''} ${fmtDateBE(job.createdAt)}`);
-  lines.push(`คุณ${c.name || '-'}${repeat ? ' (ลูกค้าเดิม)' : ''}`);
+  /* v4.3.8 — ป้ายนี้ต้องใช้เกณฑ์เดียวกับบล็อก "ครั้งก่อน" ที่อยู่ใต้มันสามบรรทัด
+     ของเดิมยึด isRepeatCustomer (ยึดลูกค้า + เห็นแค่ 600 ใบล่าสุด) ผลคือข้อความ
+     เดียวกันบอกว่าไม่มีป้ายลูกค้าเดิม แล้วบรรทัดถัดมาบอกว่า "เข้าทำ 3/3/68" */
+  const seenBefore = repeat || previousJobsForVehicle(job).length > 0;
+  lines.push(`คุณ${c.name || '-'}${seenBefore ? ' (ลูกค้าเดิม)' : ''}`);
   lines.push(c.phone || '-');
   lines.push(`${v.plate || '-'}${v.province || ''}`);
   lines.push(`${v.brand || ''} ${v.model || ''}`.trim() || '-');
   lines.push(v.color || '-');
-  if(repeat && ((view.line_prevDate||'').trim() || (view.line_prevWork||'').trim())){
-    if((view.line_prevDate||'').trim()) lines.push(`เข้าทำ ${view.line_prevDate.trim()}`);
-    if((view.line_prevWork||'').trim()) lines.push(`- ${view.line_prevWork.trim()}`);
+  /* v4.3.8 — ของเดิมอ่าน view.line_prev* ตรง ๆ ซึ่งว่างเสมอจนกว่าจะมีคนพิมพ์
+     ตอนนี้อ่านผ่าน lineFieldValue() ที่เติมจากใบงานเก่าให้เองเมื่อยังไม่มีใครแตะ
+     และเพิ่มราคาครั้งก่อนเข้าไปด้วย ซึ่งเดิมไม่มีช่องให้กรอกเลย */
+  const prevDate = lineFieldValue(job, 'line_prevDate').trim();
+  const prevWork = lineFieldValue(job, 'line_prevWork').trim();
+  if(prevDate || prevWork){
+    if(prevDate) lines.push(`เข้าทำ ${prevDate}`);
+    if(prevWork) lines.push(`- ${prevWork}`);
+    /* ราคาผูกกับ "ใบที่ระบบหยิบมา" ไม่ใช่กับข้อความที่อยู่ในช่อง
+       ตัวตัดสินอยู่ที่ช่องวันที่ช่องเดียว (ดูเหตุผลเต็มที่ autoPrevPrice):
+       วันที่คือสิ่งที่ชี้ว่าหมายถึงการเข้าครั้งไหน ส่วนรายการเป็นคำบรรยายของครั้งนั้น */
+    const pv = autoPrevPrice(job);
+    if(pv !== null){
+      // 0 บาทต้องพูดเป็นคำ ไม่ใช่ "ค่าซ่อมครั้งก่อน 0.00 บาท" ซึ่งอ่านเหมือนข้อมูลหาย
+      lines.push(pv > 0 ? `- ค่าซ่อมครั้งก่อน ${fmtMoney(pv)} บาท`
+                        : `- ครั้งก่อนไม่มียอดเรียกเก็บ`);
+    }
   }
   lines.push('อาการ');
   if(job.complaints.length === 0){
@@ -16707,7 +17774,12 @@ function renderJobDetail(jobId){
     </div>
   </div>`;
 
-  const lineRepeat = isRepeatCustomer(job.customerId, job.id);
+  /* v4.3.8 — เดิมโชว์บล็อก "ครั้งก่อน" เมื่อ isRepeatCustomer (ยึดลูกค้า) ตอนนี้ยึด
+     "มีประวัติของรถคันนี้จริงไหม" ซึ่งตรงกับสิ่งที่ช่องนั้นถามจริง ๆ
+     และถ้า 600 ใบล่าสุดไม่มีประวัติ ให้ไปดึงของรถคันนี้เพิ่มครั้งเดียว */
+  const prevSvc = lastServiceSummary(job);
+  if(!prevSvc && job.vehicleId && !vehicleHistoryComplete(job.vehicleId)) loadVehicleHistory(job.vehicleId);
+  const lineRepeat = !!prevSvc || isRepeatCustomer(job.customerId, job.id);
   html += `<div class="card">
     <h3>สรุปข้อความลงกลุ่มไลน์</h3>
     <p class="muted" style="margin-top:-6px;">กรอกคิว/หมายเหตุแล้วกดคัดลอก เพื่อวางในไลน์กลุ่มได้ทันที</p>
@@ -16718,9 +17790,32 @@ function renderJobDetail(jobId){
     </div>`;
   if(lineRepeat){
     html += `<div class="pv-intake-row" style="gap:14px; margin-top:10px;">
-      <div class="field" style="flex:1 1 120px; margin-bottom:0;"><label>เข้าทำครั้งก่อน วันที่</label><input type="text" value="${escapeAttr(view.line_prevDate||'')}" placeholder="เช่น 3/3/69" onchange="onLineFieldInput('line_prevDate', this.value)"></div>
-      <div class="field" style="flex:2 1 240px; margin-bottom:0;"><label>รายการที่เคยทำครั้งก่อน</label><input type="text" value="${escapeAttr(view.line_prevWork||'')}" placeholder="เช่น แร็คพวงมาลัยแท้บิ้ว, ..." onchange="onLineFieldInput('line_prevWork', this.value)"></div>
+      <div class="field" style="flex:1 1 120px; margin-bottom:0;"><label>เข้าทำครั้งก่อน วันที่</label><input type="text" value="${escapeAttr(lineFieldValue(job, 'line_prevDate'))}" placeholder="เช่น 3/3/69" onchange="onLineFieldInput('line_prevDate', this.value)"></div>
+      <div class="field" style="flex:2 1 240px; margin-bottom:0;"><label>รายการที่เคยทำครั้งก่อน</label><input type="text" value="${escapeAttr(lineFieldValue(job, 'line_prevWork'))}" placeholder="เช่น แร็คพวงมาลัยแท้บิ้ว, ..." onchange="onLineFieldInput('line_prevWork', this.value)"></div>
     </div>`;
+    /* ราคาครั้งก่อนเป็นของอ่านอย่างเดียว ไม่ให้พิมพ์ทับ — มันคือยอดที่เก็บไปจริง
+       ตามใบเก่า ถ้าพิมพ์ทับได้ ตัวเลขในกลุ่มไลน์จะเถียงกับใบที่ลูกค้าถืออยู่ */
+    if(prevSvc){
+      const shownPrice = autoPrevPrice(job);   // ตัวเดียวกับที่ข้อความใช้
+      html += `<div class="prev-svc">
+        <span class="ps-lab">จากใบงานเก่า</span>
+        <span class="ps-item">เข้าทำ <b>${escapeHtml(prevSvc.date)}</b></span>
+        ${shownPrice !== null
+          ? (shownPrice > 0
+              ? `<span class="ps-item">ค่าซ่อมครั้งก่อน <b>${escapeHtml(fmtMoney(shownPrice))}</b> บาท</span>`
+              : `<span class="ps-item">ครั้งก่อน <b>ไม่มียอดเรียกเก็บ</b></span>`)
+          : (prevSvc.price === null
+              ? `<span class="ps-note">ใบเก่าไม่ได้คีย์ราคาไว้</span>`
+              : `<span class="ps-note">พิมพ์ทับวันที่เองแล้ว — ไม่แนบราคาครั้งก่อน</span>`)}
+        ${prevSvc.jobNumber ? `<span class="ps-ref mono">${escapeHtml(prevSvc.jobNumber)}</span>` : ''}
+        ${prevSvc.complete ? ''
+          : (prevSvc.offline
+              /* อย่าบอกว่า "600 ใบล่าสุด" ตอนที่ของมาจากแคชในเครื่อง — มันไม่ใช่ 600
+                 และไม่ใช่ล่าสุด มันคือเท่าที่เครื่องนี้บังเอิญเก็บไว้ */
+              ? `<span class="ps-partial">ออฟไลน์ — เท่าที่เครื่องนี้มี</span>`
+              : `<span class="ps-partial">ดูจาก ${RECENT_JOBS_LIMIT} ใบล่าสุด</span>`)}
+      </div>`;
+    }
   }
   html += `<textarea id="line-summary-text" class="line-summary-box" rows="9" spellcheck="false">${escapeHtml(buildLineSummaryText(job))}</textarea>
     <div style="margin-top:10px;"><button class="btn secondary small" onclick="copyLineSummary('${job.id}')">คัดลอกข้อความ</button></div>
@@ -17366,7 +18461,7 @@ function renderJobPartsEditor(job){
         </td>
         <td class="center" data-label="ราคา/หน่วย">${inPromo
           ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>`
-          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${deduct ? `<div class="deduct-note"><span class="deduct-tag">หัก</span> หักออกจากยอดรวม ${fmtMoney(Math.abs(priceNum * qtyNum))} บาท</div>` : ''}${priceHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
+          : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${deduct ? `<div class="deduct-note"><span class="deduct-tag">หัก</span> หักออกจากยอดรวม ${fmtMoney(Math.abs(priceNum * qtyNum))} บาท</div>` : ''}${priceHintHtml(job, p)}${packHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
         <td class="center" data-label="รวม"><strong>${inPromo ? '—' : lineTotal}</strong></td>
         <td class="center"><button class="icon-btn" title="ลบรายการนี้" onclick="removeJobPart('${job.id}','${p.id}')">${icon('trash',13)}</button></td>
       </tr>`;
@@ -17990,53 +19085,183 @@ function dupGroupKey(m){
 
    คืนสรุปว่าทำอะไรไปบ้าง เอาไปขึ้น toast และลง editLog
    --------------------------------------------------------------------------- */
+/* v4.3.10 — ราคาไหนชนะ: เลขที่มากกว่า ไม่ใช่เลขที่ใหม่กว่า (ร้านสั่ง 12 ต.ค. 69)
+   เทียบเป็นตัวเลขเสมอ "900" กับ "1200" ถ้าเทียบแบบสตริง "900" จะชนะ
+   ราคา <= 0 ไม่ถือเป็นราคา (บรรทัดเทิร์นติดลบต้องไม่หลุดเข้าตำรา) */
+function mergeHigherPrice(a, b){
+  const va = a && a.price !== undefined && a.price !== null ? parseMoney(a.price) : 0;
+  const vb = b && b.price !== undefined && b.price !== null ? parseMoney(b.price) : 0;
+  if(!(va > 0) && !(vb > 0)) return null;
+  if(!(va > 0)) return b;
+  if(!(vb > 0)) return a;
+  const win = vb > va ? b : a, lose = vb > va ? a : b;
+  /* เวลาประทับห้ามถอยหลัง — ถ้าราคาที่แพงกว่ามาจากใบที่คีย์ไว้นานแล้ว แล้วปล่อยให้
+     at ถอยตามไปด้วย การเรียนราคาย้อนหลังรอบถัดไป (onlyIfNewer) จะเห็นว่า "เก่า"
+     แล้วทับราคาที่เพิ่งรวมไว้คืน = รวมเสร็จแล้วพังเองในอีกไม่กี่วัน */
+  const newest = String(win.at || '') >= String(lose.at || '') ? win.at : lose.at;
+  return Object.assign({}, win, { at: newest });
+}
+
+/* จัดประเภทอะไหล่ของใบที่จะยุบ ไว้ที่เดียว — ทั้งตอนบอกล่วงหน้าว่าจะเกิดอะไร
+   และตอนลงมือทำจริง ใช้ตัวนี้ตัวเดียวกัน ไม่งั้นสองที่จะพูดคนละเรื่อง
+   (บทเรียน v4.3.9: หน้า preview กับของที่เขียนจริง ต้องมาจากฟังก์ชันเดียวกัน) */
+/* ตัวเลขในชื่อเหมือนกันไหม — "น็อต 10" กับ "น็อต 12" ต่างกัน, "โช้คหน้า" กับ "โช๊คหน้า" เหมือน
+   ใช้กับทุกชั้นของการเทียบชื่อ ไม่ใช่เฉพาะชั้น "สะกดต่างกันนิดเดียว"
+   เพราะชั้น "ชื่อหนึ่งอยู่ในอีกชื่อ" คือชั้นที่กลืน "น้ำมันเกียร์ 75W90" เข้า
+   "น้ำมันเกียร์" และ "ลูกปืนล้อหน้า 38x74" เข้า "ลูกปืนล้อหน้า" — ของที่ระบุ
+   เบอร์ ขนาด หรือจำนวนฟัน คือคนละชิ้นเสมอในร้านนี้ */
+function sameDigitRun(a, b){
+  const d = s => (normalizeDigits(String(s == null ? '' : s)).match(/\d+/g) || []).join(',');
+  return d(a) === d(b);
+}
+
+/* หาตัวที่ "เป็นของชิ้นเดียวกัน" ในกองที่มีอยู่แล้ว
+   ขอมาหลายตัวแล้วคัดเอง เพราะตัวอันดับแรกอาจถูกกฎตัวเลขตัดทิ้ง
+   แล้วตัวที่ซ้ำจริงซึ่งอยู่อันดับถัดไปจะหลุดรอดไปเป็นแถวซ้ำ */
+function sameThingAs(name, pool){
+  const hits = similarPartNames(name, pool.map(n => ({ name: n })), 8) || [];
+  for(let i = 0; i < hits.length; i++){
+    if(sameDigitRun(name, hits[i].name)) return hits[i];
+  }
+  return null;
+}
+
+/* จัดประเภทอะไหล่ของใบที่จะยุบ ไว้ที่เดียว — ทั้งตอนบอกล่วงหน้าว่าจะเกิดอะไร
+   และตอนลงมือทำจริง ใช้ตัวนี้ตัวเดียวกัน ไม่งั้นสองที่จะพูดคนละเรื่อง
+   (บทเรียน v4.3.9: หน้า preview กับของที่เขียนจริง ต้องมาจากฟังก์ชันเดียวกัน) */
+function classifyDropParts(keep, drop){
+  const out = { twins: [], fresh: [], skipped: [] };
+  if(!keep || !drop) return out;
+  const keepParts = keep.parts || [];
+
+  /* กองชื่อที่ "มีอยู่แล้ว" ต้องโตไปเรื่อย ๆ ระหว่างไล่
+     ไม่งั้นใบที่ยุบซึ่งมีชื่อซ้ำกันเองสองแถว ("ลูกหมากกันโคลง" กับ "กันโคลง")
+     จะหลุดมาทั้งคู่ ซึ่งคืออาการที่เจ้าของบ่นมาตรง ๆ ว่า "มันจะมั่ว" */
+  const pool = keepParts.map(p => p.partName);
+  const poolPart = {};
+  keepParts.forEach(p => { if(!poolPart[p.partName]) poolPart[p.partName] = p; });
+
+  /* ชุดโปรที่จะย้ายมาจริงเท่านั้น ที่บังคับให้อะไหล่ข้างในตามมาด้วย
+     ชุดที่ซ้ำกับของเดิม (ชื่อ+ราคาเดียวกัน) จะถูกทิ้ง จึงไม่ต้องลากของเข้ามา
+     ไม่งั้นได้ชื่อซ้ำเพิ่มมาฟรี ๆ โดยไม่มีชุดโปรชี้ถึงมันเลย */
+  const keepPromos = keep.promotions || [];
+  const inPromo = {};
+  (drop.promotions || []).forEach(pr => {
+    const dup = keepPromos.find(q =>
+      mmNorm(q.name) === mmNorm(pr.name) && String(q.price || '') === String(pr.price || ''));
+    if(dup) return;
+    (pr.itemIds || []).forEach(id => { inPromo[id] = true; });
+  });
+
+  (drop.parts || []).forEach(dp => {
+    const twin = keepParts.find(p =>
+      p.partName === dp.partName && (p.variant || '') === (dp.variant || ''));
+    if(twin){ out.twins.push({ dp: dp, twin: twin }); return; }
+
+    /* ชื่อไม่ตรงเป๊ะ แต่อาจเป็นของชิ้นเดียวกันที่เรียกคนละอย่าง
+       "ลูกหมากกันโคลง" กับ "กันโคลง" คือตัวเดียวกัน (เจ้าของยืนยันเอง)
+       ไม่เพิ่มเป็นแถวใหม่ แต่ "ราคาต้องรวม" ตามกติกาข้อ 2 — ถ้าเป็นของชิ้นเดียวกัน
+       แล้วทิ้งราคาที่มากกว่าไป ก็ผิดคำสั่งเขาตรง ๆ (รอบแรกผมทำพลาดข้อนี้)
+       ตัวเทียบคือ similarPartNames() ตัวเดียวกับที่เตือนตอนเพิ่มอะไหล่
+       — แยก "ลูกหมากปลายแร็ค" กับ "ลูกหมากแร็ค" ว่าคนละชิ้นได้ถูกต้องอยู่แล้ว */
+    const hit = inPromo[dp.id] ? null : sameThingAs(dp.partName, pool);
+    if(hit){
+      const mine = poolPart[hit.name];
+      out.skipped.push({
+        name: dp.partName, keepName: hit.name, why: hit.why,
+        dropPrice: String(partPriceOf(dp) || ''),
+        keepPrice: String((mine && partPriceOf(mine)) || '')
+      });
+      if(mine) out.twins.push({ dp: dp, twin: mine, renamed: true });
+      return;
+    }
+    out.fresh.push(dp);
+    pool.push(dp.partName);
+    if(!poolPart[dp.partName]) poolPart[dp.partName] = dp;
+  });
+  return out;
+}
+
+/* บอกล่วงหน้าว่ากดแล้วจะเกิดอะไร — ใช้ตัวจัดประเภทตัวเดียวกับตอนทำจริง
+   ไล่ทีละใบแบบสะสม เพราะใบที่สองถูกเทียบกับของที่ใบแรกเพิ่งย้ายเข้ามาด้วย
+   (จำลองบนสำเนา ไม่แตะข้อมูลจริง) */
+function dupMergePreview(keepId, dropIds){
+  const sum = { moved:0, merged:0, skipped:0 };
+  const keep = getModel(keepId);
+  if(!keep) return sum;
+  const sim = { parts: (keep.parts || []).slice(), promotions: (keep.promotions || []).slice() };
+  (dropIds || []).forEach(id => {
+    const d = getModel(id);
+    if(!d) return;
+    const c = classifyDropParts(sim, d);
+    sum.moved += c.fresh.length;
+    sum.merged += c.twins.filter(t => !t.renamed).length;
+    sum.skipped += c.skipped.length;
+    sim.parts = sim.parts.concat(c.fresh);
+    sim.promotions = sim.promotions.concat(d.promotions || []);
+  });
+  return sum;
+}
+
 function mergeDuplicateModels(keepId, dropId){
-  const out = { ok:false, moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[] };
+  const out = { ok:false, moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[], skipped:[] };
   const keep = getModel(keepId), drop = getModel(dropId);
   if(!keep || !drop || keepId === dropId) return out;
 
   keep.parts = keep.parts || [];
   keep.promotions = keep.promotions || [];
   const idMap = {};                    // id เดิมในใบที่ทิ้ง -> id ที่ใช้จริงหลังรวม
+  const cls = classifyDropParts(keep, drop);
 
-  (drop.parts || []).forEach(dp => {
-    const twin = keep.parts.find(p =>
-      p.partName === dp.partName && (p.variant || '') === (dp.variant || ''));
-    if(!twin){
-      keep.parts.push(dp);             // ยกมาทั้งรายการ ราคาทุกช่องติดมาด้วย
-      idMap[dp.id] = dp.id;
-      out.moved++;
-      return;
-    }
+  out.skipped = cls.skipped;
+  const usedIds = {};
+  keep.parts.forEach(p => { usedIds[p.id] = true; });
+  cls.fresh.forEach(dp => {
+    /* id ชนกันได้จริงถ้าสองใบถูกสร้างจากตัวตั้งต้นเดียวกัน (seedKey/bizKey)
+       ปล่อยไว้แล้ว parts.find(p => p.id === x) จะเจอแถวแรกเสมอ
+       = ชุดโปรชี้ไปผิดชิ้น และปุ่มลบจะลบผิดแถว */
+    if(usedIds[dp.id]){ const old = dp.id; dp.id = uid(); idMap[old] = dp.id; }
+    else idMap[dp.id] = dp.id;
+    usedIds[dp.id] = true;
+    keep.parts.push(dp);               // ยกมาทั้งรายการ ราคาทุกช่องติดมาด้วย
+    out.moved++;
+  });
+
+  cls.twins.forEach(pair => {
+    const dp = pair.dp, twin = pair.twin;
     idMap[dp.id] = twin.id;
-    out.merged++;
+    /* ตัวที่ชื่อคล้ายกันถูกนับไว้ในช่อง "ไม่เอามา" แล้ว นับซ้ำในช่อง "รวมกับของเดิม"
+       อีกจะทำให้เลขในกล่องยืนยันไม่ตรงกับผลจริง */
+    if(!pair.renamed) out.merged++;
 
-    // (1) ราคาล่าสุดที่ช่างคีย์ — ใหม่กว่าชนะ
-    const mine = twin.lastPrice, theirs = dp.lastPrice;
-    if(theirs && theirs.price &&
-       (!mine || !mine.price || String(theirs.at || '') > String(mine.at || '')))
-      twin.lastPrice = theirs;
+    // (1) ราคาล่าสุดที่ช่างคีย์ — เลขที่มากกว่าชนะ
+    twin.lastPrice = mergeHigherPrice(twin.lastPrice, dp.lastPrice) || twin.lastPrice;
 
-    /* v4.2.8 — ช่องราคาแยกตามแบรนด์ ก็ต้องรวมทีละช่อง ใหม่กว่าชนะเหมือนกัน
+    /* v4.2.8 — ช่องราคาแยกตามแบรนด์ ก็ต้องรวมทีละช่อง เลขมากกว่าชนะเหมือนกัน
        ถ้าลืมตรงนี้ การรวมรุ่นซ้ำจะกลืนราคา OEM ที่อยู่ในใบที่ถูกยุบหายไปทั้งก้อน */
     twin.lastPriceByBrand = twin.lastPriceByBrand || {};
     const theirBook = dp.lastPriceByBrand || {};
     Object.keys(theirBook).forEach(k => {
-      const t = theirBook[k], m = twin.lastPriceByBrand[k];
-      if(t && t.price && (!m || !m.price || String(t.at || '') > String(m.at || '')))
-        twin.lastPriceByBrand[k] = t;
+      const win = mergeHigherPrice(twin.lastPriceByBrand[k], theirBook[k]);
+      if(win) twin.lastPriceByBrand[k] = win;
     });
 
-    // (2) ราคาที่ร้านตั้งเอง — เติมช่องว่าง ไม่ทับ ต่างกันก็รายงาน ไม่ตัดสิน
+    /* (2) ราคาที่ร้านตั้งเอง — เลขที่มากกว่าชนะ แต่ยังรายงานทุกจุดที่ไม่ตรงกัน
+       ร้านสั่งให้ยึดเลขที่มากกว่า ไม่ได้แปลว่าไม่ต้องบอก — ถ้าเงียบ คนจะไม่รู้ว่า
+       ใบที่ตัวเองตั้งราคาไว้ 5,500 ถูกเปลี่ยนเป็น 6,200 ตอนไหน */
     twin.brands = twin.brands || [];
     (dp.brands || []).forEach(bb => {
-      if(!bb || !bb.price) return;
+      if(!bb) return;
       const slot = twin.brands.find(x => mmNorm(x.brand) === mmNorm(bb.brand));
+      /* แบรนด์ที่ร้านเพิ่มไว้แต่ยังไม่ได้ใส่ราคา ก็เป็นข้อมูลของร้าน ต้องตามมาด้วย
+         ไม่งั้นรวมเสร็จแล้วช่องแบรนด์ในใบนั้นหายไปเฉย ๆ */
       if(!slot){ twin.brands.push(bb); return; }
+      if(!bb.price) return;
       if(!slot.price){ slot.price = bb.price; return; }
-      if(String(slot.price) !== String(bb.price))
-        out.conflicts.push({ part: twin.partName, brand: bb.brand || '(ไม่ระบุแบรนด์)',
-                             keep: String(slot.price), drop: String(bb.price) });
+      if(String(slot.price) === String(bb.price)) return;
+      out.conflicts.push({ part: twin.partName, brand: bb.brand || '(ไม่ระบุแบรนด์)',
+                           keep: String(slot.price), drop: String(bb.price) });
+      if(parseMoney(bb.price) > parseMoney(slot.price)) slot.price = bb.price;
     });
 
     if(!twin.qty  && dp.qty)  twin.qty  = dp.qty;
@@ -18091,39 +19316,50 @@ function dupKeepIdFor(key, group){
 }
 
 function doMergeDupGroup(key){
+  /* การรวมจบด้วยการ "ลบ" การ์ดรุ่นรถ ซึ่งกฎ Firestore ยอมให้เฉพาะแอดมิน
+     ถ้าพนักงานกดได้ batch จะถูกปฏิเสธทั้งก้อน แล้วทุกการบันทึกของเครื่องนั้น
+     จะตายไปทั้งวัน (กลไกเดียวกับบั๊ก "ลงข้อมูลแล้วหาย" ที่แก้ไปใน v4.2.9)
+     ตอนนี้ปุ่มซ่อนอยู่หลัง canManageCatalog() อยู่แล้ว ด่านนี้คือชั้นที่สอง */
+  if(!isAdmin()){ flashToast('รวมรุ่นซ้ำได้เฉพาะผู้ดูแลระบบ (แอดมิน)'); return; }
   const group = findDuplicateModelGroups().find(g => dupGroupKey(g[0]) === key);
   if(!group || group.length < 2){ flashToast('ไม่พบกลุ่มนี้แล้ว'); render(); return; }
   const keepId = dupKeepIdFor(key, group);
   const keep = getModel(keepId);
   const drops = group.filter(m => m.id !== keepId);
   const label = `${keep.brand || ''} ${keep.name}`.trim();
+  const pv = dupMergePreview(keepId, drops.map(d => d.id));
 
   uiConfirm(
     `รวม ${group.length} ใบของ "${label}" เป็นใบเดียว?\n\n`
     + `เก็บใบที่มี ${(keep.parts||[]).length} อะไหล่ · ${(keep.promotions||[]).length} โปรโมชั่น`
     + (keep.yearRange ? ` · ปี ${keep.yearRange}` : '') + '\n\n'
-    + 'อะไหล่และชุดโปรของใบที่เหลือจะถูกย้ายมารวม\n'
-    + 'ราคาล่าสุดที่ช่างคีย์ ระบบเก็บอันที่ใหม่กว่าเสมอ\n'
-    + 'ราคาที่ร้านตั้งเองจะไม่ถูกทับ ถ้าตั้งไว้ไม่เท่ากันระบบจะบอกให้ดูเอง\n\n'
+    + `ย้ายอะไหล่มาใหม่ ${pv.moved} รายการ · รวมกับของเดิม ${pv.merged} รายการ\n`
+    + (pv.skipped ? `ไม่เอามา ${pv.skipped} รายการ เพราะชื่อซ้ำหรือคล้ายของที่มีอยู่แล้ว (ขึ้นรายชื่อให้ดูหลังรวม)\n` : '')
+    + 'ราคาตัวเดียวกันที่ไม่เท่ากัน ระบบเก็บเลขที่มากกว่า\n\n'
     + 'ใบเสนอราคาที่เคยออกไปแล้วไม่ถูกแก้',
     () => {
-      const sum = { moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[] };
+      const sum = { moved:0, merged:0, promos:0, promosSkipped:0, conflicts:[], skipped:[] };
       drops.forEach(d => {
         const r = mergeDuplicateModels(keepId, d.id);
         if(!r.ok) return;
         sum.moved += r.moved; sum.merged += r.merged;
         sum.promos += r.promos; sum.promosSkipped += r.promosSkipped;
         sum.conflicts = sum.conflicts.concat(r.conflicts);
+        sum.skipped = sum.skipped.concat(r.skipped || []);
       });
       if(view.dupKeep) delete view.dupKeep[key];
       view.dupConflicts = sum.conflicts;
+      view.dupSkipped = sum.skipped;
       saveState(true);
       pushEditLog('รวมรุ่นรถที่ซ้ำกัน', '', '',
         `${label} — รวม ${drops.length + 1} ใบเป็นใบเดียว · ย้ายอะไหล่ ${sum.moved} รายการ`
         + ` · รวมรายการซ้ำ ${sum.merged} รายการ · ย้ายชุดโปร ${sum.promos} ชุด`
+        + (sum.skipped.length ? ` · ข้ามเพราะชื่อซ้ำ/คล้าย ${sum.skipped.length} รายการ` : '')
         + (sum.conflicts.length ? ` · ราคาที่ร้านตั้งไว้ไม่ตรงกัน ${sum.conflicts.length} จุด` : ''));
       flashToast(`รวมเป็นใบเดียวแล้ว · ย้ายอะไหล่ ${sum.moved} · รวมที่ซ้ำ ${sum.merged}`
-        + (sum.conflicts.length ? ` · มีราคาไม่ตรงกัน ${sum.conflicts.length} จุด ดูด้านล่าง` : ''));
+        + (sum.skipped.length ? ` · ข้าม ${sum.skipped.length} ที่ชื่อซ้ำ/คล้าย` : '')
+        + (sum.conflicts.length ? ` · ราคาไม่ตรงกัน ${sum.conflicts.length} จุด` : '')
+        + ((sum.skipped.length || sum.conflicts.length) ? ' ดูด้านล่าง' : ''));
       render();
     }, 'รวมเป็นใบเดียว');
 }
@@ -18161,6 +19397,38 @@ function dupCardPanel(m, key, keepId){
   </div>`;
 }
 
+/* v4.3.10 — รายชื่อที่ "ไม่ได้เอามา เพราะชื่อซ้ำหรือคล้ายของเดิม"
+   ต้องขึ้นให้ดูหลังรวมเสมอ ไม่ใช่เงียบ ๆ — ระบบเดาว่าเป็นของชิ้นเดียวกัน
+   ถ้าเดาผิดคนต้องเห็นและไปเพิ่มเองได้ และถ้าตัวที่ข้ามมีราคาแต่ของเดิมไม่มี
+   นั่นคือจุดที่ควรเข้าไปดูที่สุด จึงขึ้นป้ายเตือนไว้ตรงนั้น */
+function dupSkipListHtml(){
+  const sk = view.dupSkipped || [];
+  if(!sk.length) return '';
+  const WHY = { same:'ชื่อเดียวกัน', close:'สะกดต่างกันนิดเดียว', contains:'ชื่อหนึ่งอยู่ในอีกชื่อ' };
+  return `<div class="card no-print dup-skip-card">
+    <h3>ไม่ได้เอามา ${sk.length} รายการ — ชื่อซ้ำหรือคล้ายของที่มีอยู่แล้ว</h3>
+    <p class="muted">ระบบถือว่าเป็นของชิ้นเดียวกัน จึงไม่เพิ่มเข้าไปซ้ำ และไม่เอาราคามาทับของเดิม
+      ถ้าอันไหนที่จริงเป็นคนละชิ้น เข้าไปเพิ่มเองในหน้ารุ่นรถได้</p>
+    <div class="table-wrap"><table class="parts-table dup-skip-tbl"><thead><tr>
+      <th>ชื่อในใบที่ยุบ</th><th style="text-align:right;">ราคา</th>
+      <th>ตรงกับของเดิม</th><th style="text-align:right;">ราคา</th><th>เพราะ</th>
+    </tr></thead><tbody>
+    ${sk.map(x => {
+      const dp = parseMoney(x.dropPrice), kp = parseMoney(x.keepPrice);
+      const flag = (dp > 0 && !(kp > 0));
+      return `<tr class="dup-skip-row${flag ? ' dup-skip-warn' : ''}">
+        <td data-label="ชื่อในใบที่ยุบ">${escapeHtml(x.name)}</td>
+        <td class="mono" style="text-align:right;" data-label="ราคา">${dp > 0 ? '฿' + escapeHtml(fmtMoney(dp)) : '<span class="muted">—</span>'}</td>
+        <td data-label="ตรงกับของเดิม">${escapeHtml(x.keepName)}</td>
+        <td class="mono" style="text-align:right;" data-label="ราคา">${kp > 0 ? '฿' + escapeHtml(fmtMoney(kp)) : '<span class="muted">ยังไม่มีราคา</span>'}</td>
+        <td data-label="เพราะ">${escapeHtml(WHY[x.why] || x.why)}${flag ? ' <b class="dup-skip-warn-tag">ตัวที่ข้ามมีราคา แต่ของเดิมยังไม่มี</b>' : ''}</td>
+      </tr>`;
+    }).join('')}
+    </tbody></table></div>
+    <button class="btn secondary small" style="margin-top:10px;" onclick="view.dupSkipped=[]; render();">รับทราบแล้ว</button>
+  </div>`;
+}
+
 function renderDupMergeTab(){
   const groups = findDuplicateModelGroups();
   let html = `<div class="card no-print">
@@ -18168,10 +19436,13 @@ function renderDupMergeTab(){
     <p class="muted">
       ระบบไม่รวมให้เอง เพราะชื่อซ้ำไม่ได้แปลว่าเป็นรุ่นเดียวกันเสมอ —
       ดูทั้งสองใบแล้วเลือกใบที่เป็นของจริง จากนั้นกดรวม<br>
-      <b>ราคาไม่ถูกแก้</b> ราคาล่าสุดที่ช่างคีย์ ระบบเก็บอันที่ใหม่กว่า
-      ส่วนราคาที่ร้านตั้งเองจะไม่ถูกทับ ถ้าตั้งไว้ไม่ตรงกันระบบจะบอกให้ดูเอง
+      เก็บใบที่ <b>มีราคาอยู่มากกว่า</b> · อะไหล่ตัวเดียวกันที่ราคาไม่เท่ากัน ระบบเก็บ
+      <b>เลขที่มากกว่า</b> และบอกให้ดูทุกจุด · อะไหล่ที่ชื่อซ้ำหรือคล้ายของที่มีอยู่แล้ว
+      จะไม่ถูกเอามาเพิ่มซ้ำ แต่ขึ้นรายชื่อให้ตรวจหลังรวม
     </p>
   </div>`;
+
+  html += dupSkipListHtml();
 
   const cf = view.dupConflicts || [];
   if(cf.length){
@@ -20108,6 +21379,9 @@ function renderSettingsTab(){
       <button class="settings-nav-btn" onclick="goTab('master')">${icon('plus',18)}<span>สินค้า</span><small>${state.masterParts.length} รายการ</small></button>
       <button class="settings-nav-btn" onclick="goTab('technicians')">${icon('wrench',18)}<span>ชื่อช่าง</span><small>${(state.technicians||[]).length} คน</small></button>
       <button class="settings-nav-btn" onclick="goTab('pricebook')">${icon('book',18)}<span>ตำราราคา</span><small>ดู/พิมพ์ราคา</small></button>
+      ${(function(){ const g = unitPriceAudit(); if(!g.length) return '';
+        const mixed = g.filter(x => x.prices.length > 1).length;
+        return `<button class="settings-nav-btn" onclick="goTab('unitfix')">${icon('wrench',18)}<span>ราคาต่อหน่วย</span><small>${mixed ? mixed + ' กลุ่มราคาไม่ตรงกัน' : g.length + ' กลุ่ม'}</small></button>`; })()}
       ${(function(){ const g = findDuplicateModelGroups();
         return g.length ? `<button class="settings-nav-btn" onclick="goTab('dupmerge')">${icon('wrench',18)}<span>รวมรุ่นซ้ำ</span><small>${g.length} กลุ่มรอรวม</small></button>` : ''; })()}
     </div>
