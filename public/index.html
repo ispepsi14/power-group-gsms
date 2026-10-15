@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.4.2";
+  const APP_VERSION = "4.4.3";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2818,7 +2818,46 @@
               ตอนสร้าง PDF (รันกับไฟล์ก่อนแก้ก็ผ่าน) มันเป็นแค่ตัวยืนยันขอบกระดาษ
               ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
               fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
-              pguard 27/27 · shot69 · shot70 ผ่านหมด -->
+              pguard 27/27 · shot69 · shot70 ผ่านหมด
+
+     v4.4.3 — ไอแพดยังปริ้นได้ "หน้า 1 จาก 2" ทั้งที่ใบมีอะไหล่รายการเดียว
+
+              หลัง v4.4.2 ขึ้นเว็บแล้ว เจ้าของส่งรูปหน้าต่างปริ้นของ iPad มา:
+              ขนาดกระดาษ A4 · มาตราส่วน 100% · แต่ "ช่วง: หน้าที่ 1-2" และหน้าสองว่างเปล่า
+              ใบนั้นมีอะไหล่แค่บรรทัดเดียว (เพลาขับ L+R)
+              v4.4.2 แก้เรื่องความกว้างถูกแล้ว แต่ไม่ได้แตะสองจุดนี้ ซึ่งเป็นคนละสาเหตุกัน
+
+              สาเหตุที่ 1 — ใบสูงเท่ากระดาษ "เป๊ะ" จนไม่เหลือที่ว่างเลย
+                วัดได้: .job-print-page min-height 281mm + ขอบบนล่าง 8mm สองด้าน
+                        = 1122.52px ซึ่งเท่ากับความสูง A4 (297mm = 1122.52px) พอดีเป๊ะ
+                พอเท่ากันพอดี เครื่องที่ปัดเศษ "ขึ้น" แม้แต่พิกเซลเดียวจะถือว่าล้นหน้า
+                แล้วแถมหน้าเปล่ามาอีกหน้า · Chromium ปัดลง จึงไม่เคยเห็นบนคอม
+                แต่ Safari บน iPad ปัดขึ้น
+                แก้: min-height 281mm -> 278mm เหลือที่ว่างไว้ 3mm
+                บล็อกลายเซ็นถูกดันลงด้วย margin-top:auto อยู่แล้ว สั้นลง 3mm จึงมองไม่เห็น
+
+              สาเหตุที่ 2 — ความสูงที่ย่อไว้สำหรับ "พรีวิวบนจอ" ติดไปตอนพิมพ์ด้วย
+                fitPreviewToScreen() ของ v4.4.2 เขียน doc.documentElement.style.height
+                ลงไปตรง ๆ ซึ่งเป็น inline style จึงมีผลทั้งบนจอและตอนพิมพ์
+                บนไอแพด scale ราว 0.49 html จึงสูงแค่ 1062px ขณะที่เอกสารสูง 2162px
+                ตอนพิมพ์ เอกสารล้นออกนอกกล่อง html = หน้าเปล่าหน้าที่สองอีกทาง
+                แก้: ส่งผ่านตัวแปร --pg-height ที่ถูกใช้เฉพาะใน @media screen
+                (วิธีเดียวกับ --pg-preview / --pg-offset ที่ทำไว้แล้ว)
+
+              เคยลองใส่ @media print{body{max-width:100%}} เพื่อกันการปัดเศษทางแนวนอนด้วย
+              แต่ shot71 จับได้ทันทีว่า "100%" ตอนพิมพ์ iframe คือความกว้างของ iframe
+              ไม่ใช่หน้ากระดาษ มันจึงย่อเอกสารกลับไปเหลือ 390px บนมือถือ = บั๊กเดิมเป๊ะ
+              จึงถอนออกและเขียนคอมเมนต์กันไว้ไม่ให้ใส่กลับเข้ามาอีก
+
+              เทสต์: shot71.py 129/129 เพิ่ม 2 หมวด
+                · "ใบต้องเหลือที่ว่างบนกระดาษ ไม่สูงเท่ากระดาษเป๊ะ" (ต้องเหลือ >= 1mm)
+                  ทุกใบ x ใบ 1 รายการ / 4 รายการ / 14 รายการ
+                · "ความสูงที่ย่อไว้สำหรับพรีวิวต้องไม่ติดไปตอนพิมพ์"
+                  โดยเรียก fitPreviewToScreen() ตัวจริง แล้ว emulate media=print
+              ทั้งสองหมวดตกกับ v4.4.2 (6 ข้อ และ 1 ข้อ ตามลำดับ) mutation 2 แบบ ตายทั้งคู่
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
+              pguard 27/27 · shot69 · shot70 · shot72 ผ่านหมด -->
 
 
 
@@ -5754,10 +5793,16 @@
        แต่ pageRule()/PRINT_PAGE_MARGIN เปลี่ยนเป็น 8mm ไปแล้วตั้งแต่ v3.27.0 โดยไม่ได้
        แก้เลขนี้ตาม ของจริงคือ 297-16=281mm — พื้นที่ที่หายไป 8mm นี้คือส่วนหนึ่งที่ทำให้
        ใบที่มีอาการแจ้งมากกว่า 2-3 รายการล้นไปหน้าสอง (ดูสาเหตุเต็มในรายงานที่ให้ผู้ใช้)
-       ความสูง 281mm = A4 297mm ลบ margin บน-ล่างอย่างละ 8mm ตามที่ PRINT_PAGE_MARGIN ตั้งไว้จริง
-       ถ้าเปลี่ยน PRINT_PAGE_MARGIN ต้องแก้ตรงนี้ให้ตรงกันด้วย ไม่งั้นใบจะล้นไปหน้าสอง */
+       v4.4.3 — 281mm (= 297 ลบขอบ 8mm สองด้าน) คือ "พอดีเป๊ะ" ซึ่งอันตราย
+       เจ้าของแจ้งหลัง v4.4.2 ขึ้นเว็บแล้วว่าไอแพดยังปริ้นใบที่มีอะไหล่รายการเดียว
+       ออกมาเป็น "หน้า 1 จาก 2" วัดได้ว่าใบสูง 1122.52px เท่ากับ A4 1122.52px เป๊ะ
+       พอเท่ากันพอดี เครื่องที่ปัดเศษขึ้นแม้แต่พิกเซลเดียวจะถือว่าล้น แล้วแถมหน้าเปล่ามาอีกหน้า
+       Chromium ปัดลงจึงไม่เคยเห็นปัญหานี้บนคอม แต่ Safari บน iPad ปัดขึ้น
+       278mm เหลือที่ว่างไว้ 3mm ซึ่งมองไม่เห็นบนใบ (บล็อกลายเซ็นถูกดันลงด้วย
+       margin-top:auto อยู่แล้ว สั้นลง 3mm ไม่มีผลกับสายตา) แต่กันหน้าเปล่าได้ทุกเครื่อง
+       ถ้าเปลี่ยน PRINT_PAGE_MARGIN ต้องแก้ตรงนี้ให้ตรงกันด้วย และต้องเหลือที่ว่างไว้เสมอ */
     .job-print-page{
-      min-height:281mm;
+      min-height:278mm;
       display:flex; flex-direction:column;
     }
     .job-print-page > .pv-body{ flex:1 1 auto; display:flex; flex-direction:column; }
@@ -18158,8 +18203,12 @@ function pageRule(defOrient, margin, defSize){
   return `@page{size:${size} ${ori};margin:0}
   html,body{margin:0}
   body{padding:${m} !important;width:${w}mm;min-width:${w}mm;margin:0 auto;}
+  /* เคยลองใส่ @media print{body{max-width:100%}} เพื่อกันการปัดเศษทางแนวนอน
+     แต่ "100%" ตอนพิมพ์ iframe คือความกว้างของ iframe ไม่ใช่หน้ากระดาษ
+     มันจึงย่อเอกสารกลับไปเหลือ 390px บนมือถือ = บั๊กเดิมเป๊ะ ๆ (shot71 จับได้)
+     อย่าใส่กลับเข้ามาอีก ความกว้างต้องเป็นมิลลิเมตรของกระดาษจริงเท่านั้น */
   @media screen{
-    html{overflow-x:hidden;}
+    html{overflow-x:hidden;height:var(--pg-height,auto);}
     body{transform:scale(var(--pg-preview,1));transform-origin:top left;
          margin-left:var(--pg-offset,0) !important;}
   }`;
@@ -18342,8 +18391,14 @@ function fitPreviewToScreen(frame, doc){
     const gap = Math.max(0, (avail - paperPx * scale) / 2);
     doc.documentElement.style.setProperty('--pg-offset', gap + 'px');
     /* body ถูกย่อด้วย transform ซึ่งไม่ลดพื้นที่ที่มันกินในโฟลว์
-       ตั้งความสูงของ html ตามจริงหลังย่อ พรีวิวจะได้ไม่มีที่ว่างยาว ๆ ต่อท้าย */
-    doc.documentElement.style.height = (doc.body.scrollHeight * scale) + 'px';
+       ตั้งความสูงของ html ตามจริงหลังย่อ พรีวิวจะได้ไม่มีที่ว่างยาว ๆ ต่อท้าย
+
+       v4.4.3 — ต้องส่งผ่านตัวแปร --pg-height ที่ใช้เฉพาะใน @media screen
+       ของเดิมเขียน style.height ลงไปตรง ๆ ซึ่ง "ติดไปตอนพิมพ์ด้วย"
+       บนไอแพด scale ราว 0.49 html จึงสูงแค่ครึ่งเดียวของตัวเอกสาร
+       body ล้นออกนอก html ตอนพิมพ์ = อีกสาเหตุหนึ่งของหน้าเปล่าหน้าที่สอง */
+    doc.documentElement.style.setProperty('--pg-height',
+      (doc.body.scrollHeight * scale) + 'px');
   }catch(err){ console.error('fitPreviewToScreen', err); }
 }
 
