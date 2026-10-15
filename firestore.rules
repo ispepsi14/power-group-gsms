@@ -109,24 +109,44 @@ service cloud.firestore {
 
     // ---------- แคตตาล็อก / ข้อมูลหลัก — Admin เท่านั้น ----------
     // พนักงานอ่านได้ (ต้องใช้ตอนเลือกอะไหล่และดูราคา) แต่แก้ไม่ได้
+    /* ---------- 6 ต.ค. 2026 — ทำไมสี่คอลเลกชันข้างล่างต้องให้พนักงานเขียนได้ ----------
+       แอปเรียนรู้ราคาเองตลอดเวลา: ทุกครั้งที่ช่างคีย์ราคาลงใบเสนอราคา
+       rememberJobPartPrice() เขียนราคานั้นกลับเข้า models/ ทันที (ตั้งแต่ v3.38.0)
+       และถ้าชื่ออะไหล่ยังไม่มีในระบบ ก็สร้างลง masterParts/ ให้ด้วย
+
+       กฎเดิมคือ allow write: if isAdmin() แปลว่าเครื่องของพนักงานธรรมดาถูกปฏิเสธ
+       ทุกครั้งที่คีย์ราคา — และเพราะแอปรวมทุกอย่างไว้ใน batch เดียว ทั้งแบตช์ล้ม
+       คือใบงาน รถ ลูกค้า ที่เพิ่งคีย์ไปพร้อมกันก็ไม่ได้บันทึกไปด้วย
+
+       ให้สิทธิ์แบบเดียวกับ jobs/vehicles/customers: สร้างและแก้ได้ถ้ามีสิทธิ์เข้าระบบ
+       ส่วน ลบ ยังเป็นของแอดมินเท่านั้น เพราะลบแคตตาล็อกคือทำลายของที่ใช้ร่วมกัน
+       ---------------------------------------------------------------------------- */
     match /models/{docId} {
-      allow read:  if hasAccess();
-      allow write: if isAdmin();
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
     }
 
     match /masterParts/{docId} {
-      allow read:  if hasAccess();
-      allow write: if isAdmin();
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
     }
 
     match /partBrandOptions/{docId} {
-      allow read:  if hasAccess();
-      allow write: if isAdmin();
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
     }
 
     match /complaintTypes/{docId} {
-      allow read:  if hasAccess();
-      allow write: if isAdmin();
+      allow read:   if hasAccess();
+      allow create: if hasAccess();
+      allow update: if hasAccess();
+      allow delete: if isAdmin();
     }
 
     // ---------- ตั้งค่าร้าน / ธีม / API key ----------

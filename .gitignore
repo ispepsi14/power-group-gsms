@@ -67,3 +67,25 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# ===================================================================
+# 6 ต.ค. 2569 — กันกฎความปลอดภัยหลุดขึ้นเว็บ
+# โฟลเดอร์ public ถูก Firebase Hosting เอาขึ้นเว็บทั้งก้อน ถ้าไฟล์กฎ
+# ไปอยู่ในนั้น ใครก็โหลด power-group-gsms.web.app/firestore.rules
+# ไปอ่านได้ว่า UID แอดมินตัวไหนฝังไว้ และคอลเลกชันไหนเปิดสาธารณะ
+# ตัวจริงที่ Firebase ใช้คือ firestore.rules ที่รากโปรเจกต์
+public/firestore.rules
+
+# ===================================================================
+# 15 ต.ค. 2569 — กันไฟล์ตั้งค่าเครื่องมือ/ซอร์สสำรองหลุดขึ้นเว็บ
+# โฟลเดอร์ public ถูก Firebase Hosting เอาขึ้นเว็บทั้งก้อน ไฟล์พวกนี้
+# เป็นของสำหรับใช้ในเครื่อง ไม่ใช่ของเว็บ ถ้าขึ้นไปใครก็โหลดได้
+# (publish.cmd ใช้ git add -A -- public จึงลากทุกอย่างในนั้นขึ้นไป)
+public/*.zip
+public/*.cmd
+public/*.code-workspace
+public/settings.json
+public/tasks.json
+public/extensions.json
+public/*.md
+public/gitignore-*.txt

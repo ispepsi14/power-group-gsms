@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.4.3";
+  const APP_VERSION = "4.4.4";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2857,7 +2857,36 @@
               ทั้งสองหมวดตกกับ v4.4.2 (6 ข้อ และ 1 ข้อ ตามลำดับ) mutation 2 แบบ ตายทั้งคู่
               ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
               fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
-              pguard 27/27 · shot69 · shot70 · shot72 ผ่านหมด -->
+              pguard 27/27 · shot69 · shot70 · shot72 ผ่านหมด
+
+     v4.4.4 — กันหน้าเปล่าท้ายเล่มเพิ่มอีกสองชั้น + บันทึกเรื่อง cache ที่ทำให้ทดสอบเพี้ยน
+
+              หลัง v4.4.3 ขึ้นเว็บแล้ว ไอแพดยังรายงาน "หน้า 1 จาก 2" อยู่
+              ตรวจเว็บจริงได้ว่า index.html เป็น 4.4.3 แล้วจริง (มี min-height:278mm
+              และ --pg-height ครบ) แต่ response ยังส่ง Cache-Control: max-age=3600
+              แปลว่า firebase.json ที่ตั้ง no-cache ไว้แล้วบนเครื่อง "ยังไม่ถูก deploy"
+              เครื่องลูกข่าย (โดยเฉพาะ Safari บน iPad) จึงถือไฟล์เก่าไว้ได้ถึง 1 ชั่วโมง
+              = ทดสอบแล้วไม่รู้ว่ากำลังรันเวอร์ชันไหน ต้อง deploy firebase.json ก่อน
+
+              สองชั้นที่เพิ่ม (ทั้งคู่อยู่ใน @media print เท่านั้น):
+                1. html,body{height:auto !important} — ล้างความสูงใด ๆ ที่หลุดมาจาก
+                   ฝั่งพรีวิว inline style ไม่มี !important จึงแพ้กฎนี้เสมอ
+                   เป็นเข็มขัดนิรภัยซ้อนกับ --pg-height ของ v4.4.3
+                2. .brk:last-child{page-break-after:auto} — ตัวคั่นหน้าที่บังเอิญ
+                   ไปอยู่ท้ายสุดต้องไม่สั่งขึ้นหน้าใหม่ ตรวจแล้วตอนนี้ทุกจุดใช้ join()
+                   จึงยังไม่มีตัวค้างท้ายจริง แต่กันไว้ถาวร
+
+              ตรวจแล้วว่า "ไม่ใช่" สาเหตุ (อ่านโค้ดจริงยืนยัน ไม่ได้เดา):
+                · ไม่มี .brk ค้างท้ายในทั้ง 3 จุดที่ใช้ตัวคั่น — เป็น join() ล้วน
+                · .qt-page / .job-print-page / .preview-page ไม่มี page-break-after:always
+                · autoFitPrintPages() ไม่ย่อใบนี้ เพราะเนื้อหายังไม่เกินงบ (ย่อเฉพาะตอนล้น)
+                · หน้าแรกที่ดู "ไม่เต็มหน้า" เป็นเรื่องปกติ — เทียบกับ PDF ที่พิมพ์จากคอม
+                  แล้วเหมือนกันเป๊ะ เนื้อหาจบที่ราว 77% ของกระดาษทั้งสองทาง
+
+              ชุดเดิมผ่านหมด shot71 129/129 · shot72 · shot69 · shot70 ·
+              guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
+              pguard 27/27 -->
 
 
 
@@ -18203,6 +18232,15 @@ function pageRule(defOrient, margin, defSize){
   return `@page{size:${size} ${ori};margin:0}
   html,body{margin:0}
   body{padding:${m} !important;width:${w}mm;min-width:${w}mm;margin:0 auto;}
+  /* v4.4.4 — กันหน้าเปล่าท้ายเล่มอีกสองชั้น
+     1) height:auto !important — ล้างความสูงใด ๆ ที่หลุดมาจากฝั่งพรีวิว
+        (inline style ไม่มี !important จึงแพ้กฎนี้) เอกสารจะสูงตามเนื้อหาจริงเสมอ
+     2) ตัวคั่นหน้าที่บังเอิญไปอยู่ท้ายสุด ต้องไม่สั่งขึ้นหน้าใหม่
+        ตอนนี้ทุกที่ใช้ join() จึงยังไม่มีตัวค้างท้าย แต่กันไว้ให้ถาวร */
+  @media print{
+    html,body{height:auto !important;}
+    .brk:last-child{page-break-after:auto;break-after:auto;}
+  }
   /* เคยลองใส่ @media print{body{max-width:100%}} เพื่อกันการปัดเศษทางแนวนอน
      แต่ "100%" ตอนพิมพ์ iframe คือความกว้างของ iframe ไม่ใช่หน้ากระดาษ
      มันจึงย่อเอกสารกลับไปเหลือ 390px บนมือถือ = บั๊กเดิมเป๊ะ ๆ (shot71 จับได้)
