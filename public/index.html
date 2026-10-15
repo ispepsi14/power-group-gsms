@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.3.10";
+  const APP_VERSION = "4.4.2";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2730,7 +2730,95 @@
               ไม่มีชื่อซ้ำเหลืออยู่เลย · ราคาเดิม 9 รายการไม่หาย และได้เพิ่มอีก 1 รายการ
               จากราคาของตัวที่ไม่ได้เอามา (2,100 ที่เดิมถูกทิ้ง) · โหมดมืด contrast 6.94:1
               ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
-              fguard 49/49 · hguard 78/78 · uguard 136/136 -->
+              fguard 49/49 · hguard 78/78 · uguard 136/136
+
+     v4.4.1 — ของที่ช่างคีย์เอง ไม่หายตอนกดชุดโปรอีกแล้ว
+
+              หน้าร้านแจ้งมา 13 ต.ค. 69 ว่า "กดเพิ่มรายการเองแล้วเขียนแล้วมันหาย"
+              จำลองซ้ำได้ตรง ๆ และไม่ได้อยู่ที่ปุ่ม "+ เพิ่มรายการเอง" เลย — ปุ่มนั้นทำงานถูก
+              ทุกเคสที่ลอง (ชื่อใหม่ · ชื่อตรงกับชิป · ชื่อคล้าย · มีวงเล็บ) และการบันทึก
+              ขึ้นเซิร์ฟเวอร์ก็ไม่มีปัญหา แม้มี snapshot จากเครื่องอื่นแทรกเข้ามาระหว่างนั้น
+
+              ของจริงอยู่ที่จังหวะถัดไป ซึ่งอยู่บนหน้าจอเดียวกันพอดี:
+                1. ช่างกด "+ เพิ่มรายการเอง" พิมพ์ "ปีกนกล่าง" ใส่ราคา 1,800 x2 (ยอด 3,600)
+                2. กดชิปอาการสีเขียว "+N" (หรือชิปชุดโปร) ที่อยู่เหนือตารางนั้นเอง
+                   -> addPromoChildLines() กลืนบรรทัดนั้นเข้าชุดโปร แล้ว "ล้างราคาทิ้ง"
+                3. ลูกค้าไม่เอาชุดโปร กดออก
+                   -> togglePromoOnJob() ลบบรรทัดลูกทั้งหมด = ทั้งแถวและราคาที่คีย์ไว้หายเกลี้ยง
+
+              คอมเมนต์ในโค้ดตอนที่เขียน addPromoChildLines สัญญาไว้เองว่า "ของที่ช่างคีย์ไว้
+              ไม่หายจากใบ มันแค่ย้ายไปอยู่ใต้หัวชุด" — ขากลับไม่เคยทำตามสัญญานั้น
+              และราคาถูกล้างตั้งแต่ตอนกลืน จึงไม่มีอะไรเหลือให้คืนด้วยซ้ำ
+
+              แก้ที่ด่านเดียว:
+                · ตอนกลืน เก็บราคาเดิมไว้ที่ row.prePromo ก่อนล้าง
+                · restorePromoChildLines() เป็นตัวคืนตัวเดียว ใช้ทั้งตอนกดชิปชุดโปรออก
+                  และตอนกดถังขยะที่หัวชุด — สองทางนั้นเคยทำคนละอย่าง
+                · บรรทัดที่ชุดโปรสร้างขึ้นเอง (ไม่มี prePromo) ยังถูกลบตามชุดเหมือนเดิม
+                · คืนเฉพาะ "ราคา" เท่านั้น เพราะตอนกลืนมีแค่ราคาที่ถูกล้าง
+                  ถ้าไปคืนจำนวน/แบรนด์ด้วย จะกลายเป็นทับสิ่งที่ช่างแก้ระหว่างที่บรรทัด
+                  อยู่ในชุด ซึ่งเป็นของใหม่กว่าเสมอ
+                · บนจอ บรรทัดที่ถูกกลืนขึ้นป้ายว่า "เก็บราคาเดิมที่คีย์ไว้ ฿1,800.00 ·
+                  เอาชุดโปรออกแล้วได้คืน" — ไม่งั้นช่องราคาว่างเปล่า แล้วคนจะคีย์ทับใหม่
+                  หรือคิดว่าระบบกินของไปแล้ว · ตอนกดออกมี toast บอกว่าคืนให้กี่บรรทัด
+
+              หมายเหตุ: นี่คือข้อเดียวกับที่ agent อิสระจับได้ตอนตรวจประจำวัน 12 ต.ค.
+              (ข้อ A2) ซึ่งตอนนั้นเจ้าของสั่งว่า "ยังไม่แก้ เอาแค่รายงาน" — พอหน้าร้าน
+              เจอเองจึงแก้
+
+              เทสต์: tests\pguard.js 27/27 · บน v4.3.10 ตอบว่า "ยังไม่มีฟีเจอร์"
+              mutation 18 แบบ ตาย 17 · ตัวที่รอดคือ "ไม่ล้างราคาตอนกลืน" ซึ่งพิสูจน์แล้ว
+              ว่าไม่มีผลจริง (jobPartsTotal ข้ามบรรทัดที่มี promoParent อยู่แล้ว และใบที่
+              พิมพ์ก็ขึ้นคำว่า "อยู่ในรายการโปร" ไม่ว่าในช่องราคาจะมีเลขอะไร) จึงไม่เขียน
+              เทสต์หลอกมาฆ่ามัน
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72
+
+     v4.4.2 — ทุกใบที่พิมพ์ พอดี A4 เองทุกเครื่อง ไม่ต้องตั้งค่าในหน้าต่างปริ้น
+
+              เจ้าของแจ้ง 15 ต.ค. 69: "ปริ้นจากมือถือ/ไอแพดแล้วกระดาษเหลือครึ่งนึง"
+              และ "ข้อความบางอันหายเพราะปริ้นเกินขนาด" อยากให้พอดี A4 เองอัตโนมัติ
+
+              วัดของจริงก่อน (measure_print.py) ไม่ได้เดา:
+                เอกสารที่พิมพ์ "ไม่เคยกำหนดความกว้างของตัวเองเลย" มันยืดตาม iframe
+                ที่ถูกใส่ลงไป ซึ่งกว้างเท่าหน้าจอ
+                  คอม   iframe 1180px -> เอกสารกว้าง 1120px
+                  ไอแพด iframe  768px -> 768px
+                  มือถือ iframe  390px -> 330px = 45% ของหน้ากระดาษ A4
+                Chrome บนคอมจัดหน้าใหม่ตามขนาดกระดาษตอนสั่งพิมพ์ จึงรอดมาตลอด
+                แต่ Safari บน iPhone/iPad พิมพ์ iframe "ตามที่จัดหน้าไว้แล้ว"
+                ผลคือกระดาษเหลือครึ่ง และเพราะถูกบีบให้แคบ เนื้อหาก็สูงขึ้น
+                (ใบรับรถ 1123 -> 1514px) ล้นจาก 1 หน้าเป็น 2 แล้วโดนตัด
+                = อาการที่สอง "ข้อความบางอันหาย" มาจากสาเหตุเดียวกันเป๊ะ
+
+              แก้ที่ด่านเดียวคือ pageRule() ซึ่งทุกใบวิ่งผ่าน:
+                · ตาราง PAPER_MM + paperWidthMm() บอกความกว้างกระดาษจริงเป็น มม.
+                  (A4/A5 x แนวตั้ง/แนวนอน) ตามค่าที่ตั้งไว้ในหน้าตั้งค่า
+                · body ถูกกำหนด width/min-width เป็นมิลลิเมตรของกระดาษจริง
+                  ทุกเครื่องจึงจัดหน้าเหมือนกันหมด และพอดีอยู่แล้วที่ 100%
+                  ไม่ต้องไปกด "Fit to page" ในหน้าต่างปริ้นอีก
+                · พรีวิวบนจอแคบย่อด้วย transform ผ่านตัวแปร --pg-preview และจัดกลาง
+                  ด้วย --pg-offset ทั้งคู่อยู่ใน @media screen เท่านั้น
+                  เวลาพิมพ์จริงจึงไม่ถูกย่อตาม
+                · fitPreviewToScreen() ตั้งค่าให้ตอนเปิดพรีวิว ตอนฟอนต์โหลดเสร็จ
+                  และตอนหมุนจอ/เปลี่ยนขนาดหน้าต่าง
+
+              หมายเหตุที่ต้องพูดตรง ๆ: เบราว์เซอร์ไม่เปิดให้หน้าเว็บสั่ง "ย่อ/ขยาย"
+              ในหน้าต่างปริ้นได้ สิ่งที่ทำได้คือทำให้เอกสารกว้างเท่ากระดาษจริงตั้งแต่แรก
+              มันจึงพอดีเองที่ 100% ซึ่งได้ผลเหมือนกันกับที่ขอ
+
+              เทสต์: shot71.py 110/110 — ใบรับรถ · ใบเสนอราคา · ตำราราคา · ใบเปล่า ·
+              ป้าย QR ที่กรอบ 1180/768/390/320px ทั้งใบสั้น 4 รายการและใบยาว 14 รายการ
+              ยืนยันว่าทุกใบกว้าง 794px (A4) เท่ากันหมด มือถือได้ความกว้างและความสูง
+              เท่าคอมเป๊ะ และไม่มีอะไรยื่นเกินขอบพื้นที่พิมพ์
+              รันกับไฟล์ก่อนแก้ ตก 80 ข้อ (พิสูจน์ว่าชุดนี้มีฟันจริง)
+              shot72.py พิมพ์ออกเป็น PDF A4 จริงจากจอ 390px แล้ววัดหมึกบนกระดาษ:
+              ใช้ความกว้าง 92% ขอบ 7.7-8.5mm อยู่ใน 1 หน้า — แต่บันทึกไว้ว่าชุดนี้
+              "ไม่มีฟัน" สำหรับบั๊กมือถือ เพราะ Chromium จัดหน้าใหม่ตามกระดาษเสมอ
+              ตอนสร้าง PDF (รันกับไฟล์ก่อนแก้ก็ผ่าน) มันเป็นแค่ตัวยืนยันขอบกระดาษ
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
+              pguard 27/27 · shot69 · shot70 ผ่านหมด -->
 
 
 
@@ -6920,6 +7008,11 @@ html[data-mode="dark"] .deduct-note{color:#f3a79e;}
 .ps-partial{color:#a65312;background:#fff0e2;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600;}
 html[data-mode="dark"] .ps-partial{background:rgba(223,108,27,.16);color:#e8a977;}
 .qt-deduct-note{font-size:10px;white-space:nowrap;}
+/* v4.4.1 — บอกช่างว่าราคาที่คีย์ไว้เองยังอยู่ ไม่ได้หายไปตอนถูกกลืนเข้าชุดโปร
+   ถ้าไม่บอก ช่องราคาจะว่างเปล่า แล้วคนจะคีย์ใหม่ทับ หรือคิดว่าระบบกินของไปแล้ว */
+.prepromo-note{font-size:10px;line-height:1.45;margin-top:4px;color:#14532d;
+  background:rgba(31,157,85,.12);border-radius:7px;padding:3px 7px;}
+html[data-mode="dark"] .prepromo-note{background:rgba(31,157,85,.20);color:#8ee5b0;}
 
 /* v4.3.9 — หน้าตรวจราคาต่อหน่วย (ของที่ขายเป็นแกลลอน/ชุด)
    เขียนใต้ html[data-mode="dark"] ไม่ใช่ body.dark เพราะโหมดมืดของแอพนี้อยู่บน
@@ -16610,9 +16703,10 @@ function togglePromoOnJob(jobId, promoId){
   if(!promo) return;
   const idx = job.partsNeeded.findIndex(p => p.promoId === promoId);
   if(idx > -1){
-    // เอาชุดออก = รายการในชุดต้องหายตามไปด้วย
-    job.partsNeeded = job.partsNeeded.filter(p =>
-      p.promoId !== promoId && p.promoParent !== promoId);
+    // เอาชุดออก = ของที่ชุดสร้างเองหายตามไป แต่ของที่ช่างคีย์เองต้องคืนให้
+    job.partsNeeded = job.partsNeeded.filter(p => p.promoId !== promoId);
+    const back = restorePromoChildLines(job, promoId);
+    if(back) flashToast(`เอาชุดโปรออกแล้ว · คืนรายการที่คีย์ไว้เอง ${back} บรรทัด`);
   } else {
     job.partsNeeded.push({
       id: uid(), partName: promo.name, variant:'', qty:'1', unit:'ชุด',
@@ -16648,6 +16742,27 @@ function togglePromoOnJob(jobId, promoId){
    แก้: ถ้ามีบรรทัดเดี่ยวชื่อเดียวกันอยู่แล้ว ให้ "ย้ายเข้าชุด" คือผูก
    promoParent แล้วล้างราคาออก ไม่สร้างบรรทัดที่สอง ของที่ช่างคีย์ไว้
    ไม่หายจากใบ มันแค่ย้ายไปอยู่ใต้หัวชุดตามความจริงว่าถูกคิดในราคาชุดแล้ว */
+/* v4.4.1 — เอาชุดโปรออก: คืนบรรทัดที่ "ช่างคีย์เอง" ให้เป็นเหมือนเดิม
+   ส่วนบรรทัดที่ชุดโปรสร้างขึ้นมาเอง (ไม่มี prePromo) ลบทิ้งตามชุดเหมือนเดิม
+   ด่านเดียวที่ใช้ทั้งตอนกดชิปชุดโปรออก และตอนกดถังขยะที่หัวชุด
+   ไม่งั้นสองทางนั้นจะทำคนละอย่างกัน แล้วช่างจะเจอผลไม่เหมือนกันแล้วแต่ว่ากดตรงไหน
+   คืนจำนวนบรรทัดที่คืนให้ เอาไปบอกบนจอ */
+function restorePromoChildLines(job, promoId){
+  let back = 0;
+  (job.partsNeeded || []).forEach(p => {
+    if(p.promoParent !== promoId || !p.prePromo) return;
+    /* คืนเฉพาะ "ราคา" เพราะตอนกลืนเข้าชุดมีแค่ราคาที่ถูกล้าง
+       ถ้าไปคืน จำนวน/หน่วย/แบรนด์ ด้วย จะกลายเป็นทับสิ่งที่ช่างแก้ไว้
+       ระหว่างที่บรรทัดอยู่ในชุด ซึ่งเป็นของใหม่กว่าเสมอ */
+    p.price = p.prePromo.price;
+    delete p.promoParent;
+    delete p.prePromo;
+    back++;
+  });
+  job.partsNeeded = (job.partsNeeded || []).filter(p => p.promoParent !== promoId);
+  return back;
+}
+
 function addPromoChildLines(job, model, promo){
   const ids = promo.itemIds || [];
   if(!ids.length) return 0;
@@ -16665,6 +16780,12 @@ function addPromoChildLines(job, model, promo){
     // มีบรรทัดเดี่ยวอยู่แล้ว -> ย้ายเข้าชุด ไม่เพิ่มบรรทัดที่สอง
     const plain = job.partsNeeded.find(p => !p.promoId && !p.promoParent && sameName(p));
     if(plain){
+      /* v4.4.1 — เก็บของเดิมที่ช่างคีย์ไว้ ก่อนล้างราคา
+         คอมเมนต์ข้างบนสัญญาว่า "ของที่ช่างคีย์ไว้ไม่หายจากใบ มันแค่ย้ายไปอยู่ใต้หัวชุด"
+         แต่ทางขากลับลบลูกทิ้งทั้งหมด และราคาถูกล้างไปตั้งแต่ตอนนี้ จึงไม่มีอะไรให้คืน
+         ของจริงที่หน้าร้านเจอ: คีย์ปีกนกล่าง 1,800 x2 -> กดชิปอาการ -> ราคาหาย
+         -> ลูกค้าไม่เอาชุด กดออก -> ทั้งบรรทัดหายไปด้วย */
+      plain.prePromo = { price: String(plain.price == null ? '' : plain.price) };
       plain.promoParent = promo.id;
       plain.price = '';                   // ราคาอยู่ที่หัวชุดแล้ว บรรทัดลูกต้องไม่คิดเงินซ้ำ
       n++;
@@ -16985,8 +17106,11 @@ function removeJobPart(jobId, partRowId){
   // ลบหัวชุดโปร = รายการในชุดต้องหายตามไปด้วย ไม่งั้นจะเหลือรายการลอย ๆ
   // ที่ไม่มีราคาและไม่มีใครรู้ว่ามาจากไหน
   const promoId = row && row.promoId;
-  job.partsNeeded = job.partsNeeded.filter(p =>
-    p.id !== partRowId && !(promoId && p.promoParent === promoId));
+  job.partsNeeded = job.partsNeeded.filter(p => p.id !== partRowId);
+  if(promoId){
+    const back = restorePromoChildLines(job, promoId);
+    if(back) flashToast(`ลบชุดโปรแล้ว · คืนรายการที่คีย์ไว้เอง ${back} บรรทัด`);
+  }
   saveState(true);
   render();
 }
@@ -17996,6 +18120,14 @@ function printCfg(){
 const PRINT_PAGE_MARGIN = '8mm';
 const A4_CONTENT_PX = 1062;
 
+/* ความกว้างกระดาษจริงเป็นมิลลิเมตร — ใช้ตั้งความกว้างให้ตัวเอกสารเอง */
+const PAPER_MM = { A4: { portrait: 210, landscape: 297 },
+                   A5: { portrait: 148, landscape: 210 } };
+function paperWidthMm(size, ori){
+  const row = PAPER_MM[size] || PAPER_MM.A4;
+  return row[ori === 'landscape' ? 'landscape' : 'portrait'];
+}
+
 function pageRule(defOrient, margin, defSize){
   const cfg  = printCfg();
   const size = cfg.size   !== 'auto' ? cfg.size   : (defSize   || 'A4');
@@ -18004,9 +18136,33 @@ function pageRule(defOrient, margin, defSize){
      ค่า margin ที่ส่งเข้ามาจึงไม่ถูกใช้แล้ว (คงพารามิเตอร์ไว้เพื่อไม่ให้ผู้เรียกเดิมพัง)
      เขียนเป็นค่าเดียวที่นี่ที่เดียว ใบทุกใบจึงเปลี่ยนพร้อมกันเสมอ */
   const m = PRINT_PAGE_MARGIN;
+  const w = paperWidthMm(size, ori);
+
+  /* v4.4.2 — เอกสารต้องกำหนดความกว้างของตัวเองเป็นขนาดกระดาษจริง
+
+     ของเดิมไม่เคยกำหนดความกว้างเลย body จึงยืดตามกรอบที่เอกสารถูกใส่ลงไป
+     ซึ่งคือ iframe พรีวิวที่กว้าง 100% ของจอ วัดจริงได้:
+       คอม  iframe 1180px -> เอกสารกว้าง 1180px (149% ของ A4)
+       ไอแพด iframe  768px -> 768px (97%)
+       มือถือ iframe 390px -> 390px (49%)  <-- "ปริ้นแล้วกระดาษเหลือครึ่งนึง"
+     Chrome บนคอมจัดหน้าใหม่ตามขนาดกระดาษตอนสั่งพิมพ์ จึงรอด แต่ Safari บน
+     iPhone/iPad พิมพ์ iframe ตามที่จัดหน้าไว้แล้ว ผลคือได้เอกสารแคบ ๆ ชิดซ้าย
+     และเพราะถูกบีบให้แคบ เนื้อหาก็สูงขึ้น (ใบรับรถ 1123 -> 1514px) ล้นหน้า
+     แล้วโดนตัด = "ข้อความบางอันหาย"
+
+     กำหนด width เป็นมิลลิเมตรของกระดาษจริง ทุกเครื่องจึงจัดหน้าเหมือนกันหมด
+     ไม่ต้องไปตั้ง "Fit to page" ในหน้าต่างปริ้นอีก เพราะเอกสารพอดีอยู่แล้วที่ 100%
+
+     ส่วนพรีวิวบนจอแคบ ย่อด้วย transform ผ่านตัวแปร --pg-preview ที่ openPrint ตั้งให้
+     (อยู่ใน @media screen เท่านั้น เวลาพิมพ์จริงจึงไม่ถูกย่อตาม) */
   return `@page{size:${size} ${ori};margin:0}
   html,body{margin:0}
-  body{padding:${m} !important}`;
+  body{padding:${m} !important;width:${w}mm;min-width:${w}mm;margin:0 auto;}
+  @media screen{
+    html{overflow-x:hidden;}
+    body{transform:scale(var(--pg-preview,1));transform-origin:top left;
+         margin-left:var(--pg-offset,0) !important;}
+  }`;
 }
 
 /* เก็บกฎ CSS ที่เอกสารใบนี้ใช้จริง */
@@ -18160,6 +18316,37 @@ function autoFitPrintPages(doc){
   }catch(err){ console.error('autoFitPrintPages', err); }
 }
 
+/* v4.4.2 — ย่อ "พรีวิวบนจอ" ให้พอดีความกว้างของ iframe
+
+   ตัวเอกสารกว้างเท่ากระดาษจริงเสมอ (210mm = 794px) ซึ่งกว้างกว่าจอมือถือ
+   ถ้าไม่ย่อ คนจะเห็นแค่ซีกซ้ายแล้วต้องเลื่อนไปมา
+   ย่อด้วยตัวแปร --pg-preview ซึ่งถูกใช้เฉพาะใน @media screen
+   เวลาสั่งพิมพ์จริงกฎนั้นไม่ทำงาน เอกสารจึงออกกระดาษเต็มขนาด 100% ตามเดิม */
+function fitPreviewToScreen(frame, doc){
+  try{
+    if(!frame || !doc || !doc.body) return;
+    const avail = frame.clientWidth || frame.getBoundingClientRect().width;
+    if(!(avail > 0)) return;
+    const prev = doc.documentElement.style.getPropertyValue('--pg-preview');
+    doc.documentElement.style.setProperty('--pg-preview', '1');
+    const paperPx = doc.body.getBoundingClientRect().width;
+    if(!(paperPx > 0)){
+      if(prev) doc.documentElement.style.setProperty('--pg-preview', prev);
+      return;
+    }
+    const scale = Math.min(1, avail / paperPx);
+    doc.documentElement.style.setProperty('--pg-preview', String(scale));
+    /* transform-origin อยู่มุมบนซ้าย ตัวกระดาษจึงชิดซ้ายเสมอ
+       บนจอกว้าง (คอม) ดันให้อยู่กลางด้วย margin-left ที่ใช้เฉพาะบนจอ
+       (ตั้งผ่านตัวแปร ไม่ใช่ style ตรง ๆ เวลาพิมพ์จริงจึงไม่ติดไปด้วย) */
+    const gap = Math.max(0, (avail - paperPx * scale) / 2);
+    doc.documentElement.style.setProperty('--pg-offset', gap + 'px');
+    /* body ถูกย่อด้วย transform ซึ่งไม่ลดพื้นที่ที่มันกินในโฟลว์
+       ตั้งความสูงของ html ตามจริงหลังย่อ พรีวิวจะได้ไม่มีที่ว่างยาว ๆ ต่อท้าย */
+    doc.documentElement.style.height = (doc.body.scrollHeight * scale) + 'px';
+  }catch(err){ console.error('fitPreviewToScreen', err); }
+}
+
 /* ---- overlay ---- */
 
 function closePrintOverlay(){
@@ -18264,8 +18451,21 @@ function openPrint(html){
        (document.fonts.ready) เพราะรอบแรกอาจวัดพลาดถ้าฟอนต์ยังไม่มา — ผู้ใช้
        กว่าจะกดปุ่ม "พิมพ์" ก็มีเวลาให้รอบสองทำงานเสร็จก่อนอยู่แล้วตามธรรมชาติ */
     autoFitPrintPages(d);
+    fitPreviewToScreen(f, d);
     const fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready : Promise.resolve();
-    fontsReady.then(() => { try{ autoFitPrintPages(d); }catch(e){ console.error('autoFit(fonts.ready)', e); } });
+    fontsReady.then(() => {
+      try{ autoFitPrintPages(d); fitPreviewToScreen(f, d); }
+      catch(e){ console.error('autoFit(fonts.ready)', e); }
+    });
+    /* หมุนเครื่อง/เปลี่ยนขนาดหน้าต่าง พรีวิวต้องย่อใหม่ให้พอดีจอ
+       (ไม่เกี่ยวกับตอนพิมพ์จริง — ตัวย่ออยู่ใน @media screen เท่านั้น) */
+    if(!window.__pgPreviewResize){
+      window.__pgPreviewResize = () => {
+        const fr = document.getElementById('printFrame');
+        if(fr && fr.contentDocument) fitPreviewToScreen(fr, fr.contentDocument);
+      };
+      window.addEventListener('resize', window.__pgPreviewResize);
+    }
   }catch(err){
     console.error('openPrint write', err);
     closePrintOverlay();
@@ -18460,7 +18660,7 @@ function renderJobPartsEditor(job){
           </select>
         </td>
         <td class="center" data-label="ราคา/หน่วย">${inPromo
-          ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>`
+          ? `<span class="in-promo-tag">อยู่ในรายการโปร</span>${p.prePromo && parseMoney(p.prePromo.price) ? `<div class="prepromo-note">เก็บราคาเดิมที่คีย์ไว้ ฿${escapeHtml(fmtMoney(parseMoney(p.prePromo.price)))} · เอาชุดโปรออกแล้วได้คืน</div>` : ''}`
           : `<input type="text" inputmode="decimal" class="brand-price-input" placeholder="บาท" value="${escapeAttr(p.price)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','price', this.value)">${deduct ? `<div class="deduct-note"><span class="deduct-tag">หัก</span> หักออกจากยอดรวม ${fmtMoney(Math.abs(priceNum * qtyNum))} บาท</div>` : ''}${priceHintHtml(job, p)}${packHintHtml(job, p)}${p.priceForeign && parseMoney(p.price) ? `<div class="price-hint other-model"><span class="ph-txt">ราคาของแบรนด์อื่น — ยังไม่จำเป็นราคาของ ${escapeHtml(p.brand || 'แบรนด์นี้')}</span><button class="add-brand-btn" onclick="confirmForeignPrice('${job.id}','${p.id}')">ราคานี้ถูกแล้ว</button></div>` : ''}`}</td>
         <td class="center" data-label="รวม"><strong>${inPromo ? '—' : lineTotal}</strong></td>
         <td class="center"><button class="icon-btn" title="ลบรายการนี้" onclick="removeJobPart('${job.id}','${p.id}')">${icon('trash',13)}</button></td>
