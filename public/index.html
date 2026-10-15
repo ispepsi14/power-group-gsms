@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.4.4";
+  const APP_VERSION = "4.4.5";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2886,7 +2886,63 @@
               ชุดเดิมผ่านหมด shot71 129/129 · shot72 · shot69 · shot70 ·
               guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
               fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 ·
-              pguard 27/27 -->
+              pguard 27/27
+
+     v4.4.5 — ไอแพดพิมพ์ "หน้าแอป" ไม่ใช่ "ตัวเอกสาร" — ต้นเหตุจริงของใบที่ใหญ่เกินกระดาษ
+
+              เจ้าของแจ้ง 15 ต.ค. 69 หลัง v4.4.4 ขึ้นเว็บแล้ว (ยืนยันว่าแอพขึ้น 4.4.4 จริง):
+              "บนไอแพตปริ้นออกมาไม่เต็มหน้า ขอมูลขาดหาย เพราะของในกระดาษใหญ่เกินไป
+               แต่ในคอมปกติ มัน fit"
+
+              หลักฐานชี้ขาดอยู่ในรูปที่เขาส่งมาเอง: บนหัวกระดาษที่พรีวิวจะพิมพ์ มีคำว่า
+              "← ย้อนกลับ" ติดอยู่ด้วย — นั่นคือแถบเครื่องมือของหน้าพรีวิวในแอป
+              แปลว่า iPadOS พิมพ์ "หน้าแอปทั้งหน้า" ไม่ได้พิมพ์เฉพาะเอกสารใน iframe
+              ถึงแม้โค้ดจะสั่ง iframe.contentWindow.print() ก็ตาม
+
+              ตั้งเครื่องมือใหม่เพื่อเลิกเดา: ติดตั้ง WebKitGTK ในแซนด์บ็อกซ์ ซึ่งเป็น
+              เอนจินตระกูลเดียวกับ Safari/Chrome บน iPadOS (iOS บังคับทุกเบราว์เซอร์
+              ใช้ WebKit) แล้ววัดจากกระดาษ A4 จริงที่พิมพ์ออกมา ไม่ใช่วัดจาก DOM
+
+              สาเหตุที่วัดได้:
+                WebKit จัดหน้าเอกสารที่ "ไม่ประกาศความกว้างของตัวเอง" ด้วยความกว้าง
+                พื้นที่พิมพ์มาตรฐาน ~196.9mm แล้ว "ขยายขึ้น" ให้เต็มแผ่น 210mm
+                ตัวคูณที่วัดได้ 1.0668 (= 210/196.9 = 96/90)
+                เอกสารพิมพ์ประกาศ body{width:210mm} ไว้แล้วตั้งแต่ v4.4.2 จึงรอด
+                "เฉพาะตอนถูกพิมพ์เดี่ยว ๆ" — แต่ index.html ซึ่งเป็นหน้าแม่ไม่เคยประกาศ
+                พอ iPadOS พิมพ์หน้าแม่ ทั้งหน้ารวม iframe จึงถูกขยาย 1.0683 เท่า
+                ต้องใช้กระดาษ 305.1mm ขณะที่มีจริง 297.2mm = ขาดหายไป 7.9mm ด้านล่าง
+                และหมึกชนขอบขวาจนโดนตัด ตรงกับที่ร้านเจอเป๊ะ
+
+              วัดจริงบน WebKit (ใบรับรถ 4 รายการ ที่ความกว้างจอ 768/820/1024/1180):
+                ก่อนแก้  2 หน้า · หมึกกว้าง 210.0mm (ชนขอบทั้งซ้ายขวา) · มีแถบเครื่องมือ 18.1mm
+                หลังแก้  1 หน้า · หมึกกว้าง 193.9mm · ไม่มีแถบ · ไม่โดนตัด
+                = ตรงกับที่พิมพ์จากคอมทุกตัวเลข
+              ใบเสนอราคา 14 รายการ: ก่อนแก้ได้ 2 หน้าแต่หน้า 2 สูงแค่ 10mm (เนื้อหาหาย)
+                หลังแก้ได้ 2 หน้าเต็ม หมึกกว้าง 194.1mm เท่าคอมทั้งสองหน้า
+
+              สิ่งที่แก้ (ทั้งหมดอยู่ที่ "หน้าแอป" ไม่ใช่ตัวเอกสาร):
+                · @media print บล็อกใหม่ ผูกกับ html.pg-printing ซึ่งมีเฉพาะตอนเปิดพรีวิว
+                  กำหนด width/min-width/max-width ของ html,body เป็นขนาดกระดาษจริง
+                  WebKit จึงเลิกขยาย
+                · ซ่อนทุกอย่างในหน้าแอปยกเว้น #printOverlay และซ่อนแถบเครื่องมือ #pgPrintBar
+                  (แถบนี้เดิมไม่มี id เลย จึงเขียน CSS ไปจับไม่ได้)
+                · syncHostPrintMetrics() ส่งขนาดกระดาษจริงมาทาง --pg-paper-w และส่ง
+                  ความสูงที่ iframe ต้องมีมาทาง --pg-frame-h คำนวณจากจำนวนหน้าจริง
+                  หัก 2px กันเศษ (บทเรียนเดิมจาก v4.4.3 เรื่อง "พอดีเป๊ะแล้วล้น")
+                  ไม่มีเลขกระดาษตัวไหนถูกฮาร์ดโค้ด A5/แนวนอนได้ค่าถูกต้องตามที่ตั้งไว้
+                · --pg-brk-gap ดันตัวคั่นหน้าแต่ละตัวให้ตรงรอยหั่นกระดาษพอดี
+                  เพราะพอพิมพ์ผ่าน iframe ความสูงหน้าถูกกำหนดโดย iframe ไม่ใช่ @page
+                · เพิ่ม listener beforeprint เผื่อสั่งพิมพ์จากเมนูแชร์ของ Safari เอง
+                · closePrintOverlay() ถอดคลาสและตัวแปรทั้งหมดคืน ไม่ให้ค้างไปกวนการพิมพ์อื่น
+
+              เทสต์: shot73.py — ชุดใหม่ที่ "พิมพ์หน้าแอปจริง" ผ่าน WebKit แล้ววัดหมึก
+              บนกระดาษ A4 ที่ออกมา ใบรับรถ x ใบเสนอราคา x 4/14 รายการ x จอ 4 ขนาด
+              ตก 116 ข้อกับไฟล์ก่อนแก้ · ผ่านหมดหลังแก้
+              mutation 3 แบบ ตายทั้งหมด (ถอดความกว้าง / ถอดการซ่อนแถบ / ถอดความสูง iframe)
+              ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
+              fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 · pguard 27/27 ·
+              shot69 · shot70 · shot71 129/129 · shot72 ผ่านหมด
+              พรีวิวบนจอไม่เปลี่ยน (คอม scale 1 จัดกลาง · มือถือ 390px scale 0.4914) -->
 
 
 
@@ -5923,6 +5979,71 @@
     /* บรรทัดนี้มาทีหลัง .pv-foot ตัวอื่นในบล็อกเดียวกัน จึงเป็นตัวที่ชนะจริง
        ถ้าจะแก้ระยะห่าง ต้องแก้ที่นี่ ไม่ใช่เขียนกฎใหม่ไว้ข้างบนแล้วคิดว่าติด */
     .pv-foot{font-size:9px; margin-top:7px;}
+  }
+
+  /* =========================================================================
+     v4.4.5 — ตอนพรีวิวเปิดอยู่ "หน้าแอปเอง" ต้องเป็นกระดาษ ไม่ใช่หน้าจอ
+
+     เจ้าของแจ้งหลัง v4.4.4 ขึ้นเว็บ: "ข้อมูลในกระดาษตอนปริ้นมาขาดหาย ...
+     ใหญ่เกินไปสำหรับไอแพต แต่ในคอมปกติ" — มีรูปถ่ายหน้าจอพรีวิวของไอแพดยืนยัน
+     ว่าคำว่า "← ย้อนกลับ" (ปุ่มบนแถบเครื่องมือของพรีวิว) ติดไปอยู่หัวกระดาษด้วย
+
+     แปลว่า iPadOS ไม่ได้พิมพ์ "ตัว iframe" ตามที่ doOverlayPrint() สั่ง
+     มันพิมพ์ "หน้าแอปทั้งหน้า" แล้ว iframe เป็นแค่กล่องหนึ่งที่อยู่ในนั้น
+     (ยืนยันซ้ำกับ WebKit ซึ่งเป็นเอนจินเดียวกัน: iframe.contentWindow.print()
+      กับ window.print() ให้ PDF ที่เหมือนกันทุกไบต์ ทั้งคู่พิมพ์เฟรมบนสุด)
+
+     ของเดิมพังสองชั้นพร้อมกัน วัดจาก PDF จริงด้วย WebKit (ดู shot73.py):
+       1) WebKit จัดหน้าที่ "ไม่ประกาศความกว้างทางกายภาพของตัวเอง" ที่ความกว้าง
+          พิมพ์ปริยาย ~196.9mm แล้วขยายขึ้นให้เต็ม 210mm (ตัวคูณ 1.0668
+          = 210/196.9 = 96/90) ตัวเอกสารประกาศ width:210mm ไว้แล้วตั้งแต่ v4.4.2
+          จึงรอดถ้าพิมพ์เดี่ยว ๆ แต่ index.html ไม่เคยประกาศความกว้างของตัวเอง
+          เอกสารข้างในจึงถูกขยายตามหน้าแอป: หมึกกว้าง 210.0mm เต็มขอบกระดาษ
+          (เส้นฐานเครื่องคอม 193.9mm สำหรับใบรับรถ / 194.1mm สำหรับใบเสนอราคา)
+          = ล้นออกนอกขอบขวาและขอบซ้าย ตัวหนังสือริมใบหายไปจริง
+       2) #printOverlay เป็น position:fixed;inset:0 และ #printFrame สูงเท่าจอ
+          ตอนพิมพ์ "จอ" คือหน้ากระดาษหนึ่งหน้า เอกสารที่ยาวกว่านั้นจึงถูกตัด
+          ใบรับรถ 1 หน้ากลายเป็น 2 หน้า (หน้า 2 เหลือเศษสูง 5.9mm)
+          ใบเสนอราคา 14 แถวที่ควรได้ 2 หน้าเต็ม เหลือหน้า 2 สูงแค่ 10.0mm
+
+     แก้ทั้งสองชั้นพร้อมกัน แก้ชั้นเดียวไม่พอ (พิสูจน์ด้วย mutation test แล้ว):
+     ให้ความกว้างอย่างเดียว -> แถบเครื่องมือยังอยู่บนกระดาษ
+     ซ่อนแถบอย่างเดียว -> ยังโดนขยาย 1.0668 เท่าเหมือนเดิม
+
+     ความกว้าง/ความสูงไม่ได้ฮาร์ดโค้ด 210mm เพราะร้านตั้ง A5/แนวนอนได้
+     openPrint() ส่งค่าจริงมาทาง --pg-paper-w / --pg-frame-h (ดู syncHostPrintMetrics)
+
+     ทุกกฎในบล็อกนี้อยู่ใน @media print และผูกกับ html.pg-printing ซึ่งมีเฉพาะ
+     ตอนพรีวิวเปิดอยู่ หน้าจอปกติและการพิมพ์หน้าอื่น ๆ ของแอปจึงไม่ถูกแตะเลย
+     ========================================================================= */
+  @media print{
+    html.pg-printing, html.pg-printing body{
+      width:var(--pg-paper-w,210mm) !important;
+      min-width:var(--pg-paper-w,210mm) !important;
+      max-width:var(--pg-paper-w,210mm) !important;
+      margin:0 !important; padding:0 !important;
+      height:auto !important; min-height:0 !important;
+      background:#fff !important; overflow:visible !important;
+    }
+    /* ที่เหลือของแอปอยู่ "ใต้" พรีวิวบนจอ แต่ตอนพิมพ์มันไม่ได้ถูกบังอะไร
+       ต้องสั่งซ่อนเองทีละชั้น ไม่งั้นแถบบน/เมนูล่าง/ป๊อปอัปไหลลงกระดาษต่อท้าย */
+    html.pg-printing body > *{display:none !important;}
+    html.pg-printing body > #printOverlay{
+      display:block !important;
+      position:static !important; inset:auto !important;
+      width:auto !important; height:auto !important;
+      background:#fff !important; overflow:visible !important;
+    }
+    /* แถบเครื่องมือพรีวิว (ปุ่มย้อนกลับ/พิมพ์) — นี่คือตัวที่โผล่ในรูปของเจ้าของ */
+    html.pg-printing #pgPrintBar{display:none !important;}
+    /* iframe ต้องกว้างเท่ากระดาษ และสูงเท่า "จำนวนหน้าเต็ม ๆ" ของเอกสาร
+       ไม่ใช่สูงเท่าจอ ไม่งั้นเอกสารหลายหน้าโดนตัดเหลือแค่ส่วนที่เห็นบนจอ */
+    html.pg-printing #printFrame{
+      display:block !important; border:0 !important;
+      width:var(--pg-paper-w,210mm) !important;
+      min-width:var(--pg-paper-w,210mm) !important;
+      height:var(--pg-frame-h,297mm) !important;
+    }
   }
 
   /* =========================================================================
@@ -18201,6 +18322,12 @@ function paperWidthMm(size, ori){
   const row = PAPER_MM[size] || PAPER_MM.A4;
   return row[ori === 'landscape' ? 'landscape' : 'portrait'];
 }
+/* v4.4.5 — ความสูงกระดาษ = ความกว้างของกระดาษใบเดียวกันเมื่อหมุนอีกทาง
+   (A4 ตั้ง 210x297 · A4 นอน 297x210 · A5 ตั้ง 148x210 · A5 นอน 210x148)
+   เขียนแบบนี้เพื่อให้มีตาราง PAPER_MM ที่เดียว ไม่ต้องมีเลขชุดที่สองให้หลุดกัน */
+function paperHeightMm(size, ori){
+  return paperWidthMm(size, ori === 'landscape' ? 'portrait' : 'landscape');
+}
 
 function pageRule(defOrient, margin, defSize){
   const cfg  = printCfg();
@@ -18240,6 +18367,13 @@ function pageRule(defOrient, margin, defSize){
   @media print{
     html,body{height:auto !important;}
     .brk:last-child{page-break-after:auto;break-after:auto;}
+    /* v4.4.5 — ตัวคั่นหน้าต้อง "กินที่" ให้หน้าถัดไปเริ่มตรงรอยต่อกระดาษพอดี
+       เฉพาะตอนที่เอกสารถูกพิมพ์แบบไหลต่อกันเป็นพืด ซึ่งคือตอนที่ iPadOS พิมพ์
+       หน้าแอปทั้งหน้าแล้ว iframe กลายเป็นกล่องยาวกล่องเดียว (ดู syncHostPrintMetrics)
+       เครื่องที่พิมพ์ตัว iframe ตรง ๆ (คอม) ไม่กระทบ เพราะ margin ที่ติดกับ
+       รอยตัดหน้าแบบบังคับ (page-break-after:always) ถูกตัดทิ้งตามสเปกอยู่แล้ว
+       ค่าเริ่มต้นเป็น 0 — openPrint เท่านั้นที่เติม --pg-brk-gap ให้ทีละตัว */
+    .brk{margin-bottom:var(--pg-brk-gap,0);}
   }
   /* เคยลองใส่ @media print{body{max-width:100%}} เพื่อกันการปัดเศษทางแนวนอน
      แต่ "100%" ตอนพิมพ์ iframe คือความกว้างของ iframe ไม่ใช่หน้ากระดาษ
@@ -18440,12 +18574,94 @@ function fitPreviewToScreen(frame, doc){
   }catch(err){ console.error('fitPreviewToScreen', err); }
 }
 
+/* v4.4.5 — บอก "หน้าแอป" ว่ากระดาษกว้าง/สูงเท่าไร และเอกสารยาวกี่หน้า
+
+   ทำไมหน้าแอปต้องรู้: iPadOS พิมพ์หน้าแอปทั้งหน้า ไม่ได้พิมพ์ตัว iframe
+   (รายละเอียดเต็มอยู่ในบล็อก @media print ของ html.pg-printing ในสไตล์ชีต)
+   หน้าแอปจึงต้องประกาศความกว้างเป็นมิลลิเมตรจริง ไม่งั้น WebKit ขยายให้ 1.0668 เท่า
+   และต้องยืด #printFrame ให้สูงเท่าเอกสารจริง ไม่งั้นได้แค่หน้าเดียวเท่าที่เห็นบนจอ
+
+   สองอย่างที่คำนวณที่นี่:
+   1) --pg-paper-w / --pg-frame-h บน <html> ของหน้าแอป
+   2) --pg-brk-gap บนตัวคั่นหน้าแต่ละตัว "ในเอกสาร" — ตัวนี้จำเป็นเพราะเวลา
+      หน้าแอปเป็นคนพิมพ์ รอยตัดหน้าที่อยู่ "ข้างใน" iframe ไม่มีผลกับการตัดหน้า
+      ของกระดาษเลย กระดาษถูกหั่นทุก ๆ ความสูงหน้าเท่านั้น วัดจริงกับใบเสนอราคา
+      2 หน้า: หน้าแรกอยู่ 8-286mm หน้าสองเริ่มที่ 286mm แต่รอยหั่นอยู่ที่ 297mm
+      หน้าสองจึงขึ้นก่อนเวลา 11mm แล้วท้ายใบโดนตัด — เติมช่องว่าง 19mm ให้ตัวคั่น
+      หน้าสองก็เริ่มที่ 305mm = 297 + ขอบบนของเอกสาร 8mm พอดีเป๊ะ
+
+   ต้องวัดตอน --pg-preview เป็น 1 เพราะพรีวิวบนจอย่อ body ด้วย transform
+   ซึ่งมีผลกับ getBoundingClientRect() (ใช้วิธีเดียวกับ fitPreviewToScreen) */
+function syncHostPrintMetrics(frame, doc){
+  try{
+    const de = document.documentElement;
+    const cfg  = printCfg();
+    const size = cfg.size   !== 'auto' ? cfg.size   : 'A4';
+    const ori  = cfg.orient !== 'auto' ? cfg.orient : 'portrait';
+    de.style.setProperty('--pg-paper-w', paperWidthMm(size, ori) + 'mm');
+    const pageHpx = paperHeightMm(size, ori) * (96 / 25.4);
+
+    if(!doc || !doc.body){
+      de.style.setProperty('--pg-frame-h', pageHpx + 'px');
+      return;
+    }
+    const prev = doc.documentElement.style.getPropertyValue('--pg-preview');
+    doc.documentElement.style.setProperty('--pg-preview', '1');
+
+    const bodyTop = doc.body.getBoundingClientRect().top;
+    const brks = Array.prototype.slice.call(doc.querySelectorAll('.brk'));
+    /* ตัวคั่นที่อยู่ท้ายสุดจริง ๆ (ไม่มีเนื้อหาตามหลัง) ต้องไม่ได้ช่องว่าง
+       ไม่งั้นได้หน้าเปล่าแถมมาอีกหน้า — หาขอบล่างสุดของ "หมึกจริง" ไว้เทียบ */
+    let inkBottom = 0;
+    const all = doc.body.querySelectorAll('*');
+    for(let i = 0; i < all.length; i++){
+      const el = all[i];
+      if(el.classList && el.classList.contains('brk')) continue;
+      const r = el.getBoundingClientRect();
+      if(r.height > 0.5 && r.bottom > inkBottom) inkBottom = r.bottom;
+    }
+
+    let gaps = 0, pages = 1;
+    for(let i = 0; i < brks.length; i++){
+      const brk = brks[i];
+      brk.style.removeProperty('--pg-brk-gap');
+      const bottom = brk.getBoundingClientRect().bottom + gaps;
+      if(bottom >= inkBottom - 1) continue;          // ตัวคั่นท้ายเล่ม ข้ามไป
+      const y = bottom - bodyTop;                    // ตำแหน่งในโฟลว์ของเอกสาร
+      const next = Math.ceil((y + 0.5) / pageHpx) * pageHpx;
+      const gap = next - y;
+      brk.style.setProperty('--pg-brk-gap', gap + 'px');
+      gaps += gap;
+      pages++;
+    }
+
+    /* ความสูงของ iframe: เผื่อให้ครบทุกหน้า แต่ห้ามเกินรอยหั่นหน้าสุดท้าย
+       ไม่งั้นได้หน้าเปล่าต่อท้าย (บทเรียนเดียวกับ v4.4.3 เรื่อง 281mm ที่พอดีเป๊ะ
+       แล้วเครื่องที่ปัดเศษขึ้นถือว่าล้น) จึงหักออก 2px กันเศษไว้เสมอ */
+    const EPS = 2;
+    const needed = doc.body.scrollHeight + gaps;
+    while(needed > pages * pageHpx - EPS) pages++;
+    de.style.setProperty('--pg-frame-h', (pages * pageHpx - EPS) + 'px');
+
+    if(prev) doc.documentElement.style.setProperty('--pg-preview', prev);
+    else doc.documentElement.style.removeProperty('--pg-preview');
+  }catch(err){ console.error('syncHostPrintMetrics', err); }
+}
+
 /* ---- overlay ---- */
 
 function closePrintOverlay(){
   const el = document.getElementById('printOverlay');
   if(el && el.parentNode) el.parentNode.removeChild(el);
   document.documentElement.style.overflow = '';
+  /* v4.4.5 — เก็บทุกอย่างที่ openPrint ทิ้งไว้บนหน้าแอป ให้กลับเป็นหน้าแอปธรรมดา
+     ถ้าไม่ถอด คลาส pg-printing จะค้าง แล้วการพิมพ์หน้าอื่น ๆ ของแอป (เช่น
+     สถิติรายได้) จะโดนซ่อนทั้งหน้าเพราะกฎ body > *{display:none} */
+  document.documentElement.classList.remove('pg-printing');
+  document.documentElement.style.removeProperty('--pg-paper-w');
+  document.documentElement.style.removeProperty('--pg-frame-h');
+  const pst = document.getElementById('pgPrintPageRule');
+  if(pst && pst.parentNode) pst.parentNode.removeChild(pst);
 }
 
 function doOverlayPrint(){
@@ -18475,6 +18691,14 @@ function doOverlayPrint(){
     return;
   }
   const f = document.getElementById('printFrame');
+  /* v4.4.5 — วัดขนาดกระดาษ/ความสูงเอกสารใหม่ "ตอนกดพิมพ์" ไม่ใช่ตอนเปิดพรีวิวอย่างเดียว
+     ตอนเพิ่งเขียนเอกสารลง iframe เสร็จ ฟอนต์ยังไม่มา ตารางยังไม่นิ่ง ความสูงที่วัดได้
+     ตอนนั้นผิดได้มาก (วัดจริงในที่ทดสอบ: 5862px ตอนเพิ่งเขียน vs 2162px ตอนนิ่งแล้ว)
+     ของเดิมหวังพึ่งรอบสองตอน document.fonts.ready — ซึ่งถ้าฟอนต์โหลดไม่ได้
+     (เน็ตร้านล่ม/ไม่มีสัญญาณ) สัญญานั้นไม่มาเลย ค่าที่ผิดก็ค้างอยู่อย่างนั้น
+     ตอนกดปุ่มพิมพ์คือจังหวะที่เลย์เอาต์นิ่งแน่นอนแล้ว จึงวัดซ้ำที่นี่เสมอ */
+  try{ if(f && f.contentDocument) syncHostPrintMetrics(f, f.contentDocument); }
+  catch(errm){ console.error('syncHostPrintMetrics(print)', errm); }
   try{
     if(f && f.contentWindow){
       f.contentWindow.focus();
@@ -18499,6 +18723,9 @@ function openPrint(html){
                      'display:flex;flex-direction:column;';
 
   const bar = document.createElement('div');
+  /* v4.4.5 — แถบนี้เคยไม่มี id เลย จึงไม่มีทางสั่งซ่อนตอนพิมพ์ได้
+     บนไอแพดที่พิมพ์หน้าแอปทั้งหน้า คำว่า "← ย้อนกลับ" เลยติดไปบนหัวกระดาษจริง */
+  bar.id = 'pgPrintBar';
   // env(safe-area-inset-top) กันปุ่มไปอยู่ใต้รอยบากของ iPhone
   bar.style.cssText = 'flex:0 0 auto;display:flex;align-items:center;gap:10px;' +
     'padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top, 0px));' +
@@ -18534,6 +18761,25 @@ function openPrint(html){
   ov.appendChild(bar); ov.appendChild(f);
   document.body.appendChild(ov);
   document.documentElement.style.overflow = 'hidden';
+  /* v4.4.5 — ป้ายบอกว่า "ตอนนี้พรีวิวเปิดอยู่" ให้กฎ @media print ของหน้าแอปทำงาน
+     (เฉพาะตอนนี้เท่านั้น — การพิมพ์หน้าอื่น ๆ ของแอปจึงไม่ถูกแตะ) */
+  document.documentElement.classList.add('pg-printing');
+  /* @page เขียนด้วย selector ไม่ได้ จึงต้องฉีดเป็นสไตล์ชีตแยกตอนเปิดพรีวิว
+     แล้วถอดออกตอนปิด — ต้องมาทีหลังสไตล์ชีตหลักถึงจะชนะกฎ
+     @page{size:A4;margin:12mm 10mm} ที่หน้าแอปตั้งไว้สำหรับการพิมพ์แบบเดิม
+     ถ้าไม่ล้าง กระดาษจะเหลือที่ว่างแค่ 190mm แล้วเอกสาร 210mm โดนตัดขอบอีกที */
+  try{
+    const cfg0  = printCfg();
+    const psize = cfg0.size   !== 'auto' ? cfg0.size   : 'A4';
+    const pori  = cfg0.orient !== 'auto' ? cfg0.orient : 'portrait';
+    let pst = document.getElementById('pgPrintPageRule');
+    if(!pst){
+      pst = document.createElement('style');
+      pst.id = 'pgPrintPageRule';
+      document.head.appendChild(pst);
+    }
+    pst.textContent = '@page{size:' + psize + ' ' + pori + ';margin:0}';
+  }catch(errp){ console.error('pgPrintPageRule', errp); }
 
   // เขียนหลังแนบเข้า DOM แล้วเท่านั้น
   try{
@@ -18544,18 +18790,31 @@ function openPrint(html){
        (document.fonts.ready) เพราะรอบแรกอาจวัดพลาดถ้าฟอนต์ยังไม่มา — ผู้ใช้
        กว่าจะกดปุ่ม "พิมพ์" ก็มีเวลาให้รอบสองทำงานเสร็จก่อนอยู่แล้วตามธรรมชาติ */
     autoFitPrintPages(d);
+    syncHostPrintMetrics(f, d);
     fitPreviewToScreen(f, d);
     const fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready : Promise.resolve();
     fontsReady.then(() => {
-      try{ autoFitPrintPages(d); fitPreviewToScreen(f, d); }
+      try{ autoFitPrintPages(d); syncHostPrintMetrics(f, d); fitPreviewToScreen(f, d); }
       catch(e){ console.error('autoFit(fonts.ready)', e); }
     });
     /* หมุนเครื่อง/เปลี่ยนขนาดหน้าต่าง พรีวิวต้องย่อใหม่ให้พอดีจอ
        (ไม่เกี่ยวกับตอนพิมพ์จริง — ตัวย่ออยู่ใน @media screen เท่านั้น) */
+    /* v4.4.5 — สั่งพิมพ์ได้อีกทางคือเมนูแชร์ของ Safari เอง ซึ่งไม่ผ่านปุ่มในแอป
+       beforeprint คือจังหวะสุดท้ายที่ยังแก้ค่าทัน ไม่ว่าคำสั่งพิมพ์มาจากทางไหน */
+    if(!window.__pgBeforePrint){
+      window.__pgBeforePrint = () => {
+        const fr = document.getElementById('printFrame');
+        if(fr && fr.contentDocument) syncHostPrintMetrics(fr, fr.contentDocument);
+      };
+      window.addEventListener('beforeprint', window.__pgBeforePrint);
+    }
     if(!window.__pgPreviewResize){
       window.__pgPreviewResize = () => {
         const fr = document.getElementById('printFrame');
-        if(fr && fr.contentDocument) fitPreviewToScreen(fr, fr.contentDocument);
+        if(fr && fr.contentDocument){
+          syncHostPrintMetrics(fr, fr.contentDocument);
+          fitPreviewToScreen(fr, fr.contentDocument);
+        }
       };
       window.addEventListener('resize', window.__pgPreviewResize);
     }
