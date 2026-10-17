@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.4.5";
+  const APP_VERSION = "4.6.1";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -2942,7 +2942,129 @@
               ชุดเดิม guard 61/61 · qguard 39/39 · rguard 22/22 · dguard 27/27 ·
               fguard 49/49 · hguard 78/78 · uguard 136/136 · mguard 72/72 · pguard 27/27 ·
               shot69 · shot70 · shot71 129/129 · shot72 ผ่านหมด
-              พรีวิวบนจอไม่เปลี่ยน (คอม scale 1 จัดกลาง · มือถือ 390px scale 0.4914) -->
+              พรีวิวบนจอไม่เปลี่ยน (คอม scale 1 จัดกลาง · มือถือ 390px scale 0.4914) 
+     v4.5.0 — ส่งออกราคาอะไหล่ตามรุ่นรถเป็นไฟล์ Excel (ยกที่ 1 ของสองยก)
+
+              ร้านขอ: แก้ราคาทีละเยอะ ๆ ใน Excel แล้วค่อยยัดกลับเข้าแอพ
+              การไล่แก้ทีละช่องบนจอใช้ไม่ไหวเมื่อรุ่นหนึ่งมีอะไหล่ห้าสิบตัว
+              ยกนี้ทำเฉพาะ "ส่งออก" ให้เจ้าของเห็นหน้าตาไฟล์จริงก่อน
+              ยกที่ 2 (นำเข้า) จะสร้างตัวจับคู่ชื่อบนไฟล์ที่ตกลงหน้าตากันแล้ว
+
+              หน้าตาไฟล์ (ตามที่เจ้าของอนุมัติตัวอย่างแล้ว):
+                · หัวรุ่น ยี่ห้อ / ชื่อรุ่น / ปี อยู่บรรทัดเดียวกัน แถบเขียว
+                · บรรทัดสรุป "ทั้งหมด N · มีราคาแล้ว N · ยังไม่มีราคา N" นับเป็นชิ้น
+                · แยกบล็อกตามหมวดจริงที่แอพใช้ เรียงตามลำดับงานของร้าน
+                  (groupByCategory ตัวเดียวกับที่หน้าจอใช้ ไม่ได้ทำลำดับใหม่ซ้อน)
+                · อะไหล่ออกครบทุกตัว ตัวที่ยังไม่มีราคา ช่องราคาว่าง + พื้นเทา
+                  ไม่เพิ่มคอลัมน์สถานะ เพราะไฟล์ต้องมีแค่ ชื่อ/แบรนด์/ราคา
+                · ของที่มีหลายแบรนด์แตกเป็นหลายแถว ชื่อซ้ำ แบรนด์ต่างกัน
+                · ชุดโปรเป็นบล็อกแยกท้ายรุ่น อ้างอะไหล่ด้วย "ชื่อจริง" ไม่ใช่ id
+                · เว้น 3 บรรทัดพอดีก่อนขึ้นรุ่นใหม่ (บล็อกก่อนหน้าจบด้วยบรรทัดว่าง
+                  อยู่แล้ว ถ้าเติม 3 ดื้อ ๆ จะกลายเป็น 4 — ตัดก่อนแล้ววางให้พอดี)
+                · ไม่มี id ของอะไหล่/รุ่น/ชุดโปรหลุดลงไฟล์เลย ตอนนำเข้าจึงต้อง
+                  จับคู่ด้วยชื่อล้วน ๆ ซึ่งตรงกับที่ร้านสั่งว่า "อิงชื่อใน Excel เป็นหลัก"
+
+              โครงสร้างแยกสองชั้นโดยตั้งใจ:
+                1) buildPriceBookRows() คืนแถวล้วน ๆ ไม่มีสี ไม่พึ่งไลบรารี
+                   = ที่ที่บั๊กจริงอยู่ และเทสต์ได้ใน node ตรง ๆ
+                2) pbRowsToWorkbook() เอาแถวไปใส่สี/เส้น/ความกว้าง แตะข้อมูลไม่ได้
+
+              ExcelJS 4.4.0 โหลดจาก cdnjs "ตอนกดปุ่มเท่านั้น" ไม่ได้ฝังใน <head>
+              เปิดแอพออฟไลน์จึงเร็วเท่าเดิมและงานประจำวันไม่ต้องพึ่งเน็ตก้อนนี้
+              ใส่ integrity sha512 ไว้กันไฟล์ถูกสลับระหว่างทาง — ค่า hash ตรวจเอง
+              จากไฟล์จริง (ดึงจาก npm มาคำนวณ sha512 เทียบกับที่ cdnjs ประกาศ ตรงกัน)
+
+              UI: หน้ารุ่นรถในตั้งค่า ปุ่มเดิม "เลือกพิมพ์หลายรุ่น" เปลี่ยนเป็น
+              "เลือกหลายรุ่น (พิมพ์ / ส่งออก Excel)" แล้วในโหมดเลือกมีปุ่มส่งออก
+              เพิ่มข้างปุ่มพิมพ์ ใช้กลไกเลือกรุ่นตัวเดิมทั้งหมด ไม่ได้สร้างของใหม่ซ้อน
+
+              เทสต์: tests\xguard.js 27/27 · บน v4.4.5 ตอบ "ยังไม่มีฟีเจอร์"
+              shot73.py 15/15 — สร้างไฟล์ .xlsx ของจริงจากในเบราว์เซอร์ แล้วเปิด
+              ด้วย openpyxl ตรวจซ้ำทุกอย่าง: ชื่อชีต ความกว้างคอลัมน์ ระยะเว้น 3 บรรทัด
+              ราคาเป็นตัวเลขไม่ใช่ข้อความ แถวไม่มีราคาพื้นเทาจริง และไม่มี id หลุด
+              ชุดเดิมผ่านหมด guard 61 · qguard 39 · rguard 22 · dguard 27 · fguard 49 ·
+              hguard 78 · uguard 136 · mguard 72 · pguard 27 · shot69 · shot70 · shot71 
+     v4.6.0 — นำเข้าราคาอะไหล่จากไฟล์ Excel (ยกที่ 2 — ครบวงจรแล้ว)
+
+              ยก 1 (v4.5.0) ส่งออกได้ ยกนี้คืออ่านไฟล์ที่ร้านแก้ราคาแล้วกลับเข้าแอพ
+
+              กติกาที่ร้านสั่ง และที่โค้ดทำตามจริง:
+                · ชื่อใน Excel เป็นหลักเสมอ
+                · ชื่อตรง/ชื่อคล้าย = ของชิ้นเดียวกัน -> แก้ราคา เปลี่ยนชื่อตาม Excel
+                  "ห้ามเพิ่ม" = ห้ามเกิดแถวซ้ำของชิ้นเดิมเพราะช่างเรียกคนละชื่อ
+                · ชื่อใหม่จริง (ไม่คล้ายอะไรเลย) -> เพิ่มเข้ารุ่นนั้นพร้อมราคาและหมวด
+                · อะไหล่ในแอพที่ไม่มีในไฟล์ -> ไม่แตะ
+                · ล้างความจำราคาเก่า "เฉพาะรุ่นที่อยู่ในไฟล์" แล้วจำใหม่จาก Excel
+                  (lastPrice / lastPriceByBrand ของรุ่นนั้น + lastPriceByModel ใน
+                   รายการกลางเฉพาะคีย์ของรุ่นนั้น — รุ่นอื่นไม่ถูกแตะเลย)
+                · ไม่เขียนอะไรจนกว่าจะกดยืนยันบนหน้าสรุป
+
+              ปัญหาที่ต้องแก้ก่อน ถึงจะจับคู่ชื่อย่อได้:
+                ตัวเทียบเดิมจับ "แร็ค OEM" กับ "แร็คพวงมาลัย OEM" ไม่ได้ เพราะคำว่า
+                OEM ไปอยู่ท้ายทั้งคู่ core จึงเป็น "แร็คoem" กับ "แร็คพวงมาลัยoem"
+                ซึ่งไม่ containment กัน · เพิ่ม pbStripBrand() ตัดคำแบรนด์ออกก่อนเทียบ
+                เหลือ "แร็ค" กับ "แร็คพวงมาลัย" เข้าชั้น contains ทันที
+                แบรนด์มีคอลัมน์ของตัวเองในไฟล์อยู่แล้ว การถอดออกจากชื่อจึงไม่ทำข้อมูลหาย
+                และมี PB_ALIASES ว่างไว้ให้เติมคำย่อที่ช่างเรียกจริงเพิ่มได้
+
+              สามชั้นของการจับคู่:
+                1. pbMatchKey ตรงกัน -> ถือเป็นตัวเดียวกัน ไม่ถาม
+                   ("แร็คพวงมาลัย OEM" = "แร็คพวงมาลัย (OEM)")
+                2. similarPartNames ชนกัน -> ไม่เดา ยกขึ้นให้เจ้าของตัดสินทีละคู่
+                   ปุ่มยืนยันถูกปิดไว้จนกว่าจะตอบครบทุกคู่ ไม่ตอบ = ไม่เขียนอะไรเลย
+                3. ไม่ชนอะไรเลย -> ของใหม่จริง เพิ่มได้
+
+              โครงสร้าง: pbParseSheetRows / pbBuildImportPlan / pbApplyImportPlan
+              เป็นฟังก์ชันบริสุทธิ์ทั้งสามตัว เทสต์ใน node ได้โดยไม่ต้องมีไฟล์ Excel จริง
+              ส่วนที่แตะ ExcelJS มีแค่ pbHandleImportFile ซึ่งแปลงไฟล์เป็นอาเรย์แถวเท่านั้น
+
+              ทนไฟล์ที่ถูกแก้มือ: ลำดับถูกลบก็ยังอ่านได้ · ราคามีคอมมา "3,400" อ่านเป็น
+              3400 · ช่องว่างเป็น null ไม่ใช่ 0 · บรรทัดสรุป/หัวตารางไม่ถูกนับเป็นอะไหล่ ·
+              รุ่นที่ไม่มีในแอพถูกเตือนและข้าม ไม่สร้างรุ่นใหม่เงียบ ๆ
+
+              เทสต์: tests\iguard.js 33/33 · บน v4.5.0 ตอบ "ยังไม่มีฟีเจอร์"
+              shot74.py 11/11 — วงจรเต็มของจริง: แอพ export .xlsx -> แก้ราคาในไฟล์
+              ด้วย openpyxl เหมือนร้านแก้เอง (4 จุด + แทรกแถวใหม่) -> แอพ import กลับ
+              -> ตรวจว่าราคาเปลี่ยนตรงทุกตัว ของใหม่เข้าหมวดถูก ของที่ไม่แตะยังอยู่
+              และ "นำเข้าไฟล์เดิมซ้ำ ไม่เกิดของซ้ำและไม่มีอะไรให้แก้อีก"
+              ชุดเดิมผ่านหมด guard 61 · qguard 39 · rguard 22 · dguard 27 · fguard 49 ·
+              hguard 78 · uguard 136 · mguard 72 · pguard 27 · xguard 27 ·
+              shot69 · shot70 · shot71 · shot73 
+     v4.6.1 — ปิด 4 เส้นทางที่ช่างเจอว่า "กดเพิ่มอะไหล่แล้วรายการไม่ขึ้น"
+
+              ช่างแจ้ง 17 ต.ค. 69 · จำลองซ้ำได้ครบทั้งสี่ทาง (probe_addlost.py)
+              ไม่มีทางไหนเป็นโค้ดพัง ทุกทางคือแอพ "ทำถูกแต่พูดเบาเกินไป"
+              ผลลัพธ์ที่ช่างเห็นเหมือนกันหมด: กดแล้วไม่มีอะไรเพิ่ม
+
+              1. แตะชิปเดิมสองทีเร็ว ๆ = เพิ่มแล้วถูกเอาออกทันที
+                 ชิปเป็นปุ่มสลับ บนจอสัมผัสนิ้วลั่น/จอรับสัมผัสซ้ำได้ง่าย
+                 เพิ่ม onChipTap() กันแตะซ้ำตัวเดิมภายใน 450ms
+                 ตัวกันอยู่ที่ "ปุ่ม" ไม่ได้อยู่ใน toggleJobPartFromModel เพราะนั่น
+                 เป็นชั้นข้อมูลที่โค้ดอื่นและเทสต์เรียกตรง ๆ — รอบแรกวางผิดชั้น
+                 ทำให้ guard B6 และ dguard D5-3 ตก จับได้จากชุดทดสอบเดิมแล้วย้ายออกมา
+                 และตอนเอาออกจริงมีข้อความบอก "เอา X ออกจากใบแล้ว" จากเดิมที่เงียบสนิท
+
+              2. พิมพ์ชื่อที่อยู่ในใบแล้ว = toast 1.6 วินาทีแล้ววับหาย
+                 ตรงกับรูปที่ช่างส่งมาที่สุด (ใบมี "แร็ค" อยู่ แล้วพิมพ์ "แร็ค" ซ้ำ)
+                 เปลี่ยนเป็นกล่องที่ต้องกดปิด บอกด้วยว่าของที่มีอยู่ลงไว้กี่ชิ้น ราคาเท่าไร
+                 กดปิดแล้วเลื่อนจอไปไฮไลต์แถวนั้นให้เห็นว่าของอยู่ตรงไหน (jpFlashRow)
+
+              3. กล่องเตือน "ชื่อคล้ายของเดิม" ยาวเกินไป ปุ่มไม่บอกผลลัพธ์
+                 เดิมไล่ชื่อได้ถึง 8 บรรทัด ปุ่มเขียนว่า ตกลง / ไม่ตกลง
+                 เหลือ 3 ชื่อแรก ปุ่มเปลี่ยนเป็น "เพิ่มเป็นรายการใหม่" / "ไม่เพิ่ม"
+                 และบอกทางออกตรง ๆ ว่าถ้าเป็นตัวเดียวกันให้แตะชิปแทน ราคาจะตามมาด้วย
+
+              4. พิมพ์ชื่อค้างไว้แล้วแตะพื้นที่ว่างนอกกล่อง = ปิดทิ้ง ของที่พิมพ์หายหมด
+                 อันตรายที่สุดและตรงกับคำว่า "เขียนแล้วมันหาย" มากที่สุด
+                 บนไอแพด/มือถือ คนแตะนอกกล่องเพื่อซ่อนคีย์บอร์ดเป็นเรื่องปกติ
+                 ตอนนี้ถ้ามีข้อความพิมพ์ค้างอยู่ กล่องไม่ปิด และบอกว่าให้กดปุ่มไหน
+                 กล่องที่ยังว่างอยู่ยังแตะปิดได้เหมือนเดิม เพราะไม่มีอะไรให้เสีย
+                 แก้ที่ uiModal ที่เดียว จึงคุ้มครองทุกกล่องที่มีช่องพิมพ์ทั้งแอพ
+
+              เทสต์: shot75.py 15/15 · บน v4.6.0 ตอบ "ยังไม่มีตัวแก้"
+              ชุดเดิมผ่านหมด guard 61/61 · qguard 39 · rguard 22 · dguard 27/27 ·
+              fguard 49 · hguard 78 · uguard 136 · mguard 72 · pguard 27 · xguard 27 ·
+              iguard 33 · shot69 · shot70 · shot71 · shot73 · shot74 -->
 
 
 
@@ -5626,6 +5748,55 @@
     color:var(--danger); padding:6px 9px;
   }
   .bn-chip-bay:hover{background:var(--danger); color:#fff;}
+
+  /* v4.6.1 — ไฮไลต์แถวที่ "มีอยู่แล้ว" ให้ช่างเห็นว่าของอยู่ตรงไหน */
+  @keyframes jpFlash{
+    0%,100%{ background:transparent; }
+    15%,70%{ background:rgba(15,138,74,.18); }
+  }
+  tr.jp-flash > td{ animation:jpFlash 2.4s ease-in-out; }
+  tr.jp-flash > td:first-child{ box-shadow:inset 3px 0 0 var(--brand, #0F8A4A); }
+
+  /* ===== v4.6.0 — หน้าสรุปก่อนนำเข้า Excel ===== */
+  .pb-plan-overlay{
+    position:fixed; inset:0; z-index:9000; background:rgba(0,0,0,.55);
+    display:flex; align-items:flex-start; justify-content:center; padding:24px 12px; overflow:auto;
+  }
+  .pb-plan-card{
+    background:var(--surface); color:var(--text); border-radius:14px; width:min(960px,100%);
+    box-shadow:0 18px 60px rgba(0,0,0,.35); padding:18px 18px 14px;
+  }
+  .pb-plan-head h3{margin:0 0 2px;}
+  .pb-plan-sum{display:flex; flex-wrap:wrap; gap:14px; margin:10px 0 4px; font-size:13px;}
+  .pb-plan-sum b{font-size:15px;}
+  .pb-plan-sum .warn b{color:var(--danger);}
+  .pb-warn{background:rgba(237,29,36,.08); border-left:3px solid var(--danger);
+           padding:8px 10px; border-radius:8px; margin:8px 0; font-size:13px;}
+  .pb-model{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin:12px 0;}
+  .pb-model-title{font-weight:700; margin-bottom:6px;}
+  .pb-tag{font-size:11px; font-weight:600; color:var(--hazard); border:1px solid var(--hazard);
+          border-radius:999px; padding:1px 7px;}
+  .pb-sec{margin:8px 0;}
+  .pb-sec-h{font-size:12px; font-weight:700; color:var(--muted); margin-bottom:3px;}
+  .pb-sec-ask .pb-sec-h{color:var(--danger);}
+  .pb-tbl{width:100%; border-collapse:collapse; font-size:13px;}
+  .pb-tbl td{padding:3px 6px; border-bottom:1px solid var(--border);}
+  .pb-tbl td.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .pb-tbl td.arrow{color:var(--muted); width:18px; text-align:center;}
+  .pb-tbl td.b{font-weight:700;}
+  .pb-ask{border:1px dashed var(--danger); border-radius:8px; padding:8px; margin:6px 0;}
+  .pb-ask-q{font-size:13px; margin-bottom:6px;}
+  .pb-ask-opts{display:flex; flex-wrap:wrap; gap:6px;}
+  .pb-untouched{font-size:12px; margin-top:6px;}
+  .pb-plan-foot{display:flex; gap:10px; align-items:center; justify-content:flex-end;
+                position:sticky; bottom:0; background:var(--surface); padding-top:10px; margin-top:8px;
+                border-top:1px solid var(--border);}
+  .pb-plan-foot .warn{color:var(--danger); font-size:13px; margin-right:auto;}
+  @media (max-width:640px){
+    .pb-plan-overlay{padding:10px 6px;}
+    .pb-plan-card{padding:12px 10px;}
+    .pb-plan-sum{gap:10px; font-size:12px;}
+  }
 
   /* ===== ใบรับรถแบบเขียนเอง (v3.30.0) ================================
      ทุกกฎอยู่ใต้ .ci-form เพื่อไม่ให้ไปโดนใบเสนอราคา ใบเปล่า หรือใบรุ่นรถ
@@ -9906,6 +10077,7 @@ function icon(name, size){
   const paths = {
     save: '<path d="M5 4h11l4 4v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M8 4v6h8V4"/><path d="M8 21v-7h8v7"/>',
     download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/>',
+    upload: '<path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M4 4h16"/>',
     open: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
     pin: '<path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>',
     printer: '<path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 14h12v7H6z"/>',
@@ -11420,7 +11592,20 @@ function uiModal(opts){
     if(opts.onOk) opts.onOk(value);
   };
   document.getElementById('ui-modal-cancel').onclick = closeUiModal;
-  root.onclick = function(e){ if(e.target === root) closeUiModal(); };
+  /* v4.6.1 — แตะพื้นที่ว่างนอกกล่อง "ขณะที่พิมพ์ค้างไว้" = ห้ามปิด
+     บนไอแพด/มือถือ คนแตะนอกกล่องเพื่อซ่อนคีย์บอร์ดเป็นเรื่องปกติ ของเดิมตีความว่า
+     "ยกเลิก" แล้วปิดทิ้งเงียบ ๆ ข้อความที่พิมพ์หายหมด = อาการ "เขียนแล้วมันหาย"
+     กล่องที่ยังว่างอยู่ยังแตะปิดได้เหมือนเดิม เพราะไม่มีอะไรให้เสีย */
+  root.onclick = function(e){
+    if(e.target !== root) return;
+    if(input && String(input.value || '').trim()){
+      flashToast('พิมพ์ไว้แล้ว — กด "' + (opts.okLabel || 'ตกลง') + '" เพื่อเก็บ หรือ "' +
+                 (opts.cancelLabel || 'ยกเลิก') + '" ถ้าจะทิ้ง');
+      input.focus();
+      return;
+    }
+    closeUiModal();
+  };
   if(input){
     input.onkeydown = function(e){ if(e.key === 'Enter'){ e.preventDefault(); okBtn.click(); } };
     setTimeout(() => { input.focus(); input.select(); }, 30);
@@ -14756,15 +14941,20 @@ function confirmIfSimilarPartName(name, pool, scopeLabel, onYes){
   const head = exact
     ? `"${name}" มีชื่อเดียวกันอยู่ในระบบแล้ว`
     : `"${name}" มีชื่อคล้ายกันอยู่ในระบบแล้ว ${hits.length} รายการ`;
-  const lines = hits.map(h =>
+  /* v4.6.1 — เดิมไล่ชื่อทั้งหมดได้ถึง 8 บรรทัด ช่างกดผ่านโดยไม่อ่าน แล้วงงว่าทำไมไม่เพิ่ม
+     เหลือ 3 ชื่อแรกพอ ที่เหลือบอกเป็นจำนวน */
+  const show = hits.slice(0, 3);
+  const lines = show.map(h =>
     '  • ' + h.name + (h.where ? '  — ' + h.where : '') + (h.why === 'same' ? '  (ชื่อเดียวกัน)' : ''));
+  if(hits.length > show.length) lines.push('  • (และอีก ' + (hits.length - show.length) + ' รายการ)');
   /* ไม่ใช้ uiConfirm เพราะอันนั้นย้อมปุ่มยืนยันเป็นสีแดง (danger) ซึ่งเอาไว้ใช้กับ
      "ลบ" การเพิ่มอะไหล่ไม่ใช่เรื่องอันตราย ปุ่มแดงตรงนี้จะสอนให้คนกลัวผิดที่ */
   uiModal({
     message: head + ':\n\n' + lines.join('\n') +
-             `\n\nจะเพิ่ม "${name}" เข้า${scopeLabel} อีกรายการหรือไม่?`,
-    okLabel: 'ตกลง เพิ่มเลย',
-    cancelLabel: 'ไม่ตกลง',
+             `\n\nถ้า "${name}" เป็นคนละตัวกับที่อยู่ข้างบน กด "เพิ่มเป็นรายการใหม่"` +
+             '\nถ้าเป็นตัวเดียวกัน กด "ไม่เพิ่ม" แล้วแตะชิปของตัวที่มีอยู่แทน ราคาจะตามมาด้วย',
+    okLabel: 'เพิ่มเป็นรายการใหม่',
+    cancelLabel: 'ไม่เพิ่ม',
     onOk: onYes
   });
 }
@@ -17016,6 +17206,23 @@ function partPriceAndBrand(mp){
 
 function isPromoChild(p){ return !!(p && p.promoParent); }
 
+/* v4.6.1 — ตัวหุ้มสำหรับ "การแตะชิป" โดยเฉพาะ
+
+   ชิปเป็นปุ่มสลับ แตะแล้วเพิ่ม แตะอีกทีเอาออก บนจอสัมผัสนิ้วลั่นหรือจอรับสัมผัสซ้ำ
+   = เพิ่มแล้วถูกเอาออกในพริบตา ช่างเห็นเป็น "กดแล้วไม่ขึ้น"
+
+   ตัวกันอยู่ตรงนี้ ไม่ได้อยู่ใน toggleJobPartFromModel เพราะนั่นเป็นชั้นข้อมูล
+   ที่โค้ดอื่นและชุดทดสอบเรียกตรง ๆ การเอานาฬิกาไปยัดไว้ในนั้นทำให้การเรียก
+   สองครั้งติดกันโดยเจตนา (ซึ่งถูกต้อง) ถูกบล็อกไปด้วย */
+let __chipTapAt = {};
+function onChipTap(jobId, modelPartId){
+  const key = jobId + '|' + modelPartId;
+  const now = Date.now();
+  if(now - (__chipTapAt[key] || 0) < 450) return;
+  __chipTapAt[key] = now;
+  toggleJobPartFromModel(jobId, modelPartId);
+}
+
 function toggleJobPartFromModel(jobId, modelPartId){
   const job = getJob(jobId);
   if(!job) return;
@@ -17023,6 +17230,7 @@ function toggleJobPartFromModel(jobId, modelPartId){
   // which uses synthetic "master-<id>" keys (see jobPickableParts).
   const mp = jobPickableParts(job).items.find(p => p.id === modelPartId);
   if(!mp) return;
+
   job.partsNeeded = job.partsNeeded || [];
   const sameName = p => p.partName === mp.partName && (p.variant || '') === (mp.variant || '');
 
@@ -17041,6 +17249,8 @@ function toggleJobPartFromModel(jobId, modelPartId){
 
   if(plain){
     job.partsNeeded = job.partsNeeded.filter(p => p !== plain);
+    /* v4.6.1 — ของเดิมเอาออกเงียบ ๆ ช่างที่กดโดนซ้ำจึงไม่รู้ว่าเกิดอะไรขึ้น */
+    flashToast('เอา "' + (mp.variant ? mp.partName + ' (' + mp.variant + ')' : mp.partName) + '" ออกจากใบแล้ว');
   } else {
     /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา
        v4.3.2 — ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ดู partPriceAndBrand
@@ -17058,6 +17268,34 @@ function toggleJobPartFromModel(jobId, modelPartId){
   render();
 }
 
+/* v4.6.1 — "ของชิ้นนี้อยู่ในใบแล้ว" ต้องบอกให้ช่างเห็น ไม่ใช่ toast 1.6 วินาที
+
+   เดิมเส้นทางนี้ขึ้น toast แล้ววับหายไปใน 1.6 วิ ช่างอ่านไม่ทัน เห็นแค่ว่า
+   พิมพ์ชื่อแล้วไม่มีอะไรเพิ่ม จึงรายงานว่า "กดเพิ่มแล้วรายการหาย"
+   ตอนนี้เป็นกล่องที่ต้องกดปิด แล้วไฮไลต์แถวที่มีอยู่จริงให้เห็นว่ามันอยู่ตรงไหน */
+function jpFlashRow(jobId, rowId){
+  view.jpFlashId = rowId;
+  render();
+  setTimeout(() => {
+    const el = document.querySelector('[data-row-id="' + rowId + '"]');
+    if(el && el.scrollIntoView) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 40);
+  setTimeout(() => { if(view.jpFlashId === rowId){ view.jpFlashId = null; render(); } }, 2600);
+}
+
+function jpTellAlreadyOnJob(job, label, row){
+  const qty   = (row && row.qty) ? row.qty : '1';
+  const unit  = (row && row.unit) ? row.unit : 'ชิ้น';
+  const price = (row && parsePrice(row.price) > 0) ? fmtMoney(parsePrice(row.price)) : 'ยังไม่ใส่ราคา';
+  uiModal({
+    message: '"' + label + '" อยู่ในใบนี้อยู่แล้ว\n\nตอนนี้ลงไว้ ' + qty + ' ' + unit + ' · ' + price +
+             '\n\nจึงไม่ได้เพิ่มซ้ำให้ — กดปิดแล้วดูแถวที่ไฮไลต์ไว้ ถ้าจะแก้จำนวนหรือราคาแก้ที่แถวนั้นได้เลย',
+    okLabel: 'เข้าใจแล้ว ไปดูแถวนั้น',
+    cancelLabel: 'ปิด',
+    onOk: () => { if(row) jpFlashRow(job.id, row.id); }
+  });
+}
+
 function addCustomJobPart(jobId){
   const job = getJob(jobId);
   if(!job) return;
@@ -17070,9 +17308,9 @@ function addCustomJobPart(jobId){
     const twin = findPickerTwin(job, trimmed);
     if(twin){
       const label = partLabelOf(twin);
-      const onJob = job.partsNeeded.some(p => p.partName === twin.partName
+      const already = job.partsNeeded.find(p => p.partName === twin.partName
                       && (p.variant || '') === (twin.variant || ''));
-      if(onJob){ flashToast(`"${label}" อยู่ในใบนี้อยู่แล้ว`); return; }
+      if(already){ jpTellAlreadyOnJob(job, label, already); return; }
       toggleJobPartFromModel(jobId, twin.id);
       flashToast(label === trimmed ? `เพิ่ม "${label}" แล้ว` : `ใช้ชื่อตามระบบ: "${label}"`);
       return;
@@ -17107,9 +17345,9 @@ function addQuickPartToCategory(jobId, category){
     const twin = findPickerTwin(job, trimmed);
     if(twin){
       const label = partLabelOf(twin);
-      const onJob = job.partsNeeded.some(p => p.partName === twin.partName
+      const already = job.partsNeeded.find(p => p.partName === twin.partName
                       && (p.variant || '') === (twin.variant || ''));
-      if(onJob){ flashToast(`"${label}" อยู่ในใบนี้อยู่แล้ว`); return; }
+      if(already){ jpTellAlreadyOnJob(job, label, already); return; }
       toggleJobPartFromModel(jobId, twin.id);   // บันทึกและวาดใหม่ให้ในตัว
       flashToast(label === trimmed ? `เพิ่ม "${label}" แล้ว`
                                    : `ใช้ชื่อตามระบบ: "${label}"`);
@@ -18982,7 +19220,7 @@ function renderJobPartsEditor(job){
         : '-';
       const subOpts = PART_SUBOPTIONS[p.partName];
       const inPromo = isPromoChild(p);
-      html += `<tr class="${inPromo ? 'promo-child-row' : ''}${deduct ? ' deduct-row' : ''}">
+      html += `<tr class="${inPromo ? 'promo-child-row' : ''}${deduct ? ' deduct-row' : ''}${view.jpFlashId === p.id ? ' jp-flash' : ''}" data-row-id="${p.id}">
         <td class="center">${idx+1}</td>
         <td data-label="รายการ">
           ${inPromo ? `<span class="promo-child-dash">└</span>` : ''}<input type="text" class="part-name-input${inPromo ? ' promo-child-name' : ''}" value="${escapeAttr(p.partName)}" onchange="onJobPartFieldChange('${job.id}','${p.id}','partName', this.value)">
@@ -19098,7 +19336,7 @@ function renderJobPartsEditor(job){
         const label = mp.variant ? `${mp.partName} (${mp.variant})` : mp.partName;
         // ราคาติดไว้บนชิปเลย ช่างจะได้ไม่ต้องกดเข้าไปดูทีละตัวว่าตัวไหนมีราคาแล้ว
         const chipPrice = partPriceOf(mp);
-        html += `<span class="chk-chip ${on?'checked':''}" onclick="toggleJobPartFromModel('${job.id}','${mp.id}')">
+        html += `<span class="chk-chip ${on?'checked':''}" onclick="onChipTap('${job.id}','${mp.id}')">
           ${escapeHtml(label)}${chipPrice ? `<span class="chk-price">฿${escapeHtml(fmtMoney(parseMoney(chipPrice)))}</span>` : ''}
           ${/* v4.2.11 — ข้อ B3: ปุ่มนี้ลบ models/ หรือ masterParts/ ซึ่งกฎ Firestore
                 ให้ "ลบ" เฉพาะแอดมิน พนักงานกดแล้ว batch ล้มทั้งก้อน
@@ -20030,6 +20268,685 @@ function renderDupMergeTab(){
   return html;
 }
 
+/* ===========================================================================
+   v4.5.0 — ส่งออก / นำเข้า "ราคาอะไหล่ตามรุ่นรถ" เป็นไฟล์ Excel
+
+   ทำไมต้องมี: ร้านอยากแก้ราคาทีละเยอะ ๆ ใน Excel แล้วยัดกลับเข้าแอพ
+   การไล่แก้ทีละช่องบนจอใช้ไม่ไหวเมื่อรุ่นหนึ่งมีอะไหล่ห้าสิบตัว
+
+   โครงสร้างแยกเป็นสองชั้นโดยตั้งใจ:
+     1) ชั้นข้อมูล  buildPriceBookRows() -> แถวล้วน ๆ ไม่มีสี ไม่พึ่งไลบรารี
+        ชั้นนี้เทสต์ได้ใน node ตรง ๆ ซึ่งเป็นที่ที่บั๊กจริงจะอยู่
+     2) ชั้นไฟล์   pbRowsToWorkbook() -> เอาแถวไปใส่สี/เส้น/ความกว้างด้วย ExcelJS
+        ชั้นนี้บาง ๆ แตะข้อมูลไม่ได้เลย
+
+   ExcelJS โหลดจาก CDN "ตอนกดปุ่มเท่านั้น" ไม่ได้โหลดตอนเปิดแอพ
+   เปิดแอพแบบออฟไลน์จึงเร็วเท่าเดิม และงานประจำวันไม่ต้องพึ่งเน็ตก้อนนี้
+   =========================================================================== */
+
+const PB_SHEET_NAME  = 'ราคาอะไหล่ตามรุ่นรถ';
+const PB_GAP_ROWS    = 3;                                   /* เว้นก่อนขึ้นรุ่นใหม่ */
+const PB_PART_HEAD   = ['ลำดับ', 'รายการอะไหล่', 'แบรนด์', 'ราคา'];
+const PB_PROMO_HEAD  = ['ลำดับ', 'ชื่อชุดโปร', 'ราคาชุด', 'อะไหล่ในชุด'];
+const PB_MODEL_HEAD  = ['ยี่ห้อ', 'ชื่อรุ่น', 'ปี'];
+const PB_PROMO_TITLE = 'ชุดโปรโมชั่น';
+
+/* หนึ่งอะไหล่อาจมีหลายแบรนด์ = หลายแถวในไฟล์ ชื่อซ้ำได้ แบรนด์ต่างกัน
+   อะไหล่ที่ยังไม่มีราคาเลย ต้องออกมาด้วย (ช่องราคาว่าง) ไม่ใช่ถูกข้าม */
+function pbLinesOfPart(part){
+  const name = String((part && (part.partName || part.name)) || '').trim();
+  const list = (part && part.brands) || [];
+  const used = list.filter(b => b && (String(b.brand || '').trim() || String(b.price || '').trim()));
+  if(!used.length) return [{ name: name, brand: '', price: null }];
+  return used.map(b => {
+    const n = parsePrice(b.price);
+    return { name: name, brand: String(b.brand || '').trim(), price: (n > 0 ? n : null) };
+  });
+}
+
+function pbPartHasPrice(part){
+  return ((part && part.brands) || []).some(b => b && parsePrice(b.price) > 0);
+}
+
+/* แถวทั้งหมดของรุ่นเดียว — ไล่ตามหมวดจริงที่แอพใช้ (groupByCategory จัดลำดับให้แล้ว) */
+function pbModelRows(model){
+  const rows = [];
+  const parts = (model && model.parts) || [];
+
+  rows.push({ t: 'modelLabel', c: PB_MODEL_HEAD.slice() });
+  rows.push({ t: 'modelValue', c: [String((model && model.brand) || ''),
+                                   String((model && model.name) || ''),
+                                   String((model && model.yearRange) || '')] });
+  rows.push({ t: 'blank', c: [] });
+
+  /* สรุปนับเป็น "ชิ้นอะไหล่" ไม่ใช่จำนวนแถว — ของชิ้นเดียวที่มีสองแบรนด์ยังนับหนึ่ง */
+  const totalParts  = parts.length;
+  const pricedParts = parts.filter(pbPartHasPrice).length;
+  rows.push({ t: 'summary', c: ['อะไหล่ทั้งหมด ' + totalParts + ' รายการ · มีราคาแล้ว ' + pricedParts +
+                                ' รายการ · ยังไม่มีราคา ' + (totalParts - pricedParts) + ' รายการ'] });
+  rows.push({ t: 'blank', c: [] });
+
+  groupByCategory(parts).forEach(g => {
+    rows.push({ t: 'catHead',  c: ['หมวด', g.category] });
+    rows.push({ t: 'partHead', c: PB_PART_HEAD.slice() });
+    let n = 0;
+    g.items.forEach(p => pbLinesOfPart(p).forEach(line => {
+      n += 1;
+      rows.push({ t: 'part', c: [n, line.name, line.brand, line.price] });
+    }));
+    rows.push({ t: 'blank', c: [] });
+  });
+
+  const promos = (model && model.promotions) || [];
+  if(promos.length){
+    rows.push({ t: 'promoHead',      c: [PB_PROMO_TITLE] });
+    rows.push({ t: 'promoTableHead', c: PB_PROMO_HEAD.slice() });
+    promos.forEach((pr, i) => {
+      const names = ((pr && pr.itemIds) || []).map(id => {
+        const p = parts.find(x => x && x.id === id);
+        return p ? String(p.partName || p.name || '').trim() : '';
+      }).filter(Boolean);
+      const n = parsePrice(pr && pr.price);
+      rows.push({ t: 'promo', c: [i + 1, String((pr && pr.name) || ''), (n > 0 ? n : null), names.join(', ')] });
+    });
+    rows.push({ t: 'blank', c: [] });
+  }
+  return rows;
+}
+
+function buildPriceBookRows(models){
+  const out = [];
+  (models || []).forEach((m, i) => {
+    if(i > 0){
+      /* บล็อกสุดท้ายของรุ่นก่อนหน้าจบด้วยบรรทัดว่างอยู่แล้ว ถ้าเติม 3 ดื้อ ๆ จะกลายเป็น 4
+         ตัดของเดิมออกก่อน แล้วค่อยวาง 3 บรรทัดให้พอดีตามที่ร้านขอ */
+      while(out.length && out[out.length - 1].t === 'blank') out.pop();
+      for(let k = 0; k < PB_GAP_ROWS; k++) out.push({ t: 'blank', c: [] });
+    }
+    pbModelRows(m).forEach(r => out.push(r));
+  });
+  while(out.length && out[out.length - 1].t === 'blank') out.pop();   /* ไม่ทิ้งบรรทัดว่างท้ายไฟล์ */
+  return out;
+}
+
+/* ---- ชั้นไฟล์: แถว -> สมุดงาน Excel -------------------------------------- */
+
+const PB_XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+const PB_XLSX_SRI = 'sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw==';
+const PB_FONT     = 'Tahoma';     /* มีไทยครบทุกเครื่อง Windows */
+
+let __pbLib = null;
+function loadExcelLib(){
+  if(typeof window !== 'undefined' && window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if(__pbLib) return __pbLib;
+  __pbLib = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PB_XLSX_URL;
+    s.integrity = PB_XLSX_SRI;
+    s.crossOrigin = 'anonymous';
+    s.onload  = () => window.ExcelJS ? resolve(window.ExcelJS)
+                                     : reject(new Error('โหลดตัวจัดการ Excel แล้วแต่ใช้งานไม่ได้'));
+    s.onerror = () => reject(new Error('โหลดตัวจัดการ Excel ไม่ได้ — ตอนส่งออก/นำเข้าต้องต่ออินเทอร์เน็ต'));
+    document.head.appendChild(s);
+  });
+  __pbLib.catch(() => { __pbLib = null; });     /* ล้มแล้วให้กดใหม่ได้ ไม่ค้างถาวร */
+  return __pbLib;
+}
+
+const PB_C = { green:'FF0F8A4A', greenSoft:'FFE6F4EC', amber:'FF92400E',
+               amberSoft:'FFFFF4D6', grey:'FFF2F2F2', line:'FFBFBFBF', muted:'FF6B7280' };
+
+function pbRowsToWorkbook(ExcelJS, rows){
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(PB_SHEET_NAME, { views: [{ showGridLines: false }] });
+  ws.columns = [{ width: 8 }, { width: 42 }, { width: 18 }, { width: 14 }];
+
+  const box = { top:{style:'thin',color:{argb:PB_C.line}}, left:{style:'thin',color:{argb:PB_C.line}},
+                bottom:{style:'thin',color:{argb:PB_C.line}}, right:{style:'thin',color:{argb:PB_C.line}} };
+  const fill = argb => ({ type:'pattern', pattern:'solid', fgColor:{ argb: argb } });
+  const paint = (row, argb, cols) => (cols || [1,2,3,4]).forEach(i => { row.getCell(i).fill = fill(argb); });
+
+  (rows || []).forEach(r => {
+    const row = ws.addRow(r.c && r.c.length ? r.c : [null]);
+    row.font = { name: PB_FONT, size: 10 };
+
+    if(r.t === 'modelLabel'){
+      row.font = { name: PB_FONT, size: 9, bold: true, color: { argb: PB_C.muted } };
+    } else if(r.t === 'modelValue'){
+      row.font = { name: PB_FONT, size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+      row.height = 22;
+      paint(row, PB_C.green);
+    } else if(r.t === 'summary'){
+      row.font = { name: PB_FONT, size: 9, color: { argb: PB_C.muted } };
+    } else if(r.t === 'catHead'){
+      row.font = { name: PB_FONT, size: 10, bold: true, color: { argb: PB_C.green } };
+      paint(row, PB_C.greenSoft);
+    } else if(r.t === 'promoHead'){
+      row.font = { name: PB_FONT, size: 10, bold: true, color: { argb: PB_C.amber } };
+      paint(row, PB_C.amberSoft);
+    } else if(r.t === 'partHead' || r.t === 'promoTableHead'){
+      row.font = { name: PB_FONT, size: 9, bold: true };
+      paint(row, PB_C.grey);
+      [1,2,3,4].forEach(i => { row.getCell(i).border = box; });
+      row.getCell(1).alignment = { horizontal: 'center' };
+      if(r.t === 'partHead') row.getCell(4).alignment = { horizontal: 'right' };
+    } else if(r.t === 'part' || r.t === 'promo'){
+      const priceCol = 4;
+      const noPrice = (r.c[3] === null || r.c[3] === undefined);
+      [1,2,3,4].forEach(i => { row.getCell(i).border = box; });
+      row.getCell(1).alignment = { horizontal: 'center' };
+      if(r.t === 'part'){
+        row.getCell(priceCol).numFmt = '#,##0.00';
+        row.getCell(priceCol).alignment = { horizontal: 'right' };
+        /* ของที่ยังไม่มีราคา ทำพื้นเทาไว้ให้เห็นปราดเดียวว่ายังไม่ได้ใส่ราคา
+           ไม่ได้เพิ่มคอลัมน์สถานะ เพราะไฟล์ต้องมีแค่ ชื่อ/แบรนด์/ราคา ตามที่ร้านสั่ง */
+        if(noPrice) paint(row, PB_C.grey);
+      } else {
+        row.getCell(3).numFmt = '#,##0.00';
+        row.getCell(3).alignment = { horizontal: 'right' };
+      }
+    }
+  });
+  return wb;
+}
+
+function pbFileName(models){
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const who = (models.length === 1)
+    ? String(models[0].name || 'รุ่นรถ').replace(/[\\/:*?"<>|]/g, '').trim()
+    : (models.length + 'รุ่น');
+  return 'ราคาอะไหล่-' + who + '-' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '.xlsx';
+}
+
+function pbSaveBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1200);
+}
+
+async function exportModelsToExcel(ids){
+  const wanted = (ids && ids.length) ? ids.slice() : [];
+  const models = state.models.filter(m => wanted.indexOf(m.id) > -1);
+  if(!models.length){ flashToast('ยังไม่ได้เลือกรุ่นรถ'); return; }
+  try{
+    flashToast('กำลังสร้างไฟล์ Excel ...');
+    const ExcelJS = await loadExcelLib();
+    const wb  = pbRowsToWorkbook(ExcelJS, buildPriceBookRows(models));
+    const buf = await wb.xlsx.writeBuffer();
+    pbSaveBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+               pbFileName(models));
+    flashToast('ส่งออกแล้ว ' + models.length + ' รุ่น');
+  }catch(err){
+    console.error('exportModelsToExcel', err);
+    uiModal({ message: (err && err.message) || 'ส่งออกไฟล์ไม่สำเร็จ',
+              okLabel: 'ปิด', cancelLabel: 'ปิด' });
+  }
+}
+
+/* ===========================================================================
+   v4.6.0 — นำเข้าราคาอะไหล่จากไฟล์ Excel (ยกที่ 2)
+
+   กติกาที่ร้านสั่ง:
+     · ชื่อใน Excel เป็นหลักเสมอ
+     · ชื่อตรงหรือชื่อคล้าย = ของชิ้นเดียวกัน -> แก้ราคา / เปลี่ยนชื่อตาม Excel
+       "ห้ามเพิ่ม" หมายถึงห้ามเกิดแถวซ้ำของชิ้นเดิมเพราะเรียกคนละชื่อ
+     · ชื่อใหม่จริง ๆ (ไม่คล้ายอะไรเลย) -> เพิ่มเข้ารุ่นนั้น พร้อมราคา
+     · อะไหล่ในแอพที่ไม่มีในไฟล์ -> ไม่แตะ
+     · ล้างความจำราคาเก่า "เฉพาะรุ่นที่อยู่ในไฟล์" แล้วจำใหม่จาก Excel
+     · ไม่เขียนอะไรจนกว่าเจ้าของจะกดยืนยันบนหน้าสรุป
+
+   ทำไมต้องตัดแบรนด์ออกก่อนเทียบชื่อ:
+     ตัวเทียบเดิม (partNameKey / similarPartNames) จับ "แร็ค OEM" กับ
+     "แร็คพวงมาลัย OEM" ไม่ได้ เพราะคำว่า OEM ไปคั่นอยู่ท้ายทั้งคู่
+     core จึงเป็น "แร็คoem" กับ "แร็คพวงมาลัยoem" ซึ่งไม่ containment กัน
+     พอตัดคำแบรนด์ออก เหลือ "แร็ค" กับ "แร็คพวงมาลัย" -> เข้าชั้น contains ทันที
+     แบรนด์มีคอลัมน์ของตัวเองอยู่แล้ว การเอามันออกจากชื่อจึงไม่ได้ทำข้อมูลหาย
+   =========================================================================== */
+
+/* คำที่เป็น "แบรนด์" ไม่ใช่ชื่อของ — ใช้ตัดทิ้งตอนเทียบชื่อเท่านั้น
+   ไม่ได้เอาไปแก้ชื่อจริงของใคร */
+const PB_BRAND_WORDS = ['oem','แท้','เทียบ','รีบิ้ว','รีบิ้ล','รีบิว','ริบิ้ว',
+                        'มือสอง','ของใหม่','ใหม่','เกรดa','เกรดเอ'];
+
+/* ตารางชื่อพ้องของร้าน — ซ้ายคือที่ช่างเรียกย่อ ขวาคือชื่อเต็มที่ใช้ในระบบ
+   ว่างไว้ก่อนได้ ระบบจะใช้การเทียบอัตโนมัติแทน แล้วถามเมื่อไม่มั่นใจ */
+const PB_ALIASES = [
+  /* ['ลูกหมากล่าง', 'ลูกหมากปีกนกล่าง'], */
+];
+
+function pbStripBrand(name){
+  let s = String(name == null ? '' : name).toLowerCase();
+  s = s.replace(/\(([^)]*)\)/g, (m, inner) => {
+    const k = inner.toLowerCase().replace(/[\s.\-_]/g, '');
+    return PB_BRAND_WORDS.indexOf(k) > -1 ? ' ' : m;
+  });
+  PB_BRAND_WORDS.forEach(w => {
+    s = s.replace(new RegExp('(^|[\\s()\\-_/])' + w + '(?=$|[\\s()\\-_/])', 'g'), ' ');
+  });
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function pbAliasOf(name){
+  const k = partNameKey(name);
+  for(let i = 0; i < PB_ALIASES.length; i++){
+    if(partNameKey(PB_ALIASES[i][0]) === k) return PB_ALIASES[i][1];
+  }
+  return '';
+}
+
+/* คีย์สำหรับ "ตรงกันแน่ ๆ ไม่ต้องถาม" — ตัดแบรนด์ออกแล้วใช้กติกาเดิมของแอพ */
+function pbMatchKey(name){ return partNameKey(pbStripBrand(name)); }
+
+function pbNum(v){
+  if(v === null || v === undefined || v === '') return null;
+  if(typeof v === 'object' && v.result !== undefined) v = v.result;      /* เซลล์สูตร */
+  const n = Number(String(v).replace(/[, ]/g, ''));
+  return (isFinite(n) && n > 0) ? n : null;
+}
+function pbText(v){
+  if(v === null || v === undefined) return '';
+  if(typeof v === 'object'){
+    if(v.richText) return v.richText.map(t => t.text).join('');
+    if(v.text !== undefined) return String(v.text);
+    if(v.result !== undefined) return String(v.result);
+  }
+  return String(v).trim();
+}
+
+/* ---- อ่านไฟล์เป็นโครงสร้าง (บริสุทธิ์ เทสต์ได้ ไม่พึ่งเบราว์เซอร์) ---------- */
+function pbParseSheetRows(rows){
+  const models = [];
+  const warnings = [];
+  let cur = null, mode = null, cat = '', expectModel = false;
+
+  (rows || []).forEach((raw, idx) => {
+    const r = raw || [];
+    const a = pbText(r[0]), b = pbText(r[1]), c = pbText(r[2]), d = pbText(r[3]);
+    const lineNo = idx + 1;
+    if(!a && !b && !c && !d) return;                       /* บรรทัดว่าง */
+
+    if(a === 'ยี่ห้อ' && b === 'ชื่อรุ่น'){ expectModel = true; return; }
+    if(expectModel){
+      expectModel = false;
+      if(!b){ warnings.push('บรรทัด ' + lineNo + ': หัวรุ่นไม่มีชื่อรุ่น ข้ามทั้งบล็อก'); cur = null; return; }
+      cur = { brand: a, name: b, year: c, parts: [], promos: [], line: lineNo };
+      models.push(cur); mode = null; cat = '';
+      return;
+    }
+    if(a === 'หมวด'){ cat = b || 'ทั่วไป'; mode = 'parts'; return; }
+    if(a === PB_PROMO_TITLE){ mode = 'promos'; return; }
+    if(a === 'ลำดับ') return;                               /* หัวตาราง */
+    if(/^อะไหล่ทั้งหมด/.test(a)) return;                    /* บรรทัดสรุป */
+    if(!cur) return;
+
+    /* ลำดับอาจถูกลบไปตอนแก้ใน Excel — ยึดว่ามีชื่อในช่อง B ก็พอ */
+    if(!b) return;
+    if(mode === 'promos'){
+      cur.promos.push({ name: b, price: pbNum(r[2]),
+                        items: d ? d.split(',').map(s => s.trim()).filter(Boolean) : [],
+                        line: lineNo });
+    } else {
+      cur.parts.push({ category: cat || 'ทั่วไป', name: b, brand: c, price: pbNum(r[3]), line: lineNo });
+    }
+  });
+
+  if(!models.length) warnings.push('ไม่พบหัวรุ่น (ยี่ห้อ / ชื่อรุ่น / ปี) ในไฟล์นี้เลย');
+  return { models: models, warnings: warnings };
+}
+
+/* ---- จับคู่ แล้วสร้าง "แผน" ให้ดูก่อน (ยังไม่แตะข้อมูลจริง) ---------------- */
+function pbFindModel(x){
+  const nk = s => partNameKey(s);
+  const all = state.models || [];
+  let hit = all.find(m => nk(m.brand) === nk(x.brand) && nk(m.name) === nk(x.name)
+                       && nk(m.yearRange) === nk(x.year));
+  if(hit) return { model: hit, how: 'exact' };
+  hit = all.find(m => nk(m.brand) === nk(x.brand) && nk(m.name) === nk(x.name));
+  if(hit) return { model: hit, how: 'noyear' };
+  return { model: null, how: 'none' };
+}
+
+function pbBuildImportPlan(parsed){
+  const plan = { models: [], warnings: (parsed.warnings || []).slice(),
+                 counts: { price: 0, rename: 0, add: 0, ask: 0, untouched: 0, promo: 0 } };
+
+  (parsed.models || []).forEach(xm => {
+    const found = pbFindModel(xm);
+    if(!found.model){
+      plan.warnings.push('ไม่พบรุ่น "' + [xm.brand, xm.name, xm.year].filter(Boolean).join(' ') + '" ในแอพ — ข้ามทั้งบล็อก');
+      return;
+    }
+    const model = found.model;
+    const entry = { modelId: model.id, title: [model.brand, model.name, model.yearRange].filter(Boolean).join(' '),
+                    how: found.how, price: [], rename: [], add: [], ask: [], promo: [], touched: {} };
+
+    const pool = (model.parts || []).map(p => ({ name: p.partName || '', where: 'อยู่ในรุ่นนี้แล้ว', part: p }));
+
+    xm.parts.forEach(line => {
+      const alias = pbAliasOf(line.name);
+      const wantKey = pbMatchKey(alias || line.name);
+
+      /* ชั้น 1 — ตรงกันแน่ ไม่ต้องถาม */
+      let part = (model.parts || []).find(p => pbMatchKey(p.partName) === wantKey);
+
+      if(!part){
+        /* ชั้น 2 — คล้าย: ไม่เดา ยกขึ้นให้เจ้าของตัดสิน */
+        const hits = similarPartNames(pbStripBrand(line.name),
+                      pool.map(e => ({ name: pbStripBrand(e.name), where: e.where })), 4);
+        const cands = hits.map(h => {
+          const owner = pool.find(e => pbStripBrand(e.name) === h.name);
+          return owner ? { partId: owner.part.id, name: owner.part.partName, why: h.why } : null;
+        }).filter(Boolean);
+        if(cands.length){
+          entry.ask.push({ key: 'L' + line.line, excelName: line.name, brand: line.brand,
+                           price: line.price, category: line.category, candidates: cands });
+          plan.counts.ask++;
+          return;
+        }
+        /* ชั้น 3 — ของใหม่จริง */
+        entry.add.push({ name: line.name, brand: line.brand, price: line.price, category: line.category });
+        plan.counts.add++;
+        return;
+      }
+
+      entry.touched[part.id] = true;
+      /* ชื่อใน Excel เป็นหลัก — ต่างเมื่อไรเปลี่ยนตาม */
+      if(String(part.partName || '') !== line.name){
+        entry.rename.push({ partId: part.id, from: part.partName, to: line.name });
+        plan.counts.rename++;
+      }
+      const bk = partNameKey(line.brand);
+      const cur = ((part.brands || []).find(b => partNameKey(b.brand) === bk)) || null;
+      const was = cur ? parsePrice(cur.price) : 0;
+      if((line.price || 0) !== was){
+        entry.price.push({ partId: part.id, partName: line.name, brand: line.brand,
+                           from: (was > 0 ? was : null), to: line.price });
+        plan.counts.price++;
+      }
+    });
+
+    xm.promos.forEach(pr => {
+      const hit = (model.promotions || []).find(p => partNameKey(p.name) === partNameKey(pr.name));
+      const was = hit ? parsePrice(hit.price) : 0;
+      if(!hit){
+        entry.promo.push({ kind: 'add', name: pr.name, to: pr.price, items: pr.items });
+        plan.counts.promo++;
+      } else if((pr.price || 0) !== was){
+        entry.promo.push({ kind: 'price', promoId: hit.id, name: pr.name, from: (was > 0 ? was : null), to: pr.price });
+        plan.counts.promo++;
+      }
+    });
+
+    const untouched = (model.parts || []).filter(p => !entry.touched[p.id]).length;
+    entry.untouched = untouched;
+    plan.counts.untouched += untouched;
+    plan.models.push(entry);
+  });
+
+  return plan;
+}
+
+/* ---- เขียนจริง (เรียกหลังกดยืนยันเท่านั้น) -------------------------------- */
+function pbSetBrandPrice(part, brandName, price){
+  part.brands = part.brands || [];
+  const bk = partNameKey(brandName);
+  let row = part.brands.find(b => partNameKey(b.brand) === bk);
+  if(!row){
+    if(price === null) return;
+    row = { id: uid(), brand: brandName, price: '' };
+    part.brands.push(row);
+  }
+  row.price = (price === null) ? '' : String(price);
+}
+
+/* ล้างความจำราคาเก่า "เฉพาะรุ่นนี้" — ของรุ่นอื่นไม่ถูกแตะ
+   ร้านสั่งว่าอย่าเอาราคารอบก่อนมาปน ให้เริ่มจาก Excel ใหม่ทุกครั้ง */
+function pbResetModelPriceMemory(model){
+  (model.parts || []).forEach(p => {
+    delete p.lastPrice;
+    delete p.lastPriceByBrand;
+  });
+  const key = partNameKey([model.brand, model.name].filter(Boolean).join(' '));
+  (state.masterParts || []).forEach(mp => {
+    if(mp.lastPriceByModel)      delete mp.lastPriceByModel[key];
+    if(mp.lastPriceByModelBrand) delete mp.lastPriceByModelBrand[key];
+  });
+}
+
+function pbApplyImportPlan(plan, decisions){
+  const dec = decisions || {};
+  let changed = 0;
+  (plan.models || []).forEach(entry => {
+    const model = (state.models || []).find(m => m.id === entry.modelId);
+    if(!model) return;
+
+    pbResetModelPriceMemory(model);
+
+    entry.rename.forEach(r => {
+      const p = (model.parts || []).find(x => x.id === r.partId);
+      if(p){ p.partName = r.to; changed++; }
+    });
+    entry.price.forEach(r => {
+      const p = (model.parts || []).find(x => x.id === r.partId);
+      if(p){ pbSetBrandPrice(p, r.brand, r.to); changed++; }
+    });
+    entry.add.forEach(r => {
+      const p = { id: uid(), partName: r.name, category: normCategory(r.category) || 'ทั่วไป',
+                  qty: '1', unit: 'ชิ้น', variant: '', brands: [] };
+      pbSetBrandPrice(p, r.brand, r.price);
+      (model.parts = model.parts || []).push(p);
+      changed++;
+    });
+
+    /* คู่ที่เคยไม่แน่ใจ — ทำตามที่เจ้าของเลือกบนหน้าสรุปเท่านั้น */
+    entry.ask.forEach(q => {
+      const pick = dec[q.key];
+      if(!pick || pick === 'skip') return;
+      if(pick === 'new'){
+        const p = { id: uid(), partName: q.excelName, category: normCategory(q.category) || 'ทั่วไป',
+                    qty: '1', unit: 'ชิ้น', variant: '', brands: [] };
+        pbSetBrandPrice(p, q.brand, q.price);
+        (model.parts = model.parts || []).push(p);
+        changed++;
+        return;
+      }
+      const p = (model.parts || []).find(x => x.id === pick);
+      if(p){ p.partName = q.excelName; pbSetBrandPrice(p, q.brand, q.price); changed++; }
+    });
+
+    entry.promo.forEach(r => {
+      if(r.kind === 'price'){
+        const pr = (model.promotions || []).find(x => x.id === r.promoId);
+        if(pr){ pr.price = (r.to === null ? '' : String(r.to)); changed++; }
+      } else {
+        const ids = (r.items || []).map(nm => {
+          const p = (model.parts || []).find(x => pbMatchKey(x.partName) === pbMatchKey(nm));
+          return p ? p.id : '';
+        }).filter(Boolean);
+        (model.promotions = model.promotions || []).push(
+          { id: uid(), name: r.name, price: (r.to === null ? '' : String(r.to)),
+            itemIds: ids, start: '', end: '' });
+        changed++;
+      }
+    });
+  });
+  return changed;
+}
+
+function exportSelectedModelsExcel(){
+  exportModelsToExcel(view.selectedModelIds || []);
+}
+
+/* ---- หน้าสรุปก่อนเขียน + ตัวเลือกไฟล์ ------------------------------------- */
+
+function pbMoney(n){ return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('th-TH', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function pbClosePlan(){
+  const el = document.getElementById('pb-plan-overlay');
+  if(el) el.remove();
+  view.pbPlan = null; view.pbDecisions = null;
+}
+
+function pbPickAsk(key, value){
+  view.pbDecisions = view.pbDecisions || {};
+  view.pbDecisions[key] = value;
+  pbRenderPlan();
+}
+
+function pbPlanHtml(plan){
+  const dec = view.pbDecisions || {};
+  const c = plan.counts;
+  let h = `<div class="pb-plan-head">
+      <h3>ตรวจก่อนเขียนลงแอพ</h3>
+      <p class="muted">ยังไม่มีอะไรถูกแก้จนกว่าจะกดยืนยันด้านล่าง</p>
+      <div class="pb-plan-sum">
+        <span>แก้ราคา <b>${c.price}</b></span>
+        <span>เปลี่ยนชื่อ <b>${c.rename}</b></span>
+        <span>เพิ่มใหม่ <b>${c.add}</b></span>
+        <span>ชุดโปร <b>${c.promo}</b></span>
+        <span class="${c.ask ? 'warn' : ''}">ต้องตัดสิน <b>${c.ask}</b></span>
+        <span class="muted">ไม่แตะ <b>${c.untouched}</b></span>
+      </div>
+    </div>`;
+
+  if(plan.warnings.length){
+    h += `<div class="pb-warn">${plan.warnings.map(w => `<div>${icon('x',13)} ${escapeHtml(w)}</div>`).join('')}</div>`;
+  }
+
+  plan.models.forEach(m => {
+    h += `<div class="pb-model"><div class="pb-model-title">${escapeHtml(m.title)}${
+      m.how === 'noyear' ? ' <span class="pb-tag">จับคู่โดยไม่ดูปี</span>' : ''}</div>`;
+
+    if(m.ask.length){
+      h += `<div class="pb-sec pb-sec-ask"><div class="pb-sec-h">${icon('x',13)} ต้องให้ตัดสิน ${m.ask.length} รายการ</div>`;
+      m.ask.forEach(q => {
+        const chosen = dec[q.key] || '';
+        h += `<div class="pb-ask">
+          <div class="pb-ask-q">ใน Excel: <b>${escapeHtml(q.excelName)}</b>${q.brand ? ' · ' + escapeHtml(q.brand) : ''} · ${pbMoney(q.price)}</div>
+          <div class="pb-ask-opts">`;
+        q.candidates.forEach(cd => {
+          h += `<button class="btn small ${chosen === cd.partId ? '' : 'secondary'}"
+                   onclick="pbPickAsk('${q.key}','${cd.partId}')">ตัวเดียวกับ "${escapeHtml(cd.name)}"</button>`;
+        });
+        h += `<button class="btn small ${chosen === 'new' ? '' : 'secondary'}"
+                 onclick="pbPickAsk('${q.key}','new')">คนละตัว — เพิ่มใหม่</button>
+              <button class="btn small ${chosen === 'skip' ? 'danger-solid' : 'secondary'}"
+                 onclick="pbPickAsk('${q.key}','skip')">ข้ามไปก่อน</button>`;
+        h += `</div></div>`;
+      });
+      h += `</div>`;
+    }
+
+    if(m.price.length){
+      h += `<div class="pb-sec"><div class="pb-sec-h">แก้ราคา ${m.price.length} รายการ</div><table class="pb-tbl">`;
+      m.price.forEach(r => {
+        h += `<tr><td>${escapeHtml(r.partName)}</td><td class="muted">${escapeHtml(r.brand || '—')}</td>
+               <td class="num">${pbMoney(r.from)}</td><td class="arrow">→</td><td class="num b">${pbMoney(r.to)}</td></tr>`;
+      });
+      h += `</table></div>`;
+    }
+    if(m.rename.length){
+      h += `<div class="pb-sec"><div class="pb-sec-h">เปลี่ยนชื่อ ${m.rename.length} รายการ</div><table class="pb-tbl">`;
+      m.rename.forEach(r => { h += `<tr><td>${escapeHtml(r.from)}</td><td class="arrow">→</td><td class="b">${escapeHtml(r.to)}</td></tr>`; });
+      h += `</table></div>`;
+    }
+    if(m.add.length){
+      h += `<div class="pb-sec"><div class="pb-sec-h">เพิ่มใหม่ ${m.add.length} รายการ</div><table class="pb-tbl">`;
+      m.add.forEach(r => { h += `<tr><td class="b">${escapeHtml(r.name)}</td><td class="muted">${escapeHtml(r.brand || '—')}</td>
+                                  <td class="muted">${escapeHtml(r.category || '')}</td><td class="num b">${pbMoney(r.price)}</td></tr>`; });
+      h += `</table></div>`;
+    }
+    if(m.promo.length){
+      h += `<div class="pb-sec"><div class="pb-sec-h">ชุดโปร ${m.promo.length} รายการ</div><table class="pb-tbl">`;
+      m.promo.forEach(r => {
+        h += r.kind === 'price'
+          ? `<tr><td>${escapeHtml(r.name)}</td><td class="num">${pbMoney(r.from)}</td><td class="arrow">→</td><td class="num b">${pbMoney(r.to)}</td></tr>`
+          : `<tr><td class="b">${escapeHtml(r.name)} (ชุดใหม่)</td><td class="num b">${pbMoney(r.to)}</td><td colspan="2" class="muted">${escapeHtml((r.items||[]).join(', '))}</td></tr>`;
+      });
+      h += `</table></div>`;
+    }
+    h += `<div class="pb-untouched muted">ไม่แตะอีก ${m.untouched} รายการ (ไม่มีในไฟล์)</div></div>`;
+  });
+
+  const pending = plan.models.reduce((n, m) => n + m.ask.filter(q => !(dec[q.key])).length, 0);
+  h += `<div class="pb-plan-foot">
+      ${pending ? `<span class="warn">ยังเหลือ ${pending} รายการที่ยังไม่ได้ตัดสิน</span>` : ''}
+      <button class="btn secondary" onclick="pbClosePlan()">ยกเลิก</button>
+      <button class="btn" onclick="pbConfirmImport()" ${pending ? 'disabled' : ''}>ยืนยัน เขียนลงแอพ</button>
+    </div>`;
+  return h;
+}
+
+function pbRenderPlan(){
+  const el = document.getElementById('pb-plan-body');
+  if(el && view.pbPlan) el.innerHTML = pbPlanHtml(view.pbPlan);
+}
+
+function pbShowPlan(plan){
+  view.pbPlan = plan;
+  view.pbDecisions = {};
+  const root = document.createElement('div');
+  root.id = 'pb-plan-overlay';
+  root.className = 'pb-plan-overlay no-print';
+  root.innerHTML = `<div class="pb-plan-card"><div id="pb-plan-body"></div></div>`;
+  document.body.appendChild(root);
+  pbRenderPlan();
+}
+
+function pbConfirmImport(){
+  const plan = view.pbPlan;
+  if(!plan) return;
+  const n = pbApplyImportPlan(plan, view.pbDecisions || {});
+  pbClosePlan();
+  saveState();
+  render();
+  flashToast('นำเข้าแล้ว ' + n + ' รายการ');
+}
+
+async function pbHandleImportFile(file){
+  if(!file) return;
+  try{
+    flashToast('กำลังอ่านไฟล์ ...');
+    const ExcelJS = await loadExcelLib();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    const ws = wb.worksheets[0];
+    if(!ws) throw new Error('ไฟล์นี้ไม่มีชีตข้อมูล');
+    const rows = [];
+    ws.eachRow({ includeEmpty: true }, row => {
+      const v = row.values || [];
+      rows.push([v[1], v[2], v[3], v[4]]);          /* ExcelJS เริ่มนับที่ 1 */
+    });
+    const parsed = pbParseSheetRows(rows);
+    const plan = pbBuildImportPlan(parsed);
+    if(!plan.models.length && plan.warnings.length){
+      uiModal({ message: plan.warnings.join('\n'), okLabel:'ปิด', cancelLabel:'ปิด' });
+      return;
+    }
+    pbShowPlan(plan);
+  }catch(err){
+    console.error('pbHandleImportFile', err);
+    uiModal({ message: (err && err.message) || 'อ่านไฟล์ไม่สำเร็จ', okLabel:'ปิด', cancelLabel:'ปิด' });
+  }
+}
+
+function openImportExcel(){
+  if(!isAdmin()){ flashToast('ต้องเป็นแอดมินถึงจะนำเข้าได้'); return; }
+  let inp = document.getElementById('pb-file-input');
+  if(!inp){
+    inp = document.createElement('input');
+    inp.type = 'file'; inp.id = 'pb-file-input';
+    inp.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    inp.style.display = 'none';
+    inp.onchange = () => { const f = inp.files && inp.files[0]; inp.value = ''; pbHandleImportFile(f); };
+    document.body.appendChild(inp);
+  }
+  inp.click();
+}
+
 function renderModelsTab(){
   const selecting = !!view.selectMode;
   const selectedIds = view.selectedModelIds || [];
@@ -20076,7 +20993,8 @@ function renderModelsTab(){
       presentKeys[seedKeyOf(m.brand, m.name)] = true;
     });
     const missingCount = CATALOG_VEHICLE_MODELS.filter(cm => !presentKeys[seedKeyOf(cm.brand, cm.name)]).length;
-    html += `<button class="btn secondary" onclick="toggleSelectMode()">${icon('printer',15)} เลือกพิมพ์หลายรุ่น</button>`;
+    html += `<button class="btn secondary" onclick="toggleSelectMode()">${icon('printer',15)} เลือกหลายรุ่น (พิมพ์ / ส่งออก Excel)</button>`;
+    html += `<button class="btn secondary" onclick="openImportExcel()">${icon('upload',15)} นำเข้า Excel</button>`;
     if(missingCount > 0){
       html += `<button class="btn" onclick="addCatalogModels()">${icon('plus',15)} เพิ่มรุ่นที่ขาด (${missingCount})</button>`;
     }
@@ -20090,6 +21008,7 @@ function renderModelsTab(){
       <button class="btn secondary small" onclick="selectAllModels()">เลือกทั้งหมด (ที่แสดง)</button>
       <button class="btn secondary small" onclick="clearModelSelection()">ล้างที่เลือก</button>
       <button class="btn small" onclick="openBulkPrint()" ${selectedIds.length===0?'disabled':''}>${icon('printer',13)} พิมพ์ที่เลือก (${selectedIds.length})</button>
+      <button class="btn small" onclick="exportSelectedModelsExcel()" ${selectedIds.length===0?'disabled':''}>${icon('download',13)} ส่งออก Excel (${selectedIds.length})</button>
       <button class="btn danger small" onclick="toggleSelectMode()">ยกเลิก</button>`;
   }
   html += `</div>`;
