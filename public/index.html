@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.1";
+  const APP_VERSION = "4.6.3";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3064,7 +3064,39 @@
               เทสต์: shot75.py 15/15 · บน v4.6.0 ตอบ "ยังไม่มีตัวแก้"
               ชุดเดิมผ่านหมด guard 61/61 · qguard 39 · rguard 22 · dguard 27/27 ·
               fguard 49 · hguard 78 · uguard 136 · mguard 72 · pguard 27 · xguard 27 ·
-              iguard 33 · shot69 · shot70 · shot71 · shot73 · shot74 -->
+              iguard 33 · shot69 · shot70 · shot71 · shot73 · shot74
+     v4.6.2 — dropdown ช่องทำงานในหน้ารถค้างเรียกฟังก์ชันที่ไม่มีอยู่ (assignBay)
+              เลือกช่องแล้วไม่บันทึกอะไรเลย — แก้ให้เรียก setJobBay ตัวจริง
+              หน้ารถค้างถูกปิดตั้งแต่ v4.0.0 ช่างจึงไม่เจอปัญหานี้ในการใช้งานจริง
+
+              เพิ่มเทสต์ tests\bguard.js สแกนปุ่มตาย (on*="..." ที่เรียกฟังก์ชัน
+              ที่ไม่มีอยู่) ทั้งไฟล์ ปุ่มตายตัวใหม่จะถูกจับได้ทันที
+     v4.6.3 — ลบแถวอะไหล่ / เอาชิปออก มีเลิกทำ + ชิปที่เลือกแล้วเห็นชัดในโหมดมืด
+              (spec docs/specs/part-remove-undo-dark-chips.md ข้อ H1 H2 H3)
+
+              1. ถังขยะท้ายแถวอะไหล่ลบทันทีไม่มีทางเอาคืน ราคา/แบรนด์ที่พิมพ์ไว้หายหมด
+                 และแตะชิปที่เลือกอยู่ = แถวหาย มีแค่ toast 1.6 วิ
+                 ตอนนี้ทั้งสองทางขึ้น undo-toast 6 วิ ปุ่ม "เลิกทำ" คืนแถวเดิม (object เดิม
+                 id เดิม) ที่ลำดับเดิม · jobPartUndo() เก็บแค่ jobId/row/index/preIds
+                 ตอนกดเรียก getJob(jobId) ใหม่ เพราะ snapshot แทนที่ object ใบงานได้
+                 ใบที่ถูกลบ (deletedAt) ไม่แตะ · มีแถวชื่อ+ชนิดเดียวกันที่ไม่ได้อยู่ก่อนลบ
+                 (ช่างแตะชิปเพิ่มกลับเอง) = ไม่คืนซ้ำ บอกด้วย toast
+                 ไม่เรียก rememberJobPartPrice — เลิกทำไม่ใช่การตั้งราคาใหม่
+                 หัวชุดโปรคงพฤติกรรมเดิม ไม่มีเลิกทำ (restorePromoChildLines แก้ลูกในที่)
+
+              2. ถังขยะ 21x17 px แตะยาก → พื้นที่แตะ 44x44 ไอคอนเท่าเดิม
+                 (.job-parts-table .icon-btn ไม่แก้ .icon-btn ตัวกลาง) มือถือย้ายปุ่มชิดบน
+                 และกันที่ช่องชื่อ 78px (บรรทัดลูกโปร 96px) เดิมปุ่มทับช่องชื่ออยู่แล้ว
+                 แถวลูกโปรบนมือถือ ช่องเลขแถว/ถังขยะพื้นใส ไม่เป็นสี่เหลี่ยมเขียวเข้ม · toast แถวไม่มีชื่อขึ้น "รายการ" แทน undefined
+
+              3. โหมดมืด ชิปที่เลือก (--dark) แทบเท่าพื้นการ์ด ~1.06:1 → พื้นอำพัน
+                 --hazard ตัวอักษร --hazard-dark (7.96:1) มี :not(.promo-pick-chip)
+                 ชิปโปรยังแดง โหมดสว่างสีเดิม · ทุกโหมดมีไอคอนติ๊กหน้าชิปอะไหล่ที่เลือก
+
+              เทสต์: zguard 12/12 (บน v4.6.2 ตก) · shot76cdp 5/5
+              ชุดเดิมผ่านหมด guard 61/61 · bguard 21 · dguard 27 · fguard 49 · hguard 78 ·
+              iguard 33 · mguard 72 · pguard 27 · qguard 39 · rguard 22 · uguard 136 ·
+              xguard 27 -->
 
 
 
@@ -4977,6 +5009,12 @@
   .chk-chip.checked .chk-chip-del:hover{opacity:1; color:var(--hazard);}
   .promo-pick-chip{border-color:var(--red); color:var(--red); font-weight:700;}
   .promo-pick-chip.checked{background:var(--red); color:#fff; border-color:var(--red);}
+  /* v4.6.3 — H2: โหมดมืด --dark (#16181B) แทบเท่าพื้นการ์ด (#1B1D20) ชิปที่เลือก
+     แยกไม่ออกจากที่ไม่เลือก (~1.06:1) ใช้อำพันแทน (7.96:1) ไม่แก้ตัวแปร --dark
+     :not(.promo-pick-chip) กันชิปโปรเสียสีแดง · กฎ hover กันอำพันบนอำพัน */
+  html[data-mode="dark"] .chk-chip.checked:not(.promo-pick-chip){background:var(--hazard); border-color:var(--hazard); color:var(--hazard-dark);}
+  html[data-mode="dark"] .chk-chip.checked:not(.promo-pick-chip) .chk-chip-del{color:var(--hazard-dark);}
+  html[data-mode="dark"] .chk-chip.checked:not(.promo-pick-chip) .chk-chip-del:hover{color:var(--hazard-dark); opacity:1;}
   .chk-chip-add{
     display:inline-flex; align-items:center; gap:5px; border:1.5px dashed var(--navy);
     color:var(--navy); background:var(--card-bg); font-weight:700;
@@ -5279,6 +5317,10 @@
   .force-upper{text-transform:uppercase;}
   .icon-btn{background:none;border:none;color:var(--text-2);cursor:pointer;font-size:13px;padding:2px 4px; display:inline-flex; align-items:center;}
   .icon-btn:hover{color:var(--danger);}
+  /* v4.6.3 — H1: ถังขยะในตารางอะไหล่ของใบงาน เดิม 21x17 แตะยาก ขยายพื้นที่แตะ
+     เป็น 44x44 ไอคอนยัง 13px · ไม่แก้ .icon-btn ตัวกลางที่ใช้หลายหน้า */
+  .job-parts-table .icon-btn{min-width:44px; min-height:44px; justify-content:center; padding:0; border-radius:8px;}
+  table.job-parts-table td:last-child{padding:4px;}
   .add-brand-btn{font-size:12.5px; color:var(--text-2); background:none; border:1px dashed var(--border); border-radius:5px; padding:3px 8px; cursor:pointer; font-family:inherit; white-space:nowrap;}
   .add-brand-btn:hover{border-color:var(--black); color:var(--black);}
   .part-variant-actions{display:flex; flex-direction:column; gap:4px; margin-top:6px; align-items:stretch;}
@@ -5561,9 +5603,17 @@
       position:absolute; top:8px; right:10px; width:auto; padding:0;
       font-size:12px; color:var(--text-2); font-weight:700;
     }
+    /* v4.6.3 — ถังขยะ 44x44 ชิดบน ถัดจากเลขแถว · กันที่เฉพาะช่องชื่อ (78 = 30+44+4)
+       เดิมถังขยะทับช่องชื่ออยู่แล้ว · select ชนิด/ประกันข้างล่างยังเต็มความกว้าง */
     table.job-parts-table td:last-child{
-      position:absolute; top:4px; right:34px; width:auto; padding:0;
+      position:absolute; top:0; right:30px; width:auto; padding:0;
     }
+    /* v4.6.3 — ช่องเลขแถว/ถังขยะลอย (absolute) แถวลูกโปรเดิมรับสีจาง .promo-child-row > td
+       ซ้ำอีกชั้น เป็นสี่เหลี่ยมเขียวเข้มโผล่เหนือแถว → ใสให้เห็นพื้นแถวข้างใต้ */
+    table.job-parts-table tr.promo-child-row > td:first-child,
+    table.job-parts-table tr.promo-child-row > td:last-child{background:transparent;}
+    table.job-parts-table .part-name-input{width:calc(100% - 78px);}
+    table.job-parts-table .part-name-input.promo-child-name{width:calc(100% - 96px);}
     table.job-parts-table .qty-inline{flex-direction:row; gap:8px;}
 
     /* v4.3.9 — ตาราง preview ของหน้าราคาต่อหน่วย ซ้อนเป็นการ์ดเหมือนตารางใบงาน
@@ -17248,9 +17298,16 @@ function toggleJobPartFromModel(jobId, modelPartId){
   }
 
   if(plain){
+    /* v4.6.1 — ของเดิมเอาออกเงียบ ๆ ช่างที่กดโดนซ้ำจึงไม่รู้ว่าเกิดอะไรขึ้น
+       v4.6.3 — H3: เปลี่ยน flashToast 1.6 วิ เป็น undo-toast 6 วิ มีปุ่ม "เลิกทำ"
+       คืนแถวเดิม (id เดิม แบรนด์/ราคาที่แก้ไว้ครบ) ที่ลำดับเดิม */
+    const cap = jobPartUndoCapture(job, plain);
     job.partsNeeded = job.partsNeeded.filter(p => p !== plain);
-    /* v4.6.1 — ของเดิมเอาออกเงียบ ๆ ช่างที่กดโดนซ้ำจึงไม่รู้ว่าเกิดอะไรขึ้น */
-    flashToast('เอา "' + (mp.variant ? mp.partName + ' (' + mp.variant + ')' : mp.partName) + '" ออกจากใบแล้ว');
+    saveState(true);
+    render();
+    showUndoToast('เอา "' + jobPartLabel(plain) + '" ออกจากใบแล้ว',
+      jobPartUndo(jobId, plain, cap.index, cap.preIds));
+    return;
   } else {
     /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา
        v4.3.2 — ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ดู partPriceAndBrand
@@ -17539,6 +17596,10 @@ function removeJobPart(jobId, partRowId){
   // ลบหัวชุดโปร = รายการในชุดต้องหายตามไปด้วย ไม่งั้นจะเหลือรายการลอย ๆ
   // ที่ไม่มีราคาและไม่มีใครรู้ว่ามาจากไหน
   const promoId = row && row.promoId;
+  /* v4.6.3 — H1: จับตำแหน่ง/แถวชื่อซ้ำที่มีอยู่ก่อน "ก่อน" filter เพื่อเลิกทำได้
+     หัวชุดโปร (promoId) คงพฤติกรรมเดิม ไม่มีเลิกทำ เพราะ restorePromoChildLines
+     แก้บรรทัดลูกในที่ คืนแถวเดียวไม่ถูก (spec D5) */
+  const cap = (row && !promoId) ? jobPartUndoCapture(job, row) : null;
   job.partsNeeded = job.partsNeeded.filter(p => p.id !== partRowId);
   if(promoId){
     const back = restorePromoChildLines(job, promoId);
@@ -17546,6 +17607,46 @@ function removeJobPart(jobId, partRowId){
   }
   saveState(true);
   render();
+  if(cap) showUndoToast('ลบ "' + jobPartLabel(row) + '" ออกจากใบแล้ว',
+    jobPartUndo(jobId, row, cap.index, cap.preIds));
+}
+
+/* v4.6.3 — เลิกทำการเอาแถวอะไหล่ออก (ถังขยะ H1 / แตะชิป H3)
+   closure เก็บแค่ jobId, row, index, preIds — ห้ามจับ object job ตัวเก่า
+   เพราะ snapshot (mergeSnapshotRows) แทนที่ object ใบงานใน state.jobs ได้
+   ภายใน 6 วินาที ถ้าใส่แถวกลับเข้า object เก่า จะไม่มีใครบันทึก
+   preIds = id ของแถว "อื่น" ที่ชื่อ+ชนิดเดียวกันซึ่งมีอยู่ก่อนลบ
+   ตอนเลิกทำ ถ้าเจอแถวชื่อ+ชนิดเดียวกันที่ไม่อยู่ใน preIds = ช่าง/เครื่องอื่น
+   เพิ่มกลับเข้ามาเองแล้ว → ไม่คืนซ้ำ
+   ไม่เรียก rememberJobPartPrice — เลิกทำไม่ใช่การตั้งราคาใหม่ */
+function jobPartLabel(r){
+  const name = (r && r.partName) || 'รายการ';  /* ใบเก่าบางแถวไม่มี partName → เดิมขึ้น "undefined" */
+  return r && r.variant ? name + ' (' + r.variant + ')' : name;
+}
+function jobPartSameName(a, b){
+  return (a.partName || '') === (b.partName || '') && (a.variant || '') === (b.variant || '');
+}
+function jobPartUndoCapture(job, row){
+  const list = job.partsNeeded || [];
+  return {
+    index: list.indexOf(row),
+    preIds: list.filter(p => p !== row && jobPartSameName(p, row)).map(p => p.id)
+  };
+}
+function jobPartUndo(jobId, row, index, preIds){
+  return function(){
+    const job = getJob(jobId);
+    if(!job || job.deletedAt) return;
+    job.partsNeeded = job.partsNeeded || [];
+    if(job.partsNeeded.some(p => p.id === row.id)) return;
+    if(job.partsNeeded.some(p => jobPartSameName(p, row) && preIds.indexOf(p.id) < 0)){
+      flashToast('"' + jobPartLabel(row) + '" อยู่ในใบแล้ว ไม่ได้คืนซ้ำ');
+      return;
+    }
+    job.partsNeeded.splice(Math.min(Math.max(index, 0), job.partsNeeded.length), 0, row);
+    saveState(true);
+    render();
+  };
 }
 
 function clearJobParts(jobId){
@@ -19337,7 +19438,7 @@ function renderJobPartsEditor(job){
         // ราคาติดไว้บนชิปเลย ช่างจะได้ไม่ต้องกดเข้าไปดูทีละตัวว่าตัวไหนมีราคาแล้ว
         const chipPrice = partPriceOf(mp);
         html += `<span class="chk-chip ${on?'checked':''}" onclick="onChipTap('${job.id}','${mp.id}')">
-          ${escapeHtml(label)}${chipPrice ? `<span class="chk-price">฿${escapeHtml(fmtMoney(parseMoney(chipPrice)))}</span>` : ''}
+          ${/* v4.6.3 — H2/D11: ติ๊กหน้าชื่อชิปที่ลงใบแล้ว ไม่พึ่งสีอย่างเดียว */''}${on ? icon('check',12) : ''}${escapeHtml(label)}${chipPrice ? `<span class="chk-price">฿${escapeHtml(fmtMoney(parseMoney(chipPrice)))}</span>` : ''}
           ${/* v4.2.11 — ข้อ B3: ปุ่มนี้ลบ models/ หรือ masterParts/ ซึ่งกฎ Firestore
                 ให้ "ลบ" เฉพาะแอดมิน พนักงานกดแล้ว batch ล้มทั้งก้อน
                 และการลบอะไหล่กลางกระทบทุกรุ่นรถ ไม่ใช่แค่ใบงานที่เปิดอยู่ */''}
@@ -23633,7 +23734,7 @@ function renderHeldTab(){
       <div class="held-actions">
         <label class="held-bay">
           <span>ช่องทำงาน</span>
-          <select onchange="assignBay('${escapeAttr(job.id)}', this.value)">
+          <select onchange="setJobBay('${escapeAttr(job.id)}', this.value)">
             <option value="">— ไม่ระบุ —</option>
             ${WORK_BAYS.map(b => `<option value="${escapeAttr(b)}" ${job.bay===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
           </select>
