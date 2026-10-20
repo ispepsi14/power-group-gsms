@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.3";
+  const APP_VERSION = "4.6.5";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3096,7 +3096,46 @@
               เทสต์: zguard 12/12 (บน v4.6.2 ตก) · shot76cdp 5/5
               ชุดเดิมผ่านหมด guard 61/61 · bguard 21 · dguard 27 · fguard 49 · hguard 78 ·
               iguard 33 · mguard 72 · pguard 27 · qguard 39 · rguard 22 · uguard 136 ·
-              xguard 27 -->
+              xguard 27
+     v4.6.4 — ปุ่มขนาดนิ้วบนจอสัมผัส + หน้ารุ่นรถใช้ได้บนมือถือ/iPad + ลบแบรนด์มีเลิกทำ
+              (spec docs/specs/touch-targets-model-page.md ข้อ H4 M5 M6 L3)
+
+              1. H4 — บนจอสัมผัส (บล็อก Tier 1) ปุ่ม .btn.small ทุกแบบ, ชิปอะไหล่,
+                 ตัวกรอง, select หน่วย/แบรนด์, หัวพับ, ลูกศรวัน, ปุ่มโหมดมืด, ปุ่มคอลัมน์
+                 สูง/กว้าง >= 44 px ด้วย min-height / width ไม่ขยายตัวอักษร
+                 คอมใช้เมาส์ (> 1100 px) ขนาดเท่าเดิม · ปุ่ม "เลิกทำ" ใน undo-toast สูง 44 ด้วย
+              2. M5 — ตารางอะไหล่หน้ารุ่นรถได้ class model-parts-table + data-label ทุกช่อง
+                 มือถือเป็นการ์ด (แบรนด์ที่ 2–3 ต่อก้อนเดียวกับอะไหล่) · iPad ปรับสัดส่วน
+                 คอลัมน์ให้ราคา 12500 ไม่ถูกตัด · ไม่แตะ table.parts-table ตัวกลาง
+              3. M6 — ปุ่ม × ลบแบรนด์ขึ้น undo-toast 6 วิ "ลบแบรนด์ OEM (฿6,500) แล้ว"
+                 เลิกทำคืน object เดิมที่ตำแหน่งเดิม หา model/part ใหม่ด้วย id ตอนกด
+                 (modelBrandUndo) ไม่แตะความจำราคา · หาแบรนด์ไม่เจอ = ไม่ทำอะไร ไม่ throw
+                 × ลบแบรนด์ / ถังขยะ / × ลบรุ่นบนการ์ด 44x44 บนจอสัมผัส ห่าง "+ แบรนด์" >= 8
+              4. L3 — openModel() เลื่อนขึ้นหัวหน้าหลัง render
+
+              เทสต์ใหม่: tests/tguard.js · tests/shot77cdp.js (shot77)
+     v4.6.5 — ส่งใบเสนอราคา + รูปในใบงาน เข้ากลุ่มไลน์ (รูปติดไปเฉพาะเครื่องที่แชร์ไฟล์ได้ บนคอมส่งรูปเอง)
+              (spec docs/specs/line-share-quote-photos.md + .security/.network/.backend/.dba)
+
+              1. การ์ดใหม่ใบแรกในหน้าใบงาน (ก่อน "ลายเซ็นใบรับรถ" อยู่ใน no-print ไม่มีในโหมดแก้ไข)
+                 แตะแรก = เตรียมรูป (x/N บนปุ่ม) · แตะสอง = คัดลอกข้อความ + เปิดหน้าแชร์ของเครื่อง
+                 (navigator.share แบบ sync ใน gesture เดียว — Safari) · ใบไม่มีรูปแน่นอน = แตะเดียว
+              2. buildQuoteShareText(job) — ข้อความสรุปใบเสนอราคา ยอดจาก jobPartsTotal /
+                 jobDiscountAmount / jobGrandTotal ชุดเดียวกับใบพิมพ์ ไม่มีเบอร์ ชื่อลูกค้า โน้ต หรือ URL
+              3. รูป: job.photos (string) + view.jobPhotos ลำดับเดียวกับแกลเลอรี · data: แปลงในเครื่อง
+                 · fetch เฉพาะ bucket ของร้าน (new URL().href normalize ก่อนเช็ก — กัน ../ %2e%2e)
+                   (cors/omit/no-store/redirect error/no-referrer) · ของที่ถูกทิ้งแล้ว = stale ไม่สร้าง File
+                 พร้อมกัน 3 รูป 20 วิ/รูป retry 1 ครั้ง (TypeError/timeout/5xx/429) เพดานรวม 90 วิ
+                 · blob ต้องเป็น image/ · เน็ตหลุดระหว่างเตรียม = ยกเลิก
+              4. เครื่องแชร์ไฟล์ไม่ได้ → line.me/R/share?text= (noopener) ข้อความยาวเกิน 6000
+                 ตัดรายการที่ขอบบรรทัด เก็บหัว+ยอดครบ · ของที่เตรียมหมดอายุ 10 นาที / รูปเปลี่ยน = เตรียมใหม่
+              5. loadJobPhotos ตั้งธง view.jobPhotosError / view.jobPhotosFromCache (อ่านอย่างเดียว)
+                 รายการรูปอ่านไม่ได้ = "โหลดรายการรูปไม่ได้" ไม่ใช่ "ใบนี้ไม่มีรูป"
+              ไม่เขียน Firestore / config/main / state.settings / localStorage · สถานะอยู่ใน view.jobShare
+              ล้างเมื่อเปิดใบอื่น / กลับรายการ / เปลี่ยนแท็บ / logout · การ์ดไลน์เดิมไม่เปลี่ยน
+
+              เทสต์ใหม่: tests/lguard.js
+              -->
 
 
 
@@ -5195,6 +5234,15 @@
     cursor:pointer; font-size:13px; display:flex; align-items:center;
   }
   .model-card .del:hover{color:var(--danger);}
+  /* v4.6.4 — M5: ความกว้างคอลัมน์ตารางรุ่นรถ ย้ายจาก inline style มาเป็น class
+     (inline ทับด้วย media query ไม่ได้) ค่าเดิมเป๊ะ 4/16/14/10/20/10/16/10 */
+  .model-parts-table .mpt-c-no{width:4%} .model-parts-table .mpt-c-name{width:16%} .model-parts-table .mpt-c-var{width:14%}
+  .model-parts-table .mpt-c-qty{width:10%} .model-parts-table .mpt-c-brand{width:20%} .model-parts-table .mpt-c-price{width:10%}
+  .model-parts-table .mpt-c-manage{width:16%} .model-parts-table .mpt-c-del{width:10%}
+  /* เฉพาะ "+ แบรนด์" ที่อยู่ถัด × (แถวไม่มีแบรนด์ "+ เพิ่มแบรนด์/ราคา" ไม่มี margin เหมือน 4.6.3) */
+  .model-parts-table .mpt-manage .mpt-del-brand + .add-brand-btn{margin-left:4px;}
+  /* v4.6.4 — โหมดมืด --dark ไม่ถูก override พื้น toast กลืนกับพื้นหน้า ใส่ขอบ */
+  html[data-mode="dark"] .undo-toast{border:1px solid var(--border);}
   .add-model-card{
     border:1.5px dashed var(--border); border-radius:var(--radius); display:flex; align-items:center;
     justify-content:center; color:var(--text-2); font-size:14px; cursor:pointer; min-height:88px;
@@ -5545,6 +5593,23 @@
     .workspace-head h2, .detail-head h2{font-size:17px;}
     .ui-choice{padding:15px 16px;}
     .ui-modal-btns .btn{padding:14px 16px;}
+
+    /* v4.6.4 — H4: พื้นที่แตะ >= 44 px บนจอสัมผัส ใช้ min-height/width ไม่แตะ font-size
+       (.jc-actions .btn.small ของ Tier 2 ตั้ง padding — min-height เป็นคนละ property จึงไม่ชนกัน)
+       .unit-select / .brand-name-select ต้องใส่ชื่อ class ตรง ๆ เพราะ class ชนะ select ข้างบน */
+    .btn.small, .chk-chip, .fb-select, .unit-select, .brand-name-select, .collapse-head{min-height:44px;}
+    .backup-nav .topnav-btn{min-height:44px; min-width:44px; display:inline-flex; align-items:center; justify-content:center;}
+    .day-arrow, .day-pick, .darkmode-toggle-btn, .cols-btn{width:44px; height:44px;}
+    /* v4.6.4 — M6: × ลบรุ่นชิดมุมขวาบนการ์ด 44x44 ชื่อรุ่นเว้นขวาให้ไม่ลอดใต้ปุ่ม */
+    .model-card .del{top:0; right:0; width:44px; height:44px; justify-content:center; border-radius:0 13px 0 10px;}
+    .model-card .del:active{background:var(--surface-2); color:var(--danger);}
+    .model-card .name{margin-right:34px;}
+    /* v4.6.4 — M6: × ลบแบรนด์ + ถังขยะในตารางรุ่นรถ 44x44 (ไม่แก้ .icon-btn ตัวกลาง) */
+    .model-parts-table .icon-btn{min-width:44px; min-height:44px; justify-content:center; padding:0; border-radius:8px;}
+    .model-parts-table .icon-btn:active{background:var(--surface-2);}
+    .model-parts-table .mpt-manage .add-brand-btn{min-height:44px; padding:0 10px; margin-left:0; border-color:var(--text-2);}
+    /* v4.6.4 — PM: ปุ่ม "เลิกทำ" คือทางกู้ทางเดียว ให้แตะง่าย */
+    .undo-toast button{min-height:44px; padding:0 16px;}
   }
 
   /* ---------- Tier 1b: iPad only — touch layout, but use the extra width ---------- */
@@ -5561,6 +5626,24 @@
     .job-card .jc-left .plate{font-size:17.5px;}
     /* Two-up printable forms are unreadable on a tablet; keep one column. */
     .pv-intake-row{gap:18px;}
+
+    /* v4.6.4 — M5/M6 iPad: × กับ "+ แบรนด์" แนวนอนห่าง 8 · ยุบ ลบอะไหล่/แบรนด์/ตัวแปร
+       ขยายราคา/จัดการ/ชื่อ ให้ราคา 12500 ไม่ถูกตัด (ห้าม min-width บน input — ล้น td) */
+    .model-parts-table td.mpt-manage{padding:4px; white-space:nowrap;}
+    .model-parts-table td.mpt-manage > *{vertical-align:middle;}
+    .model-parts-table td.mpt-manage .add-brand-btn{margin-left:8px;}
+    .model-parts-table td.mpt-manage .mpt-del-brand + .add-brand-btn{margin-left:8px;}
+    .model-parts-table td.mpt-del{padding:4px;}
+    .model-parts-table .mpt-c-name{width:18%} .model-parts-table .mpt-c-var{width:11%} .model-parts-table .mpt-c-brand{width:16%}
+    .model-parts-table .mpt-c-price{width:14%} .model-parts-table .mpt-c-manage{width:20%} .model-parts-table .mpt-c-del{width:7%}
+    .model-parts-table td.mpt-price{padding-left:6px; padding-right:6px;}
+    .model-parts-table .brand-price-input{padding-left:8px; padding-right:8px; text-align:right; font-variant-numeric:tabular-nums;}
+    .model-parts-table .unit-input{width:100%;}
+    .model-parts-table .part-variant-actions .add-brand-btn{white-space:normal; line-height:1.35; min-height:44px;}
+    .model-parts-table td.mpt-var{padding-left:6px; padding-right:6px;}
+    /* หัว "ลบอะไหล่" คอลัมน์ 7 % — padding 10 + break-word ตัดกลางพยางค์ ("ลบ / อะไห / ่")
+       ลด padding/ตัวอักษรหัวคอลัมน์นี้ และตัดได้เฉพาะระหว่างคำ */
+    .model-parts-table thead th:last-child{padding-left:3px; padding-right:3px; font-size:11.5px; line-height:1.35; word-break:normal; overflow-wrap:normal;}
   }
 
   /* ---------- Tier 2: phone ---------- */
@@ -5615,6 +5698,55 @@
     table.job-parts-table .part-name-input{width:calc(100% - 78px);}
     table.job-parts-table .part-name-input.promo-child-name{width:calc(100% - 96px);}
     table.job-parts-table .qty-inline{flex-direction:row; gap:8px;}
+
+    /* v4.6.4 — M5: ตารางอะไหล่หน้ารุ่นรถเป็นการ์ดบนมือถือ (scope เฉพาะ model-parts-table
+       ห้ามแตะ table.parts-table ตัวกลาง) · คงโครง rowspan เดิม แบรนด์ที่ 2+ เป็น tr แยก
+       ต่อกรอบกับการ์ดอะไหล่ตัวบน · grid 3 คอลัมน์ แบรนด์ | ราคา | × */
+    table.model-parts-table, table.model-parts-table tbody{display:block; width:100%;}
+    table.model-parts-table thead, table.model-parts-table colgroup{display:none;}
+    table.model-parts-table td{display:block; border:none; padding:0; text-align:left !important; min-width:0;}
+    table.model-parts-table td[data-label]::before{
+      content:attr(data-label); display:block; font-size:11.5px; color:var(--text-2);
+      font-weight:600; margin-bottom:3px; line-height:1.5;
+    }
+    table.model-parts-table tr.mpt-part, table.model-parts-table tr.mpt-brand-more{
+      display:grid; grid-template-columns:minmax(0,1fr) 112px 44px; column-gap:8px; row-gap:8px;
+      align-items:end; position:relative; background:var(--card-bg);
+      border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:12px;
+    }
+    table.model-parts-table tr.mpt-has-more{border-bottom:none; border-radius:10px 10px 0 0; margin-bottom:0; padding-bottom:4px;}
+    table.model-parts-table tr.mpt-brand-more{border-top:none; border-bottom:none; border-radius:0; margin-bottom:0; padding-top:4px; padding-bottom:4px;}
+    table.model-parts-table tr.mpt-brand-last{border-bottom:1px solid var(--border); border-radius:0 0 10px 10px; margin-bottom:12px; padding-bottom:10px;}
+    table.model-parts-table tr.mpt-brand-more td[data-label]::before{display:none;}
+    table.model-parts-table .mpt-name, table.model-parts-table .mpt-nobrand{grid-column:1 / -1;}
+    table.model-parts-table .mpt-name{padding-right:92px;}
+    table.model-parts-table .mpt-var{grid-column:1 / 2;}
+    table.model-parts-table .mpt-qty{grid-column:2 / -1; align-self:start;}
+    table.model-parts-table .mpt-brand{grid-column:1;}
+    table.model-parts-table .mpt-price{grid-column:2;}
+    /* × และ + แบรนด์ เป็น item ของ grid เอง — ::before ของ td ที่ display:contents
+       ยังเป็น grid item อยู่ (ช่องว่าง 60 px) จึงต้องซ่อน · specificity ต้องสูงกว่า td[data-label]::before */
+    table.model-parts-table td.mpt-manage{display:contents;}
+    table.model-parts-table td.mpt-manage[data-label]::before{display:none;}
+    table.model-parts-table .mpt-del-brand{grid-column:3; justify-self:end;}
+    table.model-parts-table .mpt-manage .add-brand-btn{grid-column:1 / -1; justify-self:start; margin-left:0;}
+    table.model-parts-table td.mpt-manage .mpt-del-brand + .add-brand-btn{margin-left:0;}
+    table.model-parts-table td.mpt-no{position:absolute; top:12px; right:58px; width:auto; font-size:12px; font-weight:700; color:var(--text-2);}
+    table.model-parts-table td.mpt-no[data-label]::before{content:'#'; display:inline; margin:0;}
+    table.model-parts-table td.mpt-del{position:absolute; top:4px; right:4px; width:auto;}
+    table.model-parts-table td.mpt-del[data-label]::before{display:none;}
+    table.model-parts-table .part-name-input{width:100%;}
+    table.model-parts-table .unit-input{width:100%;}
+    table.model-parts-table .qty-inline{flex-direction:row; gap:8px;}
+    table.model-parts-table .qty-input{width:64px; flex:0 0 64px;}
+    table.model-parts-table .unit-select{flex:1 1 auto; min-width:88px;}
+    table.model-parts-table .brand-price-input{width:100%; text-align:right; font-variant-numeric:tabular-nums;}
+    table.model-parts-table .part-variant-actions{flex-direction:row; flex-wrap:wrap; gap:8px;}
+    table.model-parts-table .part-variant-actions .add-brand-btn{width:auto;}
+    table.model-parts-table .add-brand-btn{min-height:44px; padding:0 14px; font-size:13px;}
+    table.model-parts-table tr.parts-cat-row{display:block; margin:14px 0 8px;}
+    table.model-parts-table td.parts-cat-header{border-radius:8px; padding:8px 10px;}
+    table.model-parts-table tbody tr:hover, table.model-parts-table tbody tr:hover td{background:var(--card-bg);}
 
     /* v4.3.9 — ตาราง preview ของหน้าราคาต่อหน่วย ซ้อนเป็นการ์ดเหมือนตารางใบงาน
        ไม่ปล่อยให้เลื่อนแนวนอน เพราะคอลัมน์ที่สำคัญที่สุด (ราคาเดิม → ราคาใหม่)
@@ -11120,6 +11252,7 @@ function handleAuthChange(user){
   if(!user){
     currentUser = null;
     dataReady = false;
+    clearJobShare();
     render();   // goes through the hub gate first, then falls through to renderLogin()
     return;
   }
@@ -11824,6 +11957,7 @@ function genJobNumber(){
 
 /* ---------------- Nav ---------------- */
 function goTab(tab){
+  clearJobShare();
   view.tab = tab;
   view.jobId = null;
   view.modelId = null;
@@ -11845,6 +11979,7 @@ function goTab(tab){
   if(tab === 'users') loadUsersList();
 }
 function openJob(id){
+  clearJobShare();   // v4.6.5 — ห้ามส่งของที่เตรียมจากใบเก่าในหน้าใบใหม่
   view.jobId = id; view.tab = 'detail'; view.je_editing = false; view.je_jobId = null;
   view.line_queueNo=''; view.line_priceNote=''; view.line_prevDate=null; view.line_prevWork=null;
   // v4.3.8 — การกดเปิดใบคือเจตนาของคน ไม่ใช่รอบวาดอัตโนมัติ จึงให้ลองดึงประวัติใหม่ได้
@@ -11853,7 +11988,7 @@ function openJob(id){
   render();
   loadJobPhotos(id);
 }
-function backToList(){ view.jobId = null; view.tab = 'joblist'; view.je_editing = false; view.je_jobId = null; render(); }
+function backToList(){ clearJobShare(); view.jobId = null; view.tab = 'joblist'; view.je_editing = false; view.je_jobId = null; render(); }
 
 /* ---------------- Job list / search ---------------- */
 function onSearchInput(value){
@@ -13239,9 +13374,13 @@ function loadJobPhotos(jobId){
   if(!db) return;
   view.jobPhotosFor = jobId;
   view.jobPhotos = null;
+  // v4.6.5 — แยก "อ่านรายการรูปไม่ได้" ออกจาก "ไม่มีรูป" ให้ปุ่มส่งเข้าไลน์ (อยู่ใน view เท่านั้น)
+  view.jobPhotosError = false;
+  view.jobPhotosFromCache = false;
   db.collection('jobPhotos').where('jobId', '==', jobId).get()
     .then(snap => {
       if(view.jobPhotosFor !== jobId) return;   // user already navigated away
+      view.jobPhotosFromCache = !!(snap && snap.metadata && snap.metadata.fromCache);
       const rows = [];
       snap.forEach(d => rows.push(Object.assign({}, d.data(), { id: d.id })));
       rows.sort((a,b) => String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
@@ -13252,7 +13391,7 @@ function loadJobPhotos(jobId){
     })
     .catch(err => {
       console.error('loadJobPhotos', err);
-      if(view.jobPhotosFor === jobId){ view.jobPhotos = []; safeRender(); }
+      if(view.jobPhotosFor === jobId){ view.jobPhotosError = true; view.jobPhotos = []; safeRender(); }
     });
 }
 
@@ -14551,7 +14690,8 @@ function emptyTrash(){
 }
 
 /* ================= Catalog: รุ่นรถ (models) ================= */
-function openModel(id){ view.modelId = id; view.modelTab = 'parts'; view.modelEditOpen = false; render(); }
+// v4.6.4 — L3: เลื่อนขึ้นหัวหน้า "หลัง" render (render แทน DOM ใหม่) ไม่ใช้ smooth
+function openModel(id){ view.modelId = id; view.modelTab = 'parts'; view.modelEditOpen = false; render(); window.scrollTo(0, 0); }
 // Jumps from the check-in page straight to a model's พรีวิว/พิมพ์ tab, so staff can
 // preview/print the quote form for the vehicle being checked in without losing
 // their place (check-in state itself isn't cleared, so coming back keeps progress).
@@ -15153,12 +15293,40 @@ function addBrandToPart(modelId, partId){
   render();
 }
 
+// v4.6.4 — M6: ลบแบรนด์มีเลิกทำ 6 วิ (แบบเดียวกับ jobPartUndo)
+// closure จับแค่ modelId / partId / brand (object เดิม) / index — ห้ามจับ model/part
+// เพราะ snapshot ของ models แทนที่ object ใน state.models ได้ระหว่าง toast ค้าง
+// ไม่แตะความจำราคา (lastPrice*, rememberJobPartPrice) — ราคาตั้ง brands[].price เป็นชั้นของตัวเอง
 function deleteBrand(modelId, partId, brandId){
   const model = getModel(modelId);
-  const part = model.parts.find(p => p.id === partId);
-  part.brands = part.brands.filter(b => b.id !== brandId);
+  const part = model && (model.parts || []).find(p => p.id === partId);
+  const list = (part && part.brands) || [];
+  const index = list.findIndex(b => b.id === brandId);
+  if(index < 0) return;
+  const brand = list[index];
+  part.brands = list.filter(b => b.id !== brandId);
   saveState(true);
   render();
+  showUndoToast(modelBrandUndoMsg(brand), modelBrandUndo(modelId, partId, brand, index));
+}
+// ข้อความดิบ — showUndoToast ใช้ textContent ห้าม escape ก่อน · ห้าม fmtMoney (ได้ .00)
+function modelBrandUndoMsg(b){
+  let name = String((b && b.brand) || '').trim() || 'ไม่ระบุแบรนด์';
+  if(name.length > 16) name = name.slice(0, 16) + '…';
+  const n = parsePrice(b && b.price);
+  return 'ลบแบรนด์ ' + name + (n ? ' (฿' + Math.round(n).toLocaleString('en-US') + ')' : '') + ' แล้ว';
+}
+function modelBrandUndo(modelId, partId, brand, index){
+  return function(){
+    const model = getModel(modelId);
+    const part = model && (model.parts || []).find(p => p.id === partId);
+    if(!part) return;
+    part.brands = part.brands || [];
+    if(part.brands.some(b => b.id === brand.id)) return;
+    part.brands.splice(Math.min(Math.max(index, 0), part.brands.length), 0, brand);
+    saveState(true);
+    render();
+  };
 }
 
 function onBrandFieldInput(modelId, partId, brandId, field, value){
@@ -18374,6 +18542,422 @@ function buildLineSummaryText(job){
 // made on top of the auto-generated draft — rather than regenerating fresh text from
 // the job every time. The box is still pre-filled with buildLineSummaryText() output
 // on each render, so nothing has to be typed from scratch; it's just editable now.
+/* ---------------- v4.6.5 — ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์ (spec docs/specs/line-share-quote-photos.md) ----------------
+   อ่านอย่างเดียว: ไม่เขียน Firestore / saveState / state.settings / config/main / localStorage
+   สถานะทั้งหมดอยู่ใน view.jobShare (ล้างเมื่อเปิดใบอื่น / ออกจากใบ / logout)
+   จังหวะ 2 แตะ: แตะแรก = เตรียมรูป (async) · แตะสอง = clipboard + navigator.share แบบ sync
+   (Safari ยอมให้ share เฉพาะใน gesture — ห้ามมี await/fetch ก่อน share)
+   ข้อความใบเสนอราคาเป็น plain text ใช้ได้แค่ share / clipboard / URL line.me ห้ามเข้า innerHTML */
+let PHOTO_SHARE_TIMEOUT_MS = 20000;     // ต่อรูป นับถึง .blob() เสร็จ
+let PHOTO_SHARE_RETRY_MS = 1000;        // retry 1 ครั้งเฉพาะ TypeError / timeout / 5xx / 429
+let PHOTO_SHARE_BUDGET_MS = 90000;      // เพดานเวลาเตรียมรวมทั้งใบ
+let JOB_SHARE_TTL_MS = 600000;          // ของที่เตรียมไว้ใช้ได้ 10 นาที
+let JOB_SHARE_READY_GUARD_MS = 600;     // ปุ่มเพิ่งพร้อมส่ง ไม่รับแตะช่วงนี้ (กันแตะเบิ้ล)
+let LINE_SHARE_URL_MAX = 6000;          // ความยาวข้อความหลัง encode ของทางสำรอง line.me
+const PHOTO_SHARE_POOL = 3;
+// security M6: fetch ได้เฉพาะไฟล์ใน bucket ของร้าน (jobPhotos.url พนักงานเขียนอะไรก็ได้)
+const PHOTO_SHARE_URL_PREFIX = 'https://firebasestorage.googleapis.com/v0/b/power-group-gsms.firebasestorage.app/o/';
+const JSHARE_MSG = {
+  listFail: 'โหลดรายการรูปไม่ได้ เช็คเน็ตแล้วกลับไปเปิดใบนี้ใหม่',
+  offline: 'ไม่มีอินเทอร์เน็ต ส่งเข้าไลน์ไม่ได้ตอนนี้',
+  preparing: 'อย่าเพิ่งออกจากหน้านี้',
+  ready: 'รูปพร้อมแล้ว ถ้า LINE ไม่ขึ้นข้อความ ให้กดวางในแชท',
+  copied: 'คัดลอกข้อความแล้ว ถ้า LINE ไม่ขึ้นข้อความ กดวางในแชท',
+  noPhoto: 'ใบนี้ไม่มีรูป ส่งแค่ข้อความ',
+  noFilesHere: 'รูปแนบไม่ได้บนเครื่องนี้ จะส่งไปแค่ข้อความ ต้องส่งรูปเองจากแกลเลอรี',
+  lineSent: 'รูปแนบไม่ได้บนเครื่องนี้ ส่งไปแค่ข้อความ ต้องส่งรูปเองจากแกลเลอรี',
+  lineShort: 'รูปแนบไม่ได้บนเครื่องนี้ และรายการยาว ส่งไปแบบย่อ (ยอดครบ) รายการเต็มอยู่ในคลิปบอร์ด กดวางในแชท',
+  shareErr: 'เปิดหน้าส่งไม่สำเร็จ กดปุ่มอีกครั้ง',
+  clipFail: 'คัดลอกข้อความไม่ได้ ถ้า LINE ไม่ขึ้นข้อความ ให้ส่งใหม่จากคอมหน้าร้าน',
+  expired: 'รูปที่เตรียมไว้หมดเวลา กดอีกครั้งเพื่อเตรียมใหม่',
+  changed: 'รูปในใบเปลี่ยน กดอีกครั้งเพื่อเตรียมใหม่'
+};
+
+// ข้อความสรุปใบเสนอราคา — ยอดมาจากตัวคำนวณชุดเดียวกับใบพิมพ์ (renderJobQuotePage) เท่านั้น
+// ดึงทีละฟิลด์ตาม allowlist (security M1): ไม่มีเบอร์ ชื่อลูกค้า โน้ตภายใน หรือ URL
+function buildQuoteShareText(job){
+  const v = getVehicle(job.vehicleId) || {};
+  const L = [];
+  L.push(job.queueNo ? 'ใบเสนอราคา · คิว ' + job.queueNo : 'ใบเสนอราคา');
+  L.push('ทะเบียน ' + (v.plate ? v.plate + (v.province ? ' ' + v.province : '') : '-'));
+  const car = [v.brand, v.model].filter(Boolean).join(' ');
+  if(car) L.push('รถ ' + car);
+  L.push('เลขที่ ' + (job.jobNumber || '-'));
+  L.push('');
+  const parts = Array.isArray(job.partsNeeded) ? job.partsNeeded : [];
+  if(!parts.length){ L.push('ยังไม่มีรายการเสนอราคา'); return L.join('\n'); }
+  L.push('รายการ (' + parts.length + ')');
+  parts.forEach((p, i) => {
+    const promo = isPromoChild(p);
+    const qty = parseQty(p.qty), price = parseLinePrice(p.price);
+    L.push((i + 1) + ') ' + (promo ? '└ ' : '') + (p.partName || '') +
+      (p.variant ? ' (' + p.variant + ')' : '') + (isDeductRow(p) ? ' (หักออก)' : ''));
+    const qtyUnit = (qty + ' ' + (p.unit || '')).trim();
+    const tail = promo ? 'อยู่ในรายการโปร'
+      : !price ? 'ราคา -'
+      : 'ละ ' + fmtMoney(price) + ' · รวม ' + fmtMoney(price * qty);
+    L.push('   ' + qtyUnit + ' · ' + (p.brand || '-') + ' · ' + tail);
+  });
+  L.push('');
+  if(!jobHasPricedLines(job)){ L.push('ยังไม่ได้ใส่ราคา'); return L.join('\n'); }
+  const total = jobPartsTotal(job), d = jobDiscountAmount(job), g = jobGrandTotal(job);
+  if(d > 0){
+    L.push('ยอดรวมอะไหล่ ' + fmtMoney(total) + ' บาท');
+    const dLabel = job.discountType === 'percent' ? 'หักส่วนลด ' + String(job.discountValue) + '%' : 'หักส่วนลด';
+    L.push(dLabel + ' − ' + fmtMoney(d) + ' บาท');
+  } else {
+    L.push('รวมเป็นเงิน ' + fmtMoney(total) + ' บาท');
+  }
+  L.push('ยอดสุทธิที่ต้องชำระ ' + fmtMoney(g) + ' บาท');
+  return L.join('\n');
+}
+
+// src รูปทั้งหมดของใบ ลำดับเดียวกับแกลเลอรี: job.photos (string) ก่อน แล้ว view.jobPhotos
+// ข้ามของว่าง/ซ้ำ ไม่กรอง allowlist (กรองตอนเตรียม) · ไม่นับ thumb / ลายเซ็น
+function jobSharePhotoSources(job){
+  const out = [], seen = Object.create(null);
+  const add = s => { if(s && typeof s === 'string' && !seen[s]){ seen[s] = true; out.push(s); } };
+  (Array.isArray(job.photos) ? job.photos : []).forEach(p => { if(typeof p === 'string') add(p); });
+  if(view.jobPhotosFor === job.id && Array.isArray(view.jobPhotos)) view.jobPhotos.forEach(p => add(photoSrc(p)));
+  return out;
+}
+
+// รายการรูปของใบนี้อ่านไม่สำเร็จ (query ล้ม หรือได้ผลว่างจากแคชตอนเน็ตใช้ไม่ได้) — ห้ามถือว่า "ไม่มีรูป"
+function jobSharePhotoListFailed(jobId){
+  return view.jobPhotosFor === jobId && Array.isArray(view.jobPhotos) &&
+    (!!view.jobPhotosError || (!!view.jobPhotosFromCache && view.jobPhotos.length === 0));
+}
+
+// แปลง src หนึ่งรูปเป็น Blob → { blob } หรือ { fail, http } (http = ล้มแบบมีคำตอบ ไม่ใช่เน็ตล้ม)
+function jobShareFetchOne(src, st){
+  if(/^data:image\//.test(src)){
+    const b = dataUrlToBlob(src);
+    return Promise.resolve(b && b.size > 0 && /^image\//.test(b.type || '') ? { blob: b } : { fail: true, http: true });
+  }
+  // security M6-3: normalize ก่อนเช็ก allowlist (กัน ../ และ %2e%2e) แล้ว fetch ด้วยค่าที่ normalize แล้วเท่านั้น
+  let u;
+  try { u = new URL(String(src)); } catch(e){ return Promise.resolve({ fail: true, http: true }); }
+  if(u.protocol !== 'https:' || u.host !== 'firebasestorage.googleapis.com' ||
+     u.pathname.indexOf('/v0/b/power-group-gsms.firebasestorage.app/o/') !== 0 ||
+     u.href.indexOf(PHOTO_SHARE_URL_PREFIX) !== 0){
+    return Promise.resolve({ fail: true, http: true });
+  }
+  src = u.href;
+  const attempt = () => new Promise(resolve => {
+    if(st.cancelled) return resolve({ fail: true, http: false });
+    const ac = new AbortController();
+    st.ctrls.push(ac);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; try { ac.abort(); } catch(e){} }, PHOTO_SHARE_TIMEOUT_MS);
+    const done = r => { clearTimeout(timer); resolve(r); };
+    let req;
+    try {
+      req = fetch(src, { mode:'cors', credentials:'omit', cache:'no-store', redirect:'error',
+                         referrerPolicy:'no-referrer', signal: ac.signal });
+    } catch(err){ req = Promise.reject(err); }
+    req.then(res => {
+      if(!res || !res.ok){
+        const s = res ? res.status : 0;
+        done({ fail: true, http: true, retry: s >= 500 || s === 429 });
+        return;
+      }
+      return res.blob().then(b => {
+        done(b && b.size > 0 && /^image\//.test(b.type || '') ? { blob: b } : { fail: true, http: true });
+      });
+    }).catch(err => {
+      done({ fail: true, http: false, retry: !st.cancelled && (timedOut || (err && err.name === 'TypeError')) });
+    });
+  });
+  return attempt().then(r => {
+    if(!r.fail || !r.retry || st.cancelled) return r;
+    return new Promise(res => setTimeout(res, PHOTO_SHARE_RETRY_MS)).then(attempt);
+  });
+}
+
+function jobShareAbort(st){
+  if(!st) return;
+  st.cancelled = true;
+  (st.ctrls || []).forEach(c => { try { c.abort(); } catch(e){} });
+}
+
+// ทิ้งของที่เตรียม (เปิดใบอื่น / ออกจากใบ / logout) — security M8, AC30
+function clearJobShare(){
+  const st = view.jobShare;
+  view.jobShare = null;
+  if(st && st.phase === 'preparing'){
+    jobShareAbort(st);
+    if(st.finish) st.finish();
+  }
+}
+
+// ขั้นเตรียม (async) → { status, text, files, total, failed }
+// status: 'ok' | 'offline' | 'loading' | 'busy' (+ 'denied' / 'missing' / 'stale' กรณีพิเศษ)
+function prepareJobShare(jobId, onProgress){
+  if(!currentUser) return Promise.resolve({ status: 'denied', text: '', files: [], total: 0, failed: 0 });
+  const cur = view.jobShare;
+  if(cur && cur.jobId === jobId && cur.phase === 'preparing') return Promise.resolve({ status: 'busy', text: '', files: [], total: 0, failed: 0 });
+  if(navigator.onLine === false){
+    view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.offline], warn: true };
+    return Promise.resolve({ status: 'offline', text: '', files: [], total: 0, failed: 0 });
+  }
+  const job = getJob(jobId);
+  if(!job) return Promise.resolve({ status: 'missing', text: '', files: [], total: 0, failed: 0 });
+  // รายการรูปยังไม่รู้ครบ → ห้ามเตรียม (ไม่งั้นจะส่งออกไปแบบ 0 รูปเงียบ ๆ)
+  if(view.jobPhotosFor !== jobId || !Array.isArray(view.jobPhotos) || jobSharePhotoListFailed(jobId)){
+    return Promise.resolve({ status: 'loading', text: '', files: [], total: 0, failed: 0 });
+  }
+  const srcs = jobSharePhotoSources(job);
+  const st = view.jobShare = {
+    jobId, phase: 'preparing', done: 0, total: srcs.length, failed: 0, readyAt: 0,
+    files: [], canFiles: false, srcKey: JSON.stringify(srcs), photosRef: view.jobPhotos,
+    ctrls: [], cancelled: false, active: 0, status: [JSHARE_MSG.preparing], warn: false
+  };
+  const results = new Array(srcs.length);
+  let next = 0, finished = false, budget = null;
+  return new Promise(resolveAll => {
+    const finish = () => {
+      if(finished) return;
+      finished = true;
+      clearTimeout(budget);
+      // STALE-1: ของที่เตรียมถูกทิ้งแล้ว (เปิดใบอื่น/ออก) → จบแบบ stale ทันที ไม่สร้าง File
+      if(view.jobShare !== st && !st.offline){
+        const got = results.filter(r => r && r.blob).length;
+        return resolveAll({ status: 'stale', text: '', files: [], total: srcs.length, failed: srcs.length - got });
+      }
+      const safe = String(job.jobNumber || '').replace(/[^A-Za-z0-9-]/g, '') || 'job';
+      const files = [];
+      let netFail = 0;
+      results.forEach(r => {
+        if(r && r.blob){
+          const ty = r.blob.type;
+          const ext = /png/.test(ty) ? 'png' : /webp/.test(ty) ? 'webp' : 'jpg';
+          try {
+            files.push(new File([r.blob], safe + '-' + String(files.length + 1).padStart(2, '0') + '.' + ext, { type: ty }));
+          } catch(e){ /* สร้างไฟล์ไม่ได้ = นับเป็นรูปที่ล้ม */ }
+        } else if(!r || !r.http){
+          netFail++;
+        }
+      });
+      const failed = srcs.length - files.length;
+      if(st.offline){
+        // เน็ตหลุดระหว่างเตรียม (event offline) — ทิ้งทั้งหมด กลับร่างแรก
+        if(view.jobShare === st){
+          view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.offline], warn: true };
+          flashToast(JSHARE_MSG.offline);
+        }
+        return resolveAll({ status: 'offline', text: '', files: [], total: srcs.length, failed });
+      }
+      if(view.jobShare !== st){
+        return resolveAll({ status: 'stale', text: '', files: [], total: srcs.length, failed });
+      }
+      st.files = files; st.failed = failed; st.done = srcs.length;
+      let can = false;
+      try { can = files.length > 0 && !!navigator.share && !!navigator.canShare && !!navigator.canShare({ files }); } catch(e){ can = false; }
+      st.canFiles = can;
+      st.phase = 'ready';
+      st.readyAt = Date.now();
+      st.warn = false;
+      st.prepWarn = '';
+      st.retryBtn = srcs.length > 0 && failed > 0;
+      if(srcs.length && !files.length){
+        st.prepWarn = netFail >= 2
+          ? 'โหลดรูปไม่ได้ทั้ง ' + srcs.length + ' รูป (เน็ตอาจมีปัญหา) ส่งได้แค่ข้อความ'
+          : 'โหลดรูปไม่ได้ทั้ง ' + srcs.length + ' รูป ส่งได้แค่ข้อความ';
+      } else if(failed){
+        st.prepWarn = 'แนบได้ ' + files.length + ' จาก ' + srcs.length + ' รูป (โหลดไม่ได้ ' + failed + ' รูป)';
+      }
+      if(st.prepWarn){
+        st.status = [st.prepWarn]; st.warn = true; flashToast(st.prepWarn);
+      } else {
+        st.status = [JSHARE_MSG.ready];
+      }
+      if(files.length && !can){ st.status = [JSHARE_MSG.noFilesHere]; st.warn = true; }
+      resolveAll({ status: 'ok', text: buildQuoteShareText(job), files, total: srcs.length, failed });
+    };
+    st.finish = finish;
+    budget = setTimeout(() => { jobShareAbort(st); finish(); }, PHOTO_SHARE_BUDGET_MS);
+    const pump = () => {
+      if(st.cancelled || finished) return;
+      if(st.done >= srcs.length) return finish();
+      while(next < srcs.length && st.active < PHOTO_SHARE_POOL){
+        const i = next++;
+        st.active++;
+        jobShareFetchOne(srcs[i], st).then(r => {
+          results[i] = r;
+          st.active--;
+          if(finished) return;
+          st.done++;
+          if(onProgress){ try { onProgress(st.done, srcs.length); } catch(e){} }
+          pump();
+        });
+      }
+    };
+    if(!srcs.length) return finish();
+    pump();
+  });
+}
+
+// line.me รับ URL ยาวจำกัด — ตัดรายการที่ขอบบรรทัด (ทีละคู่ ชื่อ+รายละเอียด) เก็บหัวและบล็อกยอดครบเสมอ (security M4)
+function jobShareLineText(full){
+  if(encodeURIComponent(full).length <= LINE_SHARE_URL_MAX) return { text: full, short: false };
+  const ls = full.split('\n');
+  const start = ls.findIndex(l => /^รายการ \(\d+\)$/.test(l));
+  const lastBlank = ls.lastIndexOf('');
+  if(start < 0 || lastBlank <= start) return { text: full, short: false };
+  const head = ls.slice(0, start + 1), items = ls.slice(start + 1, lastBlank), tail = ls.slice(lastBlank);
+  const build = k => head.concat(items.slice(0, k), ['...', 'รายการเต็มอยู่ในคลิปบอร์ด กดวางในแชท'], tail).join('\n');
+  let k = items.length - (items.length % 2);
+  while(k > 0 && encodeURIComponent(build(k)).length > LINE_SHARE_URL_MAX) k -= 2;
+  return { text: build(k), short: true };
+}
+
+// ขั้นส่ง — เรียกแบบ sync จากแตะของผู้ใช้ ห้ามมี await/fetch ก่อน navigator.share
+function sendJobShare(jobId){
+  if(!currentUser) return;
+  const st = view.jobShare;
+  if(!st || st.jobId !== jobId || view.jobId !== jobId) return;
+  if(st.phase !== 'ready' && st.phase !== 'sent') return;           // sharing = หน้าแชร์เปิดอยู่
+  if(Date.now() - st.readyAt < JOB_SHARE_READY_GUARD_MS) return;    // กันแตะเบิ้ล
+  if(navigator.onLine === false){
+    st.status = [JSHARE_MSG.offline]; st.warn = true;
+    flashToast(JSHARE_MSG.offline); render(); return;
+  }
+  if(Date.now() - st.readyAt > JOB_SHARE_TTL_MS){
+    view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.expired], warn: false };
+    render(); return;
+  }
+  const job = getJob(jobId);
+  if(!job) return;
+  if(view.jobPhotos !== st.photosRef || JSON.stringify(jobSharePhotoSources(job)) !== st.srcKey){
+    view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.changed], warn: false };
+    render(); return;
+  }
+  const text = buildQuoteShareText(job);   // สร้างใหม่ตอนแตะ = ยอดล่าสุดเสมอ
+  st.clipFail = false;
+  const markClipFail = () => {
+    if(view.jobShare !== st || st.clipFail) return;
+    st.clipFail = true;
+    st.status = st.status.concat([JSHARE_MSG.clipFail]); st.warn = true;
+    safeRender();
+  };
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(markClipFail);
+    else markClipFail();
+  } catch(e){ markClipFail(); }
+  const prevPhase = st.phase;
+  const done = (statusMsg, toastMsg, isWarn) => {
+    if(view.jobShare !== st) return;
+    st.phase = 'sent';
+    const lines = [statusMsg];
+    if(st.prepWarn) lines.push(st.prepWarn);
+    if(st.clipFail) lines.push(JSHARE_MSG.clipFail);
+    st.status = lines;
+    st.warn = !!(isWarn || st.prepWarn || st.clipFail);
+    flashToast(toastMsg || statusMsg);
+    safeRender();
+  };
+  const fail = err => {
+    if(view.jobShare !== st) return;
+    st.phase = prevPhase;
+    if(err && err.name === 'AbortError'){ safeRender(); return; }   // ผู้ใช้ปิดหน้าแชร์เอง ไม่ต้องบอก
+    st.status = [JSHARE_MSG.shareErr]; st.warn = true;
+    flashToast(JSHARE_MSG.shareErr);
+    safeRender();
+  };
+  const share = data => {
+    st.phase = 'sharing';
+    let p;
+    try { p = navigator.share(data); } catch(err){ p = Promise.reject(err); }
+    return Promise.resolve(p);
+  };
+  if(st.files.length && st.canFiles){
+    share({ files: st.files, text }).then(() => done(JSHARE_MSG.copied), fail);
+  } else if(!st.files.length && navigator.share){
+    share({ text }).then(() => done(JSHARE_MSG.copied, st.total === 0 ? JSHARE_MSG.noPhoto : '', false), fail);
+  } else {
+    const lt = jobShareLineText(text);
+    window.open('https://line.me/R/share?text=' + encodeURIComponent(lt.text), '_blank', 'noopener');
+    done(lt.short ? JSHARE_MSG.lineShort : JSHARE_MSG.lineSent, '', true);
+  }
+}
+
+// ปุ่มหลักของการ์ด: แตะแรก = เตรียม · แตะเมื่อพร้อม = ส่ง · ใบที่ไม่มีรูปแน่นอน = ส่งในแตะเดียว
+function onJobShareTap(jobId){
+  if(!currentUser) return;
+  const st = view.jobShare && view.jobShare.jobId === jobId ? view.jobShare : null;
+  if(st && (st.phase === 'ready' || st.phase === 'sent' || st.phase === 'sharing')) return sendJobShare(jobId);
+  if(st && st.phase === 'preparing') return;
+  if(navigator.onLine === false){
+    view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.offline], warn: true };
+    flashToast(JSHARE_MSG.offline); render(); return;
+  }
+  const job = getJob(jobId);
+  if(!job || view.jobPhotosFor !== jobId || !Array.isArray(view.jobPhotos)) return;   // กำลังโหลดรายการรูป
+  if(jobSharePhotoListFailed(jobId)){ flashToast(JSHARE_MSG.listFail); return; }
+  if(jobSharePhotoSources(job).length === 0){
+    // N = 0 แน่นอน (รายการรูปโหลดสำเร็จจากเซิร์ฟเวอร์) → ทางลัด ส่งในแตะเดียวกันแบบ sync
+    view.jobShare = { jobId, phase: 'ready', done: 0, total: 0, failed: 0, readyAt: Date.now() - JOB_SHARE_READY_GUARD_MS,
+      files: [], canFiles: false, srcKey: '[]', photosRef: view.jobPhotos, status: [], warn: false, prepWarn: '' };
+    return sendJobShare(jobId);
+  }
+  const p = prepareJobShare(jobId, (x, n) => {
+    const el = document.getElementById('jshare-label');
+    if(el) el.textContent = 'กำลังเตรียมรูป ' + x + '/' + n;
+  });
+  render();   // วาดร่าง "กำลังเตรียม" (aria-disabled) ทันที
+  p.then(() => render());
+}
+
+function retryJobShare(jobId){
+  if(!currentUser) return;
+  const st = view.jobShare;
+  if(st && st.jobId === jobId && (st.phase === 'preparing' || st.phase === 'sharing')) return;
+  view.jobShare = null;
+  onJobShareTap(jobId);
+}
+
+// เน็ตหลุดระหว่างเตรียม → ยกเลิก fetch ที่ค้าง กลับร่างแรก + สถานะออฟไลน์
+window.addEventListener('offline', () => {
+  const st = view.jobShare;
+  if(st && st.phase === 'preparing'){
+    st.offline = true;
+    jobShareAbort(st);
+    if(st.finish) st.finish();
+  }
+});
+
+// การ์ดในหน้าใบงาน — ป้าย/สถานะเป็นข้อความคงที่ (U4) + ตัวเลขจำนวนรูปเท่านั้น ผ่าน escapeHtml (security M5)
+function jobShareCardHtml(job){
+  const st = view.jobShare && view.jobShare.jobId === job.id ? view.jobShare : null;
+  const loaded = view.jobPhotosFor === job.id && Array.isArray(view.jobPhotos);
+  const listFail = loaded && jobSharePhotoListFailed(job.id);
+  const n = loaded && !listFail ? jobSharePhotoSources(job).length : null;
+  let desc = 'ยอดตรงกับใบพิมพ์ ไม่มีเบอร์โทร';
+  if(n > 0) desc += ' · แนบรูป ' + n + ' รูป';
+  else if(n === 0) desc += ' · ใบนี้ไม่มีรูป ส่งได้แค่ข้อความ';
+  let cls = 'btn secondary', ic = 'chat', label = 'ส่งเข้า LINE กลุ่ม', dis = false;
+  let status = st && st.status ? st.status : [], warn = !!(st && st.warn);
+  if(!loaded){ ic = 'clock'; label = 'กำลังโหลดรูป...'; dis = true; }
+  else if(listFail && !(st && st.phase !== 'idle')){ dis = true; status = [JSHARE_MSG.listFail]; warn = true; }
+  else if(st && st.phase === 'preparing'){ ic = 'clock'; label = 'กำลังเตรียมรูป ' + st.done + '/' + st.total; dis = true; }
+  else if(st && (st.phase === 'ready' || st.phase === 'sharing')){
+    cls = 'btn';
+    label = st.files.length && st.canFiles ? 'แตะเพื่อเปิด LINE (' + st.files.length + ' รูป)' : 'แตะเพื่อเปิด LINE (ข้อความอย่างเดียว)';
+  }
+  else if(st && st.phase === 'sent'){
+    label = st.files.length && st.canFiles ? 'ส่งอีกครั้ง (' + st.files.length + ' รูป)' : 'ส่งอีกครั้ง (ข้อความ)';
+  }
+  const jid = escapeAttr(job.id);
+  const retry = st && st.retryBtn && (st.phase === 'ready' || st.phase === 'sent');
+  return `<div class="card">
+    <h3>${icon('chat',15)} ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์</h3>
+    <p class="muted" style="margin-top:-6px;">${escapeHtml(desc)}</p>
+    <button id="jshare-btn" class="${cls}" style="width:100%; max-width:420px; justify-content:center;" onclick="onJobShareTap('${jid}')"${dis ? ' aria-disabled="true"' : ''}>${icon(ic,16)} <span id="jshare-label">${escapeHtml(label)}</span></button>
+    ${status.length ? `<div id="jshare-status" class="rs-note${warn ? ' warn' : ''}" aria-live="polite">${status.map(escapeHtml).join('<br>')}</div>` : ''}
+    ${retry ? `<button class="btn secondary small" style="margin-top:8px;" onclick="retryJobShare('${jid}')">เตรียมรูปใหม่</button>` : ''}
+  </div>`;
+}
+
 function copyLineSummary(jobId){
   const el = document.getElementById('line-summary-text');
   const job = getJob(jobId);
@@ -18411,6 +18995,8 @@ function renderJobDetail(jobId){
   }
 
   html += `<div class="no-print">`;
+
+  html += jobShareCardHtml(job);   // v4.6.5 — ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์
 
   html += `<div class="card">
     <h3>ลายเซ็นใบรับรถ</h3>
@@ -24723,10 +25309,10 @@ function renderPartsTab(model){
       <h3 style="margin:0;">รายการอะไหล่ (${model.parts.length})</h3>
       <button class="btn secondary small" title="คัดลอกหน่วยนับ (ชิ้น/คู่/ลิตร/ฯลฯ) ของทุกอะไหล่ในรุ่นนี้ ไปทับหน่วยของรุ่นรถอื่นทั้งหมด (จับคู่ตามชื่ออะไหล่)" onclick="syncUnitsFromModel('${model.id}')">ใช้หน่วยของรุ่นนี้เป็นมาตรฐานทุกรุ่น</button>
     </div>
-    <div class="table-wrap"><table class="parts-table">
+    <div class="table-wrap"><table class="parts-table model-parts-table">
       <colgroup>
-        <col style="width:4%"><col style="width:16%"><col style="width:14%">
-        <col style="width:10%"><col style="width:20%"><col style="width:10%"><col style="width:16%"><col style="width:10%">
+        <col class="mpt-c-no"><col class="mpt-c-name"><col class="mpt-c-var">
+        <col class="mpt-c-qty"><col class="mpt-c-brand"><col class="mpt-c-price"><col class="mpt-c-manage"><col class="mpt-c-del">
       </colgroup>
       <thead><tr>
       <th class="center">#</th>
@@ -24745,20 +25331,20 @@ function renderPartsTab(model){
     group.items.forEach(part => {
       rowNum++;
       const rowspan = Math.max(part.brands.length, 1);
-      html += `<tr>
-        <td class="center" rowspan="${rowspan}">${rowNum}</td>
-        <td class="part-name-cell" rowspan="${rowspan}">
+      html += `<tr class="mpt-part${part.brands.length > 1 ? ' mpt-has-more' : ''}">
+        <td class="center mpt-no" data-label="#" rowspan="${rowspan}">${rowNum}</td>
+        <td class="part-name-cell mpt-name" data-label="รายการอะไหล่" rowspan="${rowspan}">
           <input type="text" class="part-name-input" style="width:100%;" value="${escapeAttr(part.partName)}" oninput="onPartFieldInput('${model.id}','${part.id}','partName', this.value)">
           ${partLastPriceHtml(model, part)}
         </td>
-        <td class="center" rowspan="${rowspan}">
+        <td class="center mpt-var" data-label="ด้าน / ตัวแปร" rowspan="${rowspan}">
           <input type="text" class="unit-input" style="width:100%;" placeholder="เช่น ซ้าย" value="${escapeAttr(part.variant||'')}" oninput="onPartFieldInput('${model.id}','${part.id}','variant', this.value)">
           <div class="part-variant-actions">
             ${!part.variant ? `<button class="add-brand-btn" title="แยกเป็นซ้าย/ขวา (เพิ่มแถวขวาให้อัตโนมัติ)" onclick="splitPartLR('${model.id}','${part.id}')">แยกซ้าย/ขวา</button>` : ''}
             <button class="add-brand-btn" title="เพิ่มตัวแปรอื่นของอะไหล่นี้ (คัดลอกแถวนี้)" onclick="duplicatePartVariant('${model.id}','${part.id}')">+ ตัวแปร</button>
           </div>
         </td>
-        <td class="center" rowspan="${rowspan}">
+        <td class="center mpt-qty" data-label="จำนวนที่ใช้" rowspan="${rowspan}">
           <div class="qty-inline">
             <input type="number" min="1" step="1" class="qty-input" placeholder="0" value="${escapeAttr(part.qty)}" oninput="onPartFieldInput('${model.id}','${part.id}','qty', this.value)">
             <select class="unit-select" onchange="onModelPartUnitChange('${model.id}','${part.id}', this.value)">
@@ -24767,23 +25353,23 @@ function renderPartsTab(model){
           </div>
         </td>`;
 
-      const delPartCell = `<td class="center" rowspan="${rowspan}"><button class="icon-btn" title="ลบอะไหล่นี้ทั้งแถว" onclick="deletePartFromModel('${model.id}','${part.id}')">${icon('trash',13)}</button></td>`;
+      const delPartCell = `<td class="center mpt-del" data-label="ลบอะไหล่" rowspan="${rowspan}"><button class="icon-btn" title="ลบอะไหล่นี้ทั้งแถว" onclick="deletePartFromModel('${model.id}','${part.id}')">${icon('trash',13)}</button></td>`;
 
       if(part.brands.length === 0){
-        html += `<td colspan="2" class="muted" style="font-size:13px;">— ยังไม่มีแบรนด์ —</td>
-          <td class="center"><button class="add-brand-btn" onclick="addBrandToPart('${model.id}','${part.id}')">+ เพิ่มแบรนด์/ราคา</button></td>
+        html += `<td colspan="2" class="muted mpt-nobrand" data-label="แบรนด์ / ราคา" style="font-size:13px;">— ยังไม่มีแบรนด์ —</td>
+          <td class="center mpt-manage" data-label="จัดการแบรนด์"><button class="add-brand-btn" onclick="addBrandToPart('${model.id}','${part.id}')">+ เพิ่มแบรนด์/ราคา</button></td>
           ${delPartCell}
         </tr>`;
       } else {
         part.brands.forEach((b, bi) => {
-          if(bi > 0) html += `<tr>`;
-          html += `<td>${renderBrandNameSelect(model.id, part.id, b)}</td>
-            <td class="center">
+          if(bi > 0) html += `<tr class="mpt-brand-more${bi === part.brands.length - 1 ? ' mpt-brand-last' : ''}">`;
+          html += `<td class="mpt-brand" data-label="แบรนด์">${renderBrandNameSelect(model.id, part.id, b)}</td>
+            <td class="center mpt-price" data-label="ราคา (บาท)">
               <input type="text" class="brand-price-input" placeholder="บาท" value="${escapeAttr(b.price)}" oninput="onBrandFieldInput('${model.id}','${part.id}','${b.id}','price', this.value)">
             </td>
-            <td class="center">
-              <button class="icon-btn" title="ลบแบรนด์นี้" onclick="deleteBrand('${model.id}','${part.id}','${b.id}')">${icon('x',13)}</button>
-              ${bi === part.brands.length - 1 ? `<button class="add-brand-btn" style="margin-left:4px;" onclick="addBrandToPart('${model.id}','${part.id}')">+ แบรนด์</button>` : ''}
+            <td class="center mpt-manage" data-label="จัดการแบรนด์">
+              <button class="icon-btn mpt-del-brand" title="ลบแบรนด์นี้" aria-label="${String(b.brand || '').trim() ? 'ลบแบรนด์ ' + escapeAttr(String(b.brand).trim()) : 'ลบแบรนด์นี้'}" onclick="deleteBrand('${model.id}','${part.id}','${b.id}')">${icon('x',13)}</button>
+              ${bi === part.brands.length - 1 ? `<button class="add-brand-btn" onclick="addBrandToPart('${model.id}','${part.id}')">+ แบรนด์</button>` : ''}
             </td>`;
           if(bi === 0) html += delPartCell;
           html += `</tr>`;
