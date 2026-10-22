@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.5";
+  const APP_VERSION = "4.6.6";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3135,6 +3135,37 @@
               ล้างเมื่อเปิดใบอื่น / กลับรายการ / เปลี่ยนแท็บ / logout · การ์ดไลน์เดิมไม่เปลี่ยน
 
               เทสต์ใหม่: tests/lguard.js
+     v4.6.6 — ปุ่ม "ส่งเข้า LINE กลุ่ม" ส่งข้อความแบบร้าน + ภาพใบรับรถ + รูปรถไม่เกิน 8 รูป
+              (spec docs/specs/line-share-receipt-photos.md + .security/.network · ข้อตัดสินเจ้าของ 21 ต.ค. 2569)
+
+              1. ข้อความ = buildLineSummaryText ตัวเดียวกับการ์ด "สรุปข้อความลงกลุ่มไลน์" (มีชื่อ+เบอร์ลูกค้า)
+                 ผ่าน jobShareText(job) · ข้อความที่ช่างแก้เองในกล่องเก็บใน view.lineDraft (oninput ไม่ render)
+                 อยู่รอด render · ปุ่มส่งและปุ่มคัดลอกใช้ร่างนั้น · ร่างล้าสมัยมีคำเตือน + "ใช้ข้อความอัตโนมัติ" (ยืนยันก่อน)
+                 ล้างร่างใน clearJobShare (เปิดใบอื่น / กลับรายการ / เปลี่ยนแท็บ / logout)
+                 แก้จุดเดียวในข้อความ: บรรทัดลูกชุดโปรไม่โชว์ " = เงิน" ค้าง (ยอดตรงใบพิมพ์)
+              2. ส่วนแชร์ย้ายไปบนสุดของการ์ด "สรุปข้อความลงกลุ่มไลน์" ใต้การ์ดลายเซ็น (ไม่มีการ์ดแชร์แยก)
+                 คำบนจอตาม UX X3 · ปุ่มหลักสูง 46px บนจอสัมผัส · ปุ่มรอง "เตรียมใหม่"
+              3. ไฟล์แรก = ภาพใบรับรถ {เลขใบ}-receipt.jpg 1240x1754 JPEG สร้างในเบราว์เซอร์ไม่ใช้ library:
+                 buildPrintDoc + renderJobPrintPage + autoFitPrintPages ชุดเดียวกับ printJobCheckin
+                 (checkinDocOpts ใช้ร่วม) → iframe sandbox → SVG foreignObject (data: URL) → canvas พื้นขาว
+                 โทน = docToneOf(job) ที่เก็บไว้ (ไม่คิดสด ไม่เติมใบเก่า) · ไม่ติดโหมดมืด · ไม่มีราคา
+                 ช่องที่เซ็นแล้วขึ้นคำว่า "เซ็นแล้ว" แทนลายเส้น (วาดจากสำเนา job ไม่แตะ job.signatures)
+                 ฟอนต์ Noto Sans Thai ฝังเป็น data: URL (fonts.googleapis/gstatic เท่านั้น omit + no-referrer
+                 แคชในหน่วยความจำ 8 วิ ล้ม = ฟอนต์เครื่อง) · RECEIPT_RENDER_TIMEOUT_MS 15 วิ
+                 ใบรับรถล้ม/เกินเวลา/ไม่ใช่ image = ส่งรูปรถต่อ · เริ่มพร้อมรูป ใช้งบ 90 วิร่วมกัน · นับ 1 ชิ้นใน x/T
+                 เซ็น/ชื่อ/อาการ/คิวเปลี่ยนหลังเตรียม = "ข้อมูลใบรับรถเปลี่ยน กดอีกครั้งเพื่อเตรียมใหม่"
+              4. รูปรถ jobSharePhotoPlan = 8 รูปแรกตามลำดับแกลเลอรี (JOB_SHARE_MAX_PHOTOS) เกินบอกจำนวนที่ไม่ได้แนบ
+                 รูปที่ล้มไม่เอารูปที่ 9 มาแทน · ทุกใบ 2 แตะ (ตัดทางลัดแตะเดียวของใบไม่มีรูป)
+              5. เครื่องไม่มี navigator.canShare (คอมหน้าร้าน) = แตะเดียว คัดลอก + line.me ข้อความล้วน
+                 ไม่สร้างภาพ ไม่ fetch · ย่อข้อความแบบร้านที่ขอบบรรทัด (ตัดบรรทัดรายการจากท้าย เก็บหัว/ยอด/บรรทัดปิด)
+                 surrogate เดี่ยวในร่างแทนด้วย U+FFFD ตัวต่อตัว (toWellFormed) + encode ใน try/catch (ไม่ throw)
+                 กล่องยืนยัน "ใช้ข้อความอัตโนมัติ": ปุ่ม "ใช้อัตโนมัติ" / "เก็บที่แก้ไว้" · ตัวคัด DOM ภาพใบรับรถตัด srcset/poster
+              6. security: ลายเซ็นใส่ <img> ได้เฉพาะ ^data:image/png;base64, (signatureSrc) + escapeAttr
+                 ทั้งใบพิมพ์ การ์ดลายเซ็น และใบเสนอราคา · ค่าอื่นถือว่ายังไม่เซ็น
+              ไม่เขียน Firestore / config/main / state.settings / localStorage · ไม่แก้ rules / cors
+              buildQuoteShareText คงไว้แบบไม่มีผู้เรียก
+
+              เทสต์ใหม่: tests/wguard.js · tests/shot78cdp.js (shot78) · lguard ปรับตาม spec ข้อ 9
               -->
 
 
@@ -3568,6 +3599,11 @@
     font-size:12.5px; font-weight:700; color:var(--text-2); display:flex; align-items:center; gap:7px;
   }
   .rs-note.warn{background:var(--red-bg); color:var(--red);}
+  /* v4.6.6 — ส่วนแชร์บนสุดของการ์ด "สรุปข้อความลงกลุ่มไลน์" (UX X2) */
+  .jshare-sec{margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid var(--border);}
+  #jshare-draft{flex-wrap:wrap; gap:8px;}
+  #jshare-draft[hidden]{display:none !important;}
+  @media (pointer:coarse){ #jshare-btn{min-height:46px;} }
   .reception-again-btn{
     display:block; width:100%; margin-top:12px; padding:12px; background:var(--surface);
     border:1px solid var(--border); border-radius:11px; color:var(--text-2);
@@ -5432,6 +5468,8 @@
   .pv-sign-line.has-sig{border-bottom-color:var(--text);}
   .pv-sign-img{display:block; max-height:40px; max-width:100%; object-fit:contain;}
   .pv-sign-label{font-size:11.5px; color:var(--text-2);}
+  /* v4.6.6 — ภาพใบรับรถที่ส่งเข้ากลุ่มไลน์: ช่องที่เซ็นแล้วขึ้นคำนี้แทนลายเส้น (ใบพิมพ์ไม่มี) */
+  .pv-sign-done{display:block; font-size:11px; font-weight:600; color:#1b1f24; padding-bottom:3px;}
 
   /* In-app signature capture */
   .sig-modal{max-width:560px;}
@@ -17169,14 +17207,28 @@ function jobGrandTotal(job){
    from a photo, so it rides along in the same saveState() flow as everything else and
    needs no separate sync path. Once one exists for a role, both the on-screen status
    row and the printed page show the actual signature image instead of a blank line. */
-function pvSignBoxHtml(job, role, label){
-  const sig = job.signatures && job.signatures[role];
+function pvSignBoxHtml(job, role, label, opts){
+  /* v4.6.6 — opts.signedWord (ภาพใบรับรถที่ส่งเข้าไลน์ ข้อตัดสินเจ้าของ ทางเลือก ค):
+     ไม่มีรูปลายเซ็น ช่องที่ opts.signed[role] เป็นจริงขึ้นคำว่า "เซ็นแล้ว" · ใบพิมพ์ไม่ส่ง opts = ลายเซ็นจริงเหมือนเดิม */
+  const o = opts || {};
+  const sig = o.signedWord ? '' : signatureSrc(job, role);
+  const word = !!(o.signedWord && o.signed && o.signed[role]);
   return `<div class="pv-sign-box">
-    <span class="pv-sign-line ${sig ? 'has-sig' : ''}">
-      ${sig ? `<img class="pv-sign-img" src="${sig}" alt="ลายเซ็น ${escapeAttr(label)}">` : ''}
+    <span class="pv-sign-line ${sig || word ? 'has-sig' : ''}">
+      ${sig ? `<img class="pv-sign-img" src="${escapeAttr(sig)}" alt="ลายเซ็น ${escapeAttr(label)}">`
+            : word ? '<span class="pv-sign-done">เซ็นแล้ว</span>' : ''}
     </span>
     <div class="pv-sign-label">${escapeHtml(label)}</div>
   </div>`;
+}
+
+/* v4.6.6 — security MUST 1: ลายเซ็นใช้ได้เฉพาะ PNG data URL แบบที่ cropSignatureCanvas สร้าง
+   พนักงานเขียน signatures.* ได้ตามกฎ Firestore ถ้าใส่ src ตรง ๆ ค่าอย่าง 'x" onerror=…' = XSS
+   ในเครื่องแอดมิน และ URL https จะ taint canvas ของภาพใบรับรถ · ค่าไม่ผ่าน = ถือว่ายังไม่เซ็น */
+const SIGNATURE_DATA_URL_RE = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+function signatureSrc(job, role){
+  const v = job && job.signatures && job.signatures[role];
+  return typeof v === 'string' && SIGNATURE_DATA_URL_RE.test(v) ? v : '';
 }
 
 /* v4.0.0 — ลายเซ็นเดิมเก็บทั้งผืนแคนวาส 520x220 เป็น PNG ทั้งที่คนส่วนใหญ่เซ็นแค่
@@ -18495,7 +18547,8 @@ function buildLineSummaryText(job){
       const price = parseMoney(p.price);
       const qtyTxt = p.qty ? ` ${p.qty} ${p.unit || ''}`.trimEnd() : '';
       const brandTxt = p.brand ? ` (${p.brand})` : '';
-      const priceTxt = price ? ` = ${fmtMoney(price * qty)}` : '';
+      // v4.6.6 — ลูกชุดโปรคิดเงินรวมในราคาชุดแล้ว (ใบพิมพ์เขียน "อยู่ในรายการโปร") ห้ามโชว์ราคาค้าง
+      const priceTxt = price && !isPromoChild(p) ? ` = ${fmtMoney(price * qty)}` : '';
       lines.push(`- ${p.partName}${p.variant ? ' ('+p.variant+')' : ''}${qtyTxt}${brandTxt}${priceTxt}`);
     });
     /* v4.3.7 — ของเดิม `total > 0` ใช้แทนความหมาย "มีรายการที่คีย์ราคาแล้ว" ซึ่งเคย
@@ -18538,41 +18591,65 @@ function buildLineSummaryText(job){
   return lines.join('\n');
 }
 
-// Copies whatever's currently sitting in the textarea — including any manual tweaks
-// made on top of the auto-generated draft — rather than regenerating fresh text from
-// the job every time. The box is still pre-filled with buildLineSummaryText() output
-// on each render, so nothing has to be typed from scratch; it's just editable now.
-/* ---------------- v4.6.5 — ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์ (spec docs/specs/line-share-quote-photos.md) ----------------
+/* ---------------- v4.6.5 — ส่งเข้ากลุ่มไลน์ (spec docs/specs/line-share-quote-photos.md) ----------------
+   v4.6.6 — ต่อยอดตาม docs/specs/line-share-receipt-photos.md (+ .security / .network)
+   ข้อความ = ข้อความแบบร้าน buildLineSummaryText ผ่าน jobShareText (ร่างที่ช่างแก้เองในกล่องชนะ)
+   ไฟล์ = ภาพใบรับรถ 1 ภาพ (renderReceiptImage) + รูปรถไม่เกิน JOB_SHARE_MAX_PHOTOS ตามลำดับแกลเลอรี
    อ่านอย่างเดียว: ไม่เขียน Firestore / saveState / state.settings / config/main / localStorage
-   สถานะทั้งหมดอยู่ใน view.jobShare (ล้างเมื่อเปิดใบอื่น / ออกจากใบ / logout)
-   จังหวะ 2 แตะ: แตะแรก = เตรียมรูป (async) · แตะสอง = clipboard + navigator.share แบบ sync
+   สถานะทั้งหมดอยู่ใน view.jobShare + view.lineDraft (ล้างใน clearJobShare: เปิดใบอื่น / ออกจากใบ / logout)
+   จังหวะ 2 แตะ: แตะแรก = เตรียม (async) · แตะสอง = clipboard + navigator.share แบบ sync
    (Safari ยอมให้ share เฉพาะใน gesture — ห้ามมี await/fetch ก่อน share)
-   ข้อความใบเสนอราคาเป็น plain text ใช้ได้แค่ share / clipboard / URL line.me ห้ามเข้า innerHTML */
+   เครื่องที่ไม่มี navigator.canShare (คอมหน้าร้าน) = แตะเดียว คัดลอก + line.me ข้อความล้วน (UX X4 ข้อ 5)
+   ข้อความเป็น plain text ใช้ได้แค่ share / clipboard / URL line.me ห้ามเข้า innerHTML */
 let PHOTO_SHARE_TIMEOUT_MS = 20000;     // ต่อรูป นับถึง .blob() เสร็จ
 let PHOTO_SHARE_RETRY_MS = 1000;        // retry 1 ครั้งเฉพาะ TypeError / timeout / 5xx / 429
-let PHOTO_SHARE_BUDGET_MS = 90000;      // เพดานเวลาเตรียมรวมทั้งใบ
+let PHOTO_SHARE_BUDGET_MS = 90000;      // เพดานเวลาเตรียมรวมทั้งใบ (ใบรับรถ + รูปใช้งบเดียวกัน)
 let JOB_SHARE_TTL_MS = 600000;          // ของที่เตรียมไว้ใช้ได้ 10 นาที
 let JOB_SHARE_READY_GUARD_MS = 600;     // ปุ่มเพิ่งพร้อมส่ง ไม่รับแตะช่วงนี้ (กันแตะเบิ้ล)
 let LINE_SHARE_URL_MAX = 6000;          // ความยาวข้อความหลัง encode ของทางสำรอง line.me
 const PHOTO_SHARE_POOL = 3;
+const JOB_SHARE_MAX_PHOTOS = 8;         // v4.6.6 — ใบรับรถ 1 + รูปรถ 8 = ไม่เกิน 9 ไฟล์ต่อครั้ง
 // security M6: fetch ได้เฉพาะไฟล์ใน bucket ของร้าน (jobPhotos.url พนักงานเขียนอะไรก็ได้)
 const PHOTO_SHARE_URL_PREFIX = 'https://firebasestorage.googleapis.com/v0/b/power-group-gsms.firebasestorage.app/o/';
+// คำบนจอทุกคำตามตาราง UX X3 ของ spec v4.6.6 (ตรงตัวอักษร — เทสต์เทียบตรง ๆ)
 const JSHARE_MSG = {
   listFail: 'โหลดรายการรูปไม่ได้ เช็คเน็ตแล้วกลับไปเปิดใบนี้ใหม่',
   offline: 'ไม่มีอินเทอร์เน็ต ส่งเข้าไลน์ไม่ได้ตอนนี้',
   preparing: 'อย่าเพิ่งออกจากหน้านี้',
-  ready: 'รูปพร้อมแล้ว ถ้า LINE ไม่ขึ้นข้อความ ให้กดวางในแชท',
+  ready: 'พร้อมส่งแล้ว ถ้า LINE ไม่ขึ้นข้อความ ให้กดวางในแชท',
   copied: 'คัดลอกข้อความแล้ว ถ้า LINE ไม่ขึ้นข้อความ กดวางในแชท',
-  noPhoto: 'ใบนี้ไม่มีรูป ส่งแค่ข้อความ',
-  noFilesHere: 'รูปแนบไม่ได้บนเครื่องนี้ จะส่งไปแค่ข้อความ ต้องส่งรูปเองจากแกลเลอรี',
-  lineSent: 'รูปแนบไม่ได้บนเครื่องนี้ ส่งไปแค่ข้อความ ต้องส่งรูปเองจากแกลเลอรี',
-  lineShort: 'รูปแนบไม่ได้บนเครื่องนี้ และรายการยาว ส่งไปแบบย่อ (ยอดครบ) รายการเต็มอยู่ในคลิปบอร์ด กดวางในแชท',
+  noPhotoOk: 'ใบนี้ไม่มีรูปรถ ส่งใบรับรถกับข้อความ',
+  noPhotoFail: 'แนบใบรับรถไม่ได้ ใบนี้ไม่มีรูปรถ ส่งได้แค่ข้อความ',
+  noFilesHere: 'เครื่องนี้แนบใบรับรถและรูปไม่ได้ จะส่งไปแค่ข้อความ',
+  lineSent: 'ส่งไปแค่ข้อความ (เครื่องนี้แนบใบรับรถและรูปไม่ได้)',
+  lineShort: 'ส่งไปแค่ข้อความแบบย่อ (ยอดครบ) ข้อความเต็มอยู่ในคลิปบอร์ด กดวางในแชท',
+  lineFoot: 'รายการเต็มอยู่ในคลิปบอร์ด กดวางในแชท',
+  copyOnly: 'เปิด LINE ไม่ได้ คัดลอกข้อความแล้ว เปิด LINE แล้วกดวางในแชทเอง',
   shareErr: 'เปิดหน้าส่งไม่สำเร็จ กดปุ่มอีกครั้ง',
   clipFail: 'คัดลอกข้อความไม่ได้ ถ้า LINE ไม่ขึ้นข้อความ ให้ส่งใหม่จากคอมหน้าร้าน',
-  expired: 'รูปที่เตรียมไว้หมดเวลา กดอีกครั้งเพื่อเตรียมใหม่',
-  changed: 'รูปในใบเปลี่ยน กดอีกครั้งเพื่อเตรียมใหม่'
+  expired: 'ของที่เตรียมไว้หมดเวลา กดอีกครั้งเพื่อเตรียมใหม่',
+  changed: 'รูปในใบเปลี่ยน กดอีกครั้งเพื่อเตรียมใหม่',
+  receiptChanged: 'ข้อมูลใบรับรถเปลี่ยน กดอีกครั้งเพื่อเตรียมใหม่',
+  descBase: 'ส่งข้อความในกล่องด้านล่าง + ใบรับรถ + รูปรถ',
+  descNone: 'ส่งข้อความในกล่องด้านล่าง + ใบรับรถ (ใบนี้ไม่มีรูปรถ)',
+  descDesk: 'เครื่องนี้แนบใบรับรถและรูปไม่ได้ ส่งได้แค่ข้อความในกล่องด้านล่าง',
+  draft: 'ปุ่มส่งจะส่งข้อความที่แก้เองในกล่องด้านล่าง',
+  draftStale: 'ข้อมูลใบเปลี่ยนหลังจากแก้ข้อความเอง ตรวจรายการและยอดในกล่องก่อนส่ง',
+  useAutoAsk: 'ทิ้งข้อความที่แก้เอง แล้วใช้ข้อความอัตโนมัติจากใบงาน?',
+  useAutoDone: 'ใช้ข้อความอัตโนมัติแล้ว'
+};
+// ข้อความที่มีตัวเลข (นับเอง ไม่มีชื่อ/เบอร์/เงิน)
+const JSHARE_FMT = {
+  desc: k => JSHARE_MSG.descBase + ' ' + k + ' รูป',
+  descOver: n => JSHARE_MSG.descBase + ' ' + JOB_SHARE_MAX_PHOTOS + ' รูปแรก (อีก ' + n + ' รูปส่งเองจากแกลเลอรี)',
+  leftOut: n => 'แนบรูปรถ ' + JOB_SHARE_MAX_PHOTOS + ' รูปแรก (ไม่ได้แนบอีก ' + n + ' รูป ส่งเองจากแกลเลอรี)',
+  receiptFail: k => 'แนบใบรับรถไม่ได้ ส่งเฉพาะรูปรถ ' + k + ' รูป',
+  partial: (k, n, f) => 'แนบได้ ' + k + ' จาก ' + n + ' รูป (โหลดไม่ได้ ' + f + ' รูป)',
+  allPhotos: (n, net) => 'โหลดรูปรถไม่ได้ทั้ง ' + n + ' รูป' + (net ? ' (เน็ตอาจมีปัญหา)' : '') + ' ส่งได้แค่ใบรับรถกับข้อความ',
+  bothFail: n => 'แนบใบรับรถไม่ได้ และโหลดรูปรถไม่ได้ทั้ง ' + n + ' รูป ส่งได้แค่ข้อความ'
 };
 
+// v4.6.6 — ปุ่มไม่ใช้ข้อความนี้แล้ว (ส่งข้อความแบบร้านแทน) คงไว้แบบไม่มีผู้เรียก ให้ lguard AC1–AC16 รันต่อได้
 // ข้อความสรุปใบเสนอราคา — ยอดมาจากตัวคำนวณชุดเดียวกับใบพิมพ์ (renderJobQuotePage) เท่านั้น
 // ดึงทีละฟิลด์ตาม allowlist (security M1): ไม่มีเบอร์ ชื่อลูกค้า โน้ตภายใน หรือ URL
 function buildQuoteShareText(job){
@@ -18681,104 +18758,151 @@ function jobShareAbort(st){
 }
 
 // ทิ้งของที่เตรียม (เปิดใบอื่น / ออกจากใบ / logout) — security M8, AC30
+// v4.6.6 — ร่างข้อความที่แก้เองถูกล้างที่นี่จุดเดียว (backend MUST 5) ภาพใบรับรถที่ค้างก็ทิ้งไปพร้อม view.jobShare
 function clearJobShare(){
   const st = view.jobShare;
   view.jobShare = null;
+  view.lineDraft = null;
   if(st && st.phase === 'preparing'){
     jobShareAbort(st);
     if(st.finish) st.finish();
   }
 }
 
-// ขั้นเตรียม (async) → { status, text, files, total, failed }
+// v4.6.6 — รูปรถที่จะแนบ = 8 รูปแรกตามลำดับแกลเลอรี (เลือกก่อนโหลด รูปที่ล้มไม่เอารูปที่ 9 มาแทน)
+function jobSharePhotoPlan(job){
+  const all = jobSharePhotoSources(job);
+  return { srcs: all.slice(0, JOB_SHARE_MAX_PHOTOS), total: all.length,
+           leftOut: Math.max(0, all.length - JOB_SHARE_MAX_PHOTOS) };
+}
+
+function jobShareResult(status, extra){
+  return Object.assign({ status, text: '', files: [], total: 0, failed: 0, receipt: 'failed', leftOut: 0 }, extra || {});
+}
+
+// ขั้นเตรียม (async) → { status, text, files, total, failed, receipt, leftOut }
 // status: 'ok' | 'offline' | 'loading' | 'busy' (+ 'denied' / 'missing' / 'stale' กรณีพิเศษ)
+// total = จำนวนรูปรถที่เลือก (≤ 8) · ความคืบหน้า onProgress(x, 1 + total) — ใบรับรถนับ 1 ชิ้น
 function prepareJobShare(jobId, onProgress){
-  if(!currentUser) return Promise.resolve({ status: 'denied', text: '', files: [], total: 0, failed: 0 });
+  if(!currentUser) return Promise.resolve(jobShareResult('denied'));
   const cur = view.jobShare;
-  if(cur && cur.jobId === jobId && cur.phase === 'preparing') return Promise.resolve({ status: 'busy', text: '', files: [], total: 0, failed: 0 });
+  if(cur && cur.jobId === jobId && cur.phase === 'preparing') return Promise.resolve(jobShareResult('busy'));
   if(navigator.onLine === false){
     view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.offline], warn: true };
-    return Promise.resolve({ status: 'offline', text: '', files: [], total: 0, failed: 0 });
+    return Promise.resolve(jobShareResult('offline'));
   }
   const job = getJob(jobId);
-  if(!job) return Promise.resolve({ status: 'missing', text: '', files: [], total: 0, failed: 0 });
+  if(!job) return Promise.resolve(jobShareResult('missing'));
   // รายการรูปยังไม่รู้ครบ → ห้ามเตรียม (ไม่งั้นจะส่งออกไปแบบ 0 รูปเงียบ ๆ)
   if(view.jobPhotosFor !== jobId || !Array.isArray(view.jobPhotos) || jobSharePhotoListFailed(jobId)){
-    return Promise.resolve({ status: 'loading', text: '', files: [], total: 0, failed: 0 });
+    return Promise.resolve(jobShareResult('loading'));
   }
-  const srcs = jobSharePhotoSources(job);
+  const plan = jobSharePhotoPlan(job);
+  const srcs = plan.srcs;
   const st = view.jobShare = {
-    jobId, phase: 'preparing', done: 0, total: srcs.length, failed: 0, readyAt: 0,
-    files: [], canFiles: false, srcKey: JSON.stringify(srcs), photosRef: view.jobPhotos,
+    jobId, phase: 'preparing', done: 0, T: 1 + srcs.length, total: srcs.length, failed: 0, leftOut: plan.leftOut,
+    readyAt: 0, files: [], canFiles: false, receipt: 'failed', photoCount: 0,
+    srcKey: JSON.stringify(jobSharePhotoSources(job)), photosRef: view.jobPhotos,
+    receiptKey: jobShareReceiptFragment(job),   // F4: ใบรับรถเปลี่ยนหลังเตรียม = เตรียมใหม่
     ctrls: [], cancelled: false, active: 0, status: [JSHARE_MSG.preparing], warn: false
   };
   const results = new Array(srcs.length);
-  let next = 0, finished = false, budget = null;
+  let next = 0, finished = false, budget = null, photosLeft = srcs.length, receiptPending = true, receiptBlob = null;
+  const tick = () => {
+    st.done++;
+    if(onProgress){ try { onProgress(st.done, st.T); } catch(e){} }
+  };
   return new Promise(resolveAll => {
     const finish = () => {
       if(finished) return;
       finished = true;
       clearTimeout(budget);
-      // STALE-1: ของที่เตรียมถูกทิ้งแล้ว (เปิดใบอื่น/ออก) → จบแบบ stale ทันที ไม่สร้าง File
+      // STALE-1: ของที่เตรียมถูกทิ้งแล้ว (เปิดใบอื่น/ออก) → จบแบบ stale ทันที ไม่สร้าง File (รวมภาพใบรับรถ)
       if(view.jobShare !== st && !st.offline){
         const got = results.filter(r => r && r.blob).length;
-        return resolveAll({ status: 'stale', text: '', files: [], total: srcs.length, failed: srcs.length - got });
+        return resolveAll(jobShareResult('stale', { total: srcs.length, failed: srcs.length - got, leftOut: plan.leftOut }));
       }
-      const safe = String(job.jobNumber || '').replace(/[^A-Za-z0-9-]/g, '') || 'job';
-      const files = [];
-      let netFail = 0;
-      results.forEach(r => {
-        if(r && r.blob){
-          const ty = r.blob.type;
-          const ext = /png/.test(ty) ? 'png' : /webp/.test(ty) ? 'webp' : 'jpg';
-          try {
-            files.push(new File([r.blob], safe + '-' + String(files.length + 1).padStart(2, '0') + '.' + ext, { type: ty }));
-          } catch(e){ /* สร้างไฟล์ไม่ได้ = นับเป็นรูปที่ล้ม */ }
-        } else if(!r || !r.http){
-          netFail++;
-        }
-      });
-      const failed = srcs.length - files.length;
       if(st.offline){
         // เน็ตหลุดระหว่างเตรียม (event offline) — ทิ้งทั้งหมด กลับร่างแรก
         if(view.jobShare === st){
           view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.offline], warn: true };
           flashToast(JSHARE_MSG.offline);
         }
-        return resolveAll({ status: 'offline', text: '', files: [], total: srcs.length, failed });
+        return resolveAll(jobShareResult('offline', { total: srcs.length, leftOut: plan.leftOut }));
       }
-      if(view.jobShare !== st){
-        return resolveAll({ status: 'stale', text: '', files: [], total: srcs.length, failed });
+      const safe = String(job.jobNumber || '').replace(/[^A-Za-z0-9-]/g, '') || 'job';
+      const files = [];
+      let receiptOk = false;
+      if(receiptBlob){
+        try { files.push(new File([receiptBlob], safe + '-receipt.jpg', { type: 'image/jpeg' })); receiptOk = true; }
+        catch(e){ /* สร้างไฟล์ไม่ได้ = ใบรับรถล้ม */ }
       }
-      st.files = files; st.failed = failed; st.done = srcs.length;
+      let car = 0, netFail = 0;
+      results.forEach(r => {
+        if(r && r.blob){
+          const ty = r.blob.type;
+          const ext = /png/.test(ty) ? 'png' : /webp/.test(ty) ? 'webp' : 'jpg';
+          try {
+            files.push(new File([r.blob], safe + '-' + String(car + 1).padStart(2, '0') + '.' + ext, { type: ty }));
+            car++;
+          } catch(e){ /* สร้างไฟล์ไม่ได้ = นับเป็นรูปที่ล้ม */ }
+        } else if(!r || !r.http){
+          netFail++;
+        }
+      });
+      const N = srcs.length, failed = N - car;
+      st.files = files; st.failed = failed; st.photoCount = car; st.receipt = receiptOk ? 'ok' : 'failed';
       let can = false;
       try { can = files.length > 0 && !!navigator.share && !!navigator.canShare && !!navigator.canShare({ files }); } catch(e){ can = false; }
       st.canFiles = can;
       st.phase = 'ready';
       st.readyAt = Date.now();
-      st.warn = false;
-      st.prepWarn = '';
-      st.retryBtn = srcs.length > 0 && failed > 0;
-      if(srcs.length && !files.length){
-        st.prepWarn = netFail >= 2
-          ? 'โหลดรูปไม่ได้ทั้ง ' + srcs.length + ' รูป (เน็ตอาจมีปัญหา) ส่งได้แค่ข้อความ'
-          : 'โหลดรูปไม่ได้ทั้ง ' + srcs.length + ' รูป ส่งได้แค่ข้อความ';
+      // สถานะตาม X3 #6–#12 · บรรทัด 6L (เกิน 8 รูป) ต่อท้ายได้ทุกร่าง
+      const warns = [];
+      let info = JSHARE_MSG.ready;
+      if(!N){
+        if(receiptOk) info = JSHARE_MSG.noPhotoOk;
+        else warns.push(JSHARE_MSG.noPhotoFail);
+      } else if(!receiptOk && !car){
+        warns.push(JSHARE_FMT.bothFail(N));
+      } else if(!receiptOk){
+        warns.push(JSHARE_FMT.receiptFail(car));
+        if(failed) warns.push(JSHARE_FMT.partial(car, N, failed));
+      } else if(!car){
+        warns.push(JSHARE_FMT.allPhotos(N, netFail >= 2));
       } else if(failed){
-        st.prepWarn = 'แนบได้ ' + files.length + ' จาก ' + srcs.length + ' รูป (โหลดไม่ได้ ' + failed + ' รูป)';
+        warns.push(JSHARE_FMT.partial(car, N, failed));
       }
-      if(st.prepWarn){
-        st.status = [st.prepWarn]; st.warn = true; flashToast(st.prepWarn);
-      } else {
-        st.status = [JSHARE_MSG.ready];
-      }
+      st.prepWarn = warns;
+      st.leftLine = plan.leftOut > 0 ? [JSHARE_FMT.leftOut(plan.leftOut)] : [];
+      st.retryBtn = warns.length > 0;
+      st.warn = warns.length > 0;
+      st.status = (warns.length ? warns : [info]).concat(st.leftLine);
+      if(warns.length) flashToast(warns.join(' · '));
       if(files.length && !can){ st.status = [JSHARE_MSG.noFilesHere]; st.warn = true; }
-      resolveAll({ status: 'ok', text: buildQuoteShareText(job), files, total: srcs.length, failed });
+      resolveAll(jobShareResult('ok', { text: jobShareText(job), files, total: N, failed,
+                                        receipt: st.receipt, leftOut: plan.leftOut }));
     };
+    const maybeFinish = () => { if(!photosLeft && !receiptPending) finish(); };
     st.finish = finish;
+    // network ข้อ 2: งบรวมใช้ร่วมกัน ใบรับรถค้างเกินงบ = ใบรับรถล้ม
     budget = setTimeout(() => { jobShareAbort(st); finish(); }, PHOTO_SHARE_BUDGET_MS);
+    // network ข้อ 4: ใบรับรถเริ่มพร้อมรูป (t = 0) ไม่กินที่ในคิว fetch
+    // เรียกผ่านชื่อ global ตอนนี้ (เทสต์ทับ renderReceiptImage ได้) · ล้ม/เกินเวลา/ไม่ใช่ image/ = ล้ม ไม่ขวางรูป
+    new Promise(res => {
+      const timer = setTimeout(() => res(null), RECEIPT_RENDER_TIMEOUT_MS);
+      let p;
+      try { p = renderReceiptImage(job); } catch(e){ p = Promise.reject(e); }
+      Promise.resolve(p).then(b => { clearTimeout(timer); res(b); }, () => { clearTimeout(timer); res(null); });
+    }).then(b => {
+      if(finished) return;
+      receiptBlob = b && b.size > 0 && /^image\//.test(b.type || '') ? b : null;
+      receiptPending = false;
+      tick();
+      maybeFinish();
+    });
     const pump = () => {
       if(st.cancelled || finished) return;
-      if(st.done >= srcs.length) return finish();
       while(next < srcs.length && st.active < PHOTO_SHARE_POOL){
         const i = next++;
         st.active++;
@@ -18786,29 +18910,70 @@ function prepareJobShare(jobId, onProgress){
           results[i] = r;
           st.active--;
           if(finished) return;
-          st.done++;
-          if(onProgress){ try { onProgress(st.done, srcs.length); } catch(e){} }
-          pump();
+          photosLeft--;
+          tick();
+          if(photosLeft) pump(); else maybeFinish();
         });
       }
     };
-    if(!srcs.length) return finish();
     pump();
   });
 }
 
-// line.me รับ URL ยาวจำกัด — ตัดรายการที่ขอบบรรทัด (ทีละคู่ ชื่อ+รายละเอียด) เก็บหัวและบล็อกยอดครบเสมอ (security M4)
+// ตัด surrogate เดี่ยว (ข้อความที่แก้เอง) ก่อน encodeURIComponent ซึ่งจะโยน URIError — security MUST 8
+// surrogate เดี่ยวทุกตัว → U+FFFD ตัวต่อตัว (รวม low ติดกัน) คู่ที่ถูกต้อง (อีโมจิ) คงเดิม
+function jobShareWellFormed(t){
+  const s = String(t);
+  if(typeof s.toWellFormed === 'function') return s.toWellFormed();
+  // ห้ามใช้ regex lookbehind — Safari/iOS ก่อน 16.4 parse ไม่ได้ = สคริปต์หลักตายทั้งไฟล์
+  // จับคู่ที่ถูกต้องก่อน (ยาว 2) คืนเดิม · ตัวที่เหลือคือ surrogate เดี่ยว → U+FFFD ตัวต่อตัว
+  return s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, function(m){ return m.length === 2 ? m : '\uFFFD'; });
+}
+// encodeURIComponent ที่ไม่ throw — ด่านสุดท้ายของ security MUST 8 (ผ่าน jobShareWellFormed แล้วปกติไม่ล้ม)
+function jobShareEncode(t){
+  try { return encodeURIComponent(t); } catch(e){ return null; }
+}
+
+// line.me รับ URL ยาวจำกัด — ตัดที่ขอบบรรทัดเท่านั้น (security M4 / spec 5.4)
+// ข้อความแบบร้าน: ตัดบรรทัด "- …" ใต้ "รายการเสนอราคา" จากท้ายขึ้นมา เก็บหัว + รวม/ราคาประมาณ/บรรทัดปิดครบ
+// หาบล็อกรายการไม่เจอ (ข้อความที่แก้เอง): ตัดบรรทัดท้ายทั้งบรรทัดจนพอ · ข้อความเต็มอยู่ในคลิปบอร์ดแล้ว
 function jobShareLineText(full){
-  if(encodeURIComponent(full).length <= LINE_SHARE_URL_MAX) return { text: full, short: false };
+  full = jobShareWellFormed(full);
+  const fits = t => { const e = jobShareEncode(t); return e !== null && e.length <= LINE_SHARE_URL_MAX; };
+  if(fits(full)) return { text: full, short: false };
   const ls = full.split('\n');
-  const start = ls.findIndex(l => /^รายการ \(\d+\)$/.test(l));
-  const lastBlank = ls.lastIndexOf('');
-  if(start < 0 || lastBlank <= start) return { text: full, short: false };
-  const head = ls.slice(0, start + 1), items = ls.slice(start + 1, lastBlank), tail = ls.slice(lastBlank);
-  const build = k => head.concat(items.slice(0, k), ['...', 'รายการเต็มอยู่ในคลิปบอร์ด กดวางในแชท'], tail).join('\n');
-  let k = items.length - (items.length % 2);
-  while(k > 0 && encodeURIComponent(build(k)).length > LINE_SHARE_URL_MAX) k -= 2;
-  return { text: build(k), short: true };
+  const foot = ['...', JSHARE_MSG.lineFoot];
+  const head = ls.indexOf('รายการเสนอราคา');
+  if(head >= 0){
+    let end = head + 1;
+    while(end < ls.length && ls[end].indexOf('- ') === 0) end++;
+    const before = ls.slice(0, head + 1), items = ls.slice(head + 1, end), after = ls.slice(end);
+    for(let k = items.length - 1; k >= 0; k--){
+      const t = before.concat(items.slice(0, k), foot, after).join('\n');
+      if(fits(t)) return { text: t, short: true };
+    }
+  }
+  for(let k = ls.length - 1; k > 0; k--){
+    const t = ls.slice(0, k).concat(foot).join('\n');
+    if(fits(t)) return { text: t, short: true };
+  }
+  return { text: foot.join('\n'), short: true };
+}
+
+// คืน false ถ้า encode ไม่ได้ (ไม่เปิดหน้า) — ผู้เรียกบอกว่าคัดลอกแล้ว ให้วางในแชทเอง
+function openLineShareUrl(text){
+  const enc = jobShareEncode(text);
+  if(enc === null) return false;
+  window.open('https://line.me/R/share?text=' + enc, '_blank', 'noopener');
+  return true;
+}
+
+// คัดลอกแบบไม่ await (ต้องมาก่อน navigator.share ใน gesture เดียวกัน) · ล้มแล้วเรียก onFail
+function jobShareCopy(text, onFail){
+  try {
+    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(onFail);
+    else onFail();
+  } catch(e){ onFail(); }
 }
 
 // ขั้นส่ง — เรียกแบบ sync จากแตะของผู้ใช้ ห้ามมี await/fetch ก่อน navigator.share
@@ -18832,28 +18997,26 @@ function sendJobShare(jobId){
     view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.changed], warn: false };
     render(); return;
   }
-  const text = buildQuoteShareText(job);   // สร้างใหม่ตอนแตะ = ยอดล่าสุดเสมอ
+  // F4: เซ็นเพิ่ม / ชื่อ / อาการ / คิว เปลี่ยนหลังเตรียม → ภาพที่เตรียมไว้ไม่ตรงใบแล้ว (ราคาไม่อยู่ในใบรับรถ ไม่นับ)
+  if(jobShareReceiptFragment(job) !== st.receiptKey){
+    view.jobShare = { jobId, phase: 'idle', status: [JSHARE_MSG.receiptChanged], warn: false };
+    render(); return;
+  }
+  const text = jobShareText(job);   // สร้างตอนแตะ = ยอด/สถานะล่าสุด หรือร่างที่แก้เอง
   st.clipFail = false;
-  const markClipFail = () => {
+  jobShareCopy(text, () => {
     if(view.jobShare !== st || st.clipFail) return;
     st.clipFail = true;
     st.status = st.status.concat([JSHARE_MSG.clipFail]); st.warn = true;
     safeRender();
-  };
-  try {
-    if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(markClipFail);
-    else markClipFail();
-  } catch(e){ markClipFail(); }
+  });
   const prevPhase = st.phase;
-  const done = (statusMsg, toastMsg, isWarn) => {
+  const done = (statusMsg, isWarn) => {
     if(view.jobShare !== st) return;
     st.phase = 'sent';
-    const lines = [statusMsg];
-    if(st.prepWarn) lines.push(st.prepWarn);
-    if(st.clipFail) lines.push(JSHARE_MSG.clipFail);
-    st.status = lines;
-    st.warn = !!(isWarn || st.prepWarn || st.clipFail);
-    flashToast(toastMsg || statusMsg);
+    st.status = [statusMsg].concat(st.prepWarn || [], st.leftLine || [], st.clipFail ? [JSHARE_MSG.clipFail] : []);
+    st.warn = !!(isWarn || (st.prepWarn && st.prepWarn.length) || st.clipFail);
+    flashToast(statusMsg);
     safeRender();
   };
   const fail = err => {
@@ -18873,17 +19036,44 @@ function sendJobShare(jobId){
   if(st.files.length && st.canFiles){
     share({ files: st.files, text }).then(() => done(JSHARE_MSG.copied), fail);
   } else if(!st.files.length && navigator.share){
-    share({ text }).then(() => done(JSHARE_MSG.copied, st.total === 0 ? JSHARE_MSG.noPhoto : '', false), fail);
+    share({ text }).then(() => done(JSHARE_MSG.copied), fail);
   } else {
     const lt = jobShareLineText(text);
-    window.open('https://line.me/R/share?text=' + encodeURIComponent(lt.text), '_blank', 'noopener');
-    done(lt.short ? JSHARE_MSG.lineShort : JSHARE_MSG.lineSent, '', true);
+    const opened = openLineShareUrl(lt.text);
+    done(!opened ? JSHARE_MSG.copyOnly : lt.short ? JSHARE_MSG.lineShort : JSHARE_MSG.lineSent, true);
   }
 }
 
-// ปุ่มหลักของการ์ด: แตะแรก = เตรียม · แตะเมื่อพร้อม = ส่ง · ใบที่ไม่มีรูปแน่นอน = ส่งในแตะเดียว
+// v4.6.6 — คอมหน้าร้าน (ไม่มี navigator.canShare): แตะเดียว ไม่สร้างภาพ ไม่ fetch (UX X4 ข้อ 5)
+// คัดลอกข้อความเต็มก่อน แล้วเปิด line.me แบบ sync ในแตะเดียวกัน
+function sendJobShareText(jobId){
+  const job = getJob(jobId);
+  if(!job) return;
+  if(navigator.onLine === false){
+    view.jobShare = { jobId, phase: 'idle', desk: true, status: [JSHARE_MSG.offline], warn: true };
+    flashToast(JSHARE_MSG.offline); render(); return;
+  }
+  const text = jobShareText(job);
+  const st = view.jobShare = { jobId, phase: 'sent', desk: true, files: [], status: [], warn: true };
+  jobShareCopy(text, () => {
+    if(view.jobShare !== st || st.clipFail) return;
+    st.clipFail = true;
+    st.status = st.status.concat([JSHARE_MSG.clipFail]);
+    safeRender();
+  });
+  const lt = jobShareLineText(text);
+  const opened = openLineShareUrl(lt.text);
+  const msg = !opened ? JSHARE_MSG.copyOnly : lt.short ? JSHARE_MSG.lineShort : JSHARE_MSG.lineSent;
+  st.status = [msg].concat(st.clipFail ? [JSHARE_MSG.clipFail] : []);
+  flashToast(msg);
+  render();
+}
+
+// ปุ่มหลักของการ์ด: แตะแรก = เตรียม · แตะเมื่อพร้อม = ส่ง
+// v4.6.6 — ทุกใบต้องเตรียมภาพใบรับรถ จึงไม่มีทางลัดแตะเดียวของใบที่ไม่มีรูปแล้ว (P5)
 function onJobShareTap(jobId){
   if(!currentUser) return;
+  if(!navigator.canShare) return sendJobShareText(jobId);
   const st = view.jobShare && view.jobShare.jobId === jobId ? view.jobShare : null;
   if(st && (st.phase === 'ready' || st.phase === 'sent' || st.phase === 'sharing')) return sendJobShare(jobId);
   if(st && st.phase === 'preparing') return;
@@ -18894,15 +19084,10 @@ function onJobShareTap(jobId){
   const job = getJob(jobId);
   if(!job || view.jobPhotosFor !== jobId || !Array.isArray(view.jobPhotos)) return;   // กำลังโหลดรายการรูป
   if(jobSharePhotoListFailed(jobId)){ flashToast(JSHARE_MSG.listFail); return; }
-  if(jobSharePhotoSources(job).length === 0){
-    // N = 0 แน่นอน (รายการรูปโหลดสำเร็จจากเซิร์ฟเวอร์) → ทางลัด ส่งในแตะเดียวกันแบบ sync
-    view.jobShare = { jobId, phase: 'ready', done: 0, total: 0, failed: 0, readyAt: Date.now() - JOB_SHARE_READY_GUARD_MS,
-      files: [], canFiles: false, srcKey: '[]', photosRef: view.jobPhotos, status: [], warn: false, prepWarn: '' };
-    return sendJobShare(jobId);
-  }
+  // ระหว่างเตรียมแก้แค่ป้ายปุ่ม (textContent) ไม่ render ทั้งหน้า — ช่องกรอกในการ์ดเดียวกันจะหลุดโฟกัส
   const p = prepareJobShare(jobId, (x, n) => {
     const el = document.getElementById('jshare-label');
-    if(el) el.textContent = 'กำลังเตรียมรูป ' + x + '/' + n;
+    if(el) el.textContent = 'กำลังเตรียม ' + x + '/' + n;
   });
   render();   // วาดร่าง "กำลังเตรียม" (aria-disabled) ทันที
   p.then(() => render());
@@ -18926,42 +19111,85 @@ window.addEventListener('offline', () => {
   }
 });
 
-// การ์ดในหน้าใบงาน — ป้าย/สถานะเป็นข้อความคงที่ (U4) + ตัวเลขจำนวนรูปเท่านั้น ผ่าน escapeHtml (security M5)
-function jobShareCardHtml(job){
+// v4.6.6 — ส่วนแชร์บนสุดของการ์ด "สรุปข้อความลงกลุ่มไลน์" (UX X1–X3)
+// ป้าย/สถานะเป็นข้อความคงที่ + ตัวเลขจำนวนไฟล์/รูปเท่านั้น ผ่าน escapeHtml (security M5) · ไม่มีชื่อ/เบอร์/เงิน
+function jobShareSectionHtml(job){
   const st = view.jobShare && view.jobShare.jobId === job.id ? view.jobShare : null;
+  const desk = !navigator.canShare;
   const loaded = view.jobPhotosFor === job.id && Array.isArray(view.jobPhotos);
   const listFail = loaded && jobSharePhotoListFailed(job.id);
-  const n = loaded && !listFail ? jobSharePhotoSources(job).length : null;
-  let desc = 'ยอดตรงกับใบพิมพ์ ไม่มีเบอร์โทร';
-  if(n > 0) desc += ' · แนบรูป ' + n + ' รูป';
-  else if(n === 0) desc += ' · ใบนี้ไม่มีรูป ส่งได้แค่ข้อความ';
+  const plan = loaded && !listFail ? jobSharePhotoPlan(job) : null;
+  let desc = JSHARE_MSG.descBase;
+  if(desk) desc = JSHARE_MSG.descDesk;
+  else if(plan && !plan.total) desc = JSHARE_MSG.descNone;
+  else if(plan && plan.leftOut) desc = JSHARE_FMT.descOver(plan.leftOut);
+  else if(plan) desc = JSHARE_FMT.desc(plan.total);
+  // สิ่งที่จะแนบ (ป้ายร่าง R / S)
+  const what = s => {
+    if(!(s.files.length && s.canFiles)) return 'แค่ข้อความ';
+    const k = s.photoCount;
+    if(s.receipt === 'ok') return k ? 'ใบรับรถ + ' + k + ' รูป' : 'ใบรับรถ';
+    return k + ' รูป';
+  };
   let cls = 'btn secondary', ic = 'chat', label = 'ส่งเข้า LINE กลุ่ม', dis = false;
   let status = st && st.status ? st.status : [], warn = !!(st && st.warn);
-  if(!loaded){ ic = 'clock'; label = 'กำลังโหลดรูป...'; dis = true; }
+  if(desk){ label = st && st.phase === 'sent' ? 'ส่งข้อความอีกครั้ง' : 'ส่งข้อความเข้า LINE'; }
+  else if(!loaded){ ic = 'clock'; label = 'กำลังโหลดรูป...'; dis = true; }
   else if(listFail && !(st && st.phase !== 'idle')){ dis = true; status = [JSHARE_MSG.listFail]; warn = true; }
-  else if(st && st.phase === 'preparing'){ ic = 'clock'; label = 'กำลังเตรียมรูป ' + st.done + '/' + st.total; dis = true; }
-  else if(st && (st.phase === 'ready' || st.phase === 'sharing')){
-    cls = 'btn';
-    label = st.files.length && st.canFiles ? 'แตะเพื่อเปิด LINE (' + st.files.length + ' รูป)' : 'แตะเพื่อเปิด LINE (ข้อความอย่างเดียว)';
-  }
-  else if(st && st.phase === 'sent'){
-    label = st.files.length && st.canFiles ? 'ส่งอีกครั้ง (' + st.files.length + ' รูป)' : 'ส่งอีกครั้ง (ข้อความ)';
-  }
+  else if(st && st.phase === 'preparing'){ ic = 'clock'; label = 'กำลังเตรียม ' + st.done + '/' + st.T; dis = true; }
+  else if(st && (st.phase === 'ready' || st.phase === 'sharing')){ cls = 'btn'; label = 'แตะอีกครั้งเพื่อส่ง (' + what(st) + ')'; }
+  else if(st && st.phase === 'sent'){ label = 'ส่งอีกครั้ง (' + what(st) + ')'; }
   const jid = escapeAttr(job.id);
-  const retry = st && st.retryBtn && (st.phase === 'ready' || st.phase === 'sent');
-  return `<div class="card">
-    <h3>${icon('chat',15)} ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์</h3>
+  const retry = !desk && st && st.retryBtn && (st.phase === 'ready' || st.phase === 'sent');
+  const d = jobShareDraft(job);
+  const stale = !!d && buildLineSummaryText(job) !== d.base;
+  return `<div class="jshare-sec">
     <p class="muted" style="margin-top:-6px;">${escapeHtml(desc)}</p>
     <button id="jshare-btn" class="${cls}" style="width:100%; max-width:420px; justify-content:center;" onclick="onJobShareTap('${jid}')"${dis ? ' aria-disabled="true"' : ''}>${icon(ic,16)} <span id="jshare-label">${escapeHtml(label)}</span></button>
     ${status.length ? `<div id="jshare-status" class="rs-note${warn ? ' warn' : ''}" aria-live="polite">${status.map(escapeHtml).join('<br>')}</div>` : ''}
-    ${retry ? `<button class="btn secondary small" style="margin-top:8px;" onclick="retryJobShare('${jid}')">เตรียมรูปใหม่</button>` : ''}
+    ${retry ? `<button class="btn secondary small" style="margin-top:8px;" onclick="retryJobShare('${jid}')">เตรียมใหม่</button>` : ''}
+    <div id="jshare-draft" class="rs-note${stale ? ' warn' : ''}"${d ? '' : ' hidden'}><span>${escapeHtml(stale ? JSHARE_MSG.draftStale : JSHARE_MSG.draft)}</span> <button class="btn secondary small" onclick="useAutoLineSummary()">ใช้ข้อความอัตโนมัติ</button></div>
   </div>`;
 }
 
-function copyLineSummary(jobId){
-  const el = document.getElementById('line-summary-text');
+/* v4.6.6 — ข้อความที่ช่างแก้เองในกล่อง (spec 5.3) เก็บใน view.lineDraft เท่านั้น
+   ไม่ใช่ชื่อ ci_* (ไม่หลุดไป localStorage) ไม่ขึ้น Firestore · ผูกกับใบที่เปิดอยู่ (view.jobId) เสมอ
+   base = ข้อความอัตโนมัติตอนเริ่มแก้ ใช้บอกว่าร่าง "ล้าสมัย" (ข้อมูลใบเปลี่ยนหลังแก้) */
+function jobShareDraft(job){
+  const d = view.lineDraft;
+  return d && job && d.jobId === job.id && view.jobId === job.id && String(d.text).trim() ? d : null;
+}
+// ข้อความที่ปุ่มส่งและปุ่มคัดลอกใช้ — ร่างของใบนี้ถ้ามี ไม่งั้นข้อความแบบร้าน (ตัวสร้างตัวเดียว ไม่มีสำเนา)
+function jobShareText(job){
+  const d = jobShareDraft(job);
+  return d ? d.text : buildLineSummaryText(job);
+}
+// oninput ของกล่องข้อความ — ห้าม render() (คีย์บอร์ด iOS เด้งปิดทุกตัวอักษร) สลับแค่ hidden ของกล่องร่าง
+// เรียกได้สองแบบ: (value) จากกล่อง · (jobId, value) — jobId ต้องเป็นใบที่เปิดอยู่ ไม่งั้นไม่ทำอะไร
+function onLineSummaryEdit(a, b){
+  const jobId = view.jobId;
+  if(arguments.length >= 2 && a !== jobId) return;
+  const value = String(arguments.length >= 2 ? b : a);
   const job = getJob(jobId);
-  const text = el ? el.value : (job ? buildLineSummaryText(job) : '');
+  if(!job) return;
+  const auto = buildLineSummaryText(job);
+  const cur = view.lineDraft && view.lineDraft.jobId === jobId ? view.lineDraft : null;
+  view.lineDraft = value === auto ? null : { jobId, text: value, base: cur ? cur.base : auto };
+  const box = document.getElementById('jshare-draft');
+  if(box) box.hidden = !jobShareDraft(job);
+}
+function useAutoLineSummary(){
+  uiConfirm(JSHARE_MSG.useAutoAsk, () => {
+    view.lineDraft = null;
+    flashToast(JSHARE_MSG.useAutoDone);
+    render();
+  }, 'ใช้อัตโนมัติ', 'เก็บที่แก้ไว้');
+}
+
+// v4.6.6 — คัดลอกข้อความเดียวกับที่ปุ่มส่งใช้ (jobShareText: ร่างที่แก้เองถ้ามี) ไม่อ่านกล่องตรง ๆ
+function copyLineSummary(jobId){
+  const job = getJob(jobId);
+  const text = job ? jobShareText(job) : '';
   if(!text) return;
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(()=>{
@@ -18970,6 +19198,213 @@ function copyLineSummary(jobId){
       flashToast('คัดลอกไม่สำเร็จ (เบราว์เซอร์นี้อาจต้องเปิดผ่าน HTTPS)');
     });
   }
+}
+
+/* ---------------- v4.6.6 — ภาพใบรับรถ (spec ข้อ 6.2 · UX X5–X7 · security MUST 2–5, 9 · network ข้อ 3–6) ----------------
+   วิธี (ก) ไม่ใช้ library: เอกสารเดียวกับใบพิมพ์ (buildPrintDoc + renderJobPrintPage + autoFitPrintPages)
+   → จัดหน้าใน iframe แยก (sandbox ไม่มีสคริปต์ · ไม่มี data-mode = ไม่ติดโหมดมืด)
+   → คัด DOM (ตัด script/link/on* / URL ที่ไม่ใช่ data:) → XMLSerializer เป็น SVG foreignObject
+   → Image จาก data: URL → canvas พื้นขาว → JPEG · ฟอนต์ Noto Sans Thai ฝังเป็น data: URL (SVG-as-image โหลด <link> ไม่ได้)
+   ล้มที่ขั้นไหนก็ได้ (รวม canvas taint = SecurityError) = "ใบรับรถล้ม" แล้วส่งรูปรถต่อ ไม่ลองดึงข้ามโดเมนแบบอื่น */
+let RECEIPT_RENDER_TIMEOUT_MS = 15000;   // ฟอนต์ + จัดหน้า + toBlob รวมกัน
+let RECEIPT_FONT_TIMEOUT_MS = 8000;      // เกิน = ใช้ฟอนต์ของเครื่อง (PRINT_FONT_STACK) ยังนับว่าสำเร็จ
+const RECEIPT_DOC_W = 794, RECEIPT_DOC_H = 1123;      // A4 ตั้ง 210x297mm ที่ 96dpi รวมขอบกระดาษ
+const RECEIPT_IMG_W = 1240, RECEIPT_IMG_H = 1754;     // ~150dpi
+const RECEIPT_MAX_BYTES = 700 * 1024;
+const RECEIPT_FONT_CSS_URL = 'https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap';
+const RECEIPT_FONT_MAX_FILES = 6;
+const RECEIPT_FONT_MAX_BYTES = 1024 * 1024;
+
+// โทนใบรับรถ = ค่าที่เก็บไว้กับใบตอนรับรถ (docToneOf) เท่านั้น ห้ามคิดสด
+function jobShareReceiptTone(job){ return docToneOf(job); }
+
+// ใบรับรถที่ใช้วาดภาพ — วาดจากสำเนาที่ไม่มีลายเซ็นจริง (data review D-1) ช่องที่เซ็นแล้วขึ้นคำว่า "เซ็นแล้ว"
+// (ข้อตัดสินเจ้าของ ทางเลือก ค) · ห้ามแตะ job.signatures ตัวจริง · ใช้เป็นตัวเทียบ "ใบรับรถเปลี่ยน" ด้วย
+function jobShareReceiptFragment(job){
+  const signed = {};
+  ['staffReceive', 'customerAck'].forEach(role => { if(signatureSrc(job, role)) signed[role] = true; });
+  return renderJobPrintPage(Object.assign({}, job, { signatures: {} }), { signedWord: true, signed });
+}
+// เอกสารเต็มที่ใช้สร้างภาพ — ประกอบด้วย buildPrintDoc ตัวเดียวกับ printJobCheckin (ไม่มี <link> ฟอนต์ข้ามโดเมน)
+function jobShareReceiptHtml(job){
+  return buildPrintDoc(jobShareReceiptFragment(job), Object.assign(checkinDocOpts(job), { webFont: false }));
+}
+
+// ฟอนต์ฝัง: CSS จาก fonts.googleapis.com + ไฟล์ woff2 ที่ขึ้นต้น fonts.gstatic.com เท่านั้น (security MUST 5)
+// เก็บเป็น Promise ในหน่วยความจำต่อ session · ล้ม/เกินเวลา = '' (ฟอนต์ของเครื่อง) และล้างแคชให้ลองใหม่รอบหน้า
+let receiptFontCssPromise = null;
+function receiptFetch(url, extra){
+  return fetch(url, Object.assign({ mode: 'cors', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer' }, extra));
+}
+function receiptFontFileUrl(src){
+  let u;
+  try { u = new URL(src); } catch(e){ return ''; }
+  return u.protocol === 'https:' && u.host === 'fonts.gstatic.com' ? u.href : '';
+}
+function blobToBase64(blob){
+  return blob.arrayBuffer().then(buf => {
+    const bytes = new Uint8Array(buf);
+    let s = '';
+    for(let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  });
+}
+function loadReceiptFontCss(){
+  if(receiptFontCssPromise) return receiptFontCssPromise;
+  const ac = typeof AbortController === 'function' ? new AbortController() : null;
+  const sig = ac ? { signal: ac.signal } : {};
+  const work = receiptFetch(RECEIPT_FONT_CSS_URL, sig).then(res => {
+    if(!res || !res.ok) throw new Error('font css ' + (res ? res.status : 0));
+    return res.text();
+  }).then(css => {
+    // อ่านเฉพาะ src (woff2 ที่ผ่าน allowlist) + unicode-range ชุดไทย/latin + น้ำหนัก แล้วสร้าง @font-face เอง
+    const faces = [], files = [];
+    const re = /@font-face\s*\{([^}]*)\}/g;
+    let m;
+    while((m = re.exec(String(css)))){
+      const body = m[1];
+      const src = receiptFontFileUrl((body.match(/src:\s*url\(\s*['"]?([^'")\s]+)['"]?\s*\)\s*format\(\s*['"]woff2['"]\s*\)/) || [])[1] || '');
+      const range = ((body.match(/unicode-range:\s*([^;]+)/) || [])[1] || '').trim();
+      const weight = (body.match(/font-weight:\s*(\d{3})\b/) || [])[1] || '400';
+      if(!src) continue;
+      if(range && (!/^[Uu+0-9A-Fa-f?,\s-]+$/.test(range) || !/U\+0E|U\+0000-00FF/i.test(range))) continue;
+      if(files.indexOf(src) < 0){
+        if(files.length >= RECEIPT_FONT_MAX_FILES) continue;
+        files.push(src);
+      }
+      faces.push({ src, range, weight });
+    }
+    if(!faces.length) throw new Error('font css: no usable face');
+    const data = {};
+    return Promise.all(files.map(src => receiptFetch(src, Object.assign({ cache: 'force-cache' }, sig)).then(res => {
+      if(!res || !res.ok) return;
+      const ct = String((res.headers && res.headers.get && res.headers.get('content-type')) || '');
+      if(!/font\/woff2|application\/octet-stream/i.test(ct)) return;
+      return res.blob().then(b => {
+        if(!b || !(b.size > 0) || b.size > RECEIPT_FONT_MAX_BYTES) return;
+        return blobToBase64(b).then(b64 => { data[src] = 'data:font/woff2;base64,' + b64; });
+      });
+    }).catch(() => {}))).then(() => {
+      const out = faces.filter(f => data[f.src]).map(f =>
+        `@font-face{font-family:'Noto Sans Thai';font-style:normal;font-weight:${f.weight};font-display:block;` +
+        `src:url(${data[f.src]}) format('woff2');${f.range ? 'unicode-range:' + f.range + ';' : ''}}`);
+      if(!out.length) throw new Error('font files');
+      return out.join('\n');
+    });
+  });
+  const p = new Promise(resolve => {
+    let settled = false;
+    const done = css => {
+      if(settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if(!css && receiptFontCssPromise === p) receiptFontCssPromise = null;
+      resolve(css || '');
+    };
+    const timer = setTimeout(() => { if(ac){ try { ac.abort(); } catch(e){} } done(''); }, RECEIPT_FONT_TIMEOUT_MS);
+    work.then(done, () => done(''));
+  });
+  receiptFontCssPromise = p;
+  return p;
+}
+
+// คัด DOM ของเอกสารที่จัดหน้าแล้ว แล้วห่อเป็น SVG ด้วย DOM (ไม่ต่อสตริงค่าใบงาน — security MUST 3)
+function receiptSvgMarkup(doc){
+  doc.querySelectorAll('script,link,iframe,object,embed,base,meta').forEach(n => n.remove());
+  doc.querySelectorAll('*').forEach(el => {
+    Array.from(el.attributes).forEach(a => {
+      const n = a.name.toLowerCase();
+      if(n.indexOf('on') === 0) el.removeAttribute(a.name);
+      else if(n === 'srcset' || n === 'poster') el.removeAttribute(a.name);
+      else if((n === 'src' || n === 'href' || n === 'xlink:href') && !/^(data:|#)/i.test(a.value)) el.removeAttribute(a.name);
+    });
+  });
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', String(RECEIPT_IMG_W));
+  svg.setAttribute('height', String(RECEIPT_IMG_H));
+  svg.setAttribute('viewBox', '0 0 ' + RECEIPT_DOC_W + ' ' + RECEIPT_DOC_H);
+  const fo = document.createElementNS(NS, 'foreignObject');
+  fo.setAttribute('x', '0'); fo.setAttribute('y', '0');
+  fo.setAttribute('width', String(RECEIPT_DOC_W)); fo.setAttribute('height', String(RECEIPT_DOC_H));
+  fo.appendChild(document.importNode(doc.documentElement, true));
+  svg.appendChild(fo);
+  return new XMLSerializer().serializeToString(svg);
+}
+
+// จัดหน้าเอกสารใน iframe กว้างเท่ากระดาษ (ให้ autoFitPrintPages วัดได้จริง) → SVG markup
+function receiptLayoutSvg(html, fontCss){
+  return new Promise((resolve, reject) => {
+    const f = document.createElement('iframe');
+    f.setAttribute('aria-hidden', 'true');
+    f.setAttribute('tabindex', '-1');
+    f.setAttribute('sandbox', 'allow-same-origin');
+    f.style.cssText = `position:fixed;left:-99999px;top:0;width:${RECEIPT_DOC_W}px;height:${RECEIPT_DOC_H}px;border:0;`;
+    const cleanup = () => { try { f.remove(); } catch(e){} };
+    f.onload = () => {
+      const d = f.contentDocument;
+      try {
+        if(fontCss){
+          const s = d.createElement('style');
+          s.textContent = fontCss;
+          d.head.appendChild(s);
+        }
+        void d.body.offsetHeight;
+        const fonts = d.fonts && d.fonts.load
+          ? Promise.all(['400', '500', '600', '700'].map(w => d.fonts.load(w + " 16px 'Noto Sans Thai'", 'กขA1').catch(() => {})))
+              .then(() => d.fonts.ready)
+          : Promise.resolve();
+        Promise.race([fonts, new Promise(r => setTimeout(r, 3000))])
+          .then(() => new Promise(r => setTimeout(r, 30)))
+          .then(() => {
+            autoFitPrintPages(d);
+            const svg = receiptSvgMarkup(d);
+            cleanup();
+            resolve(svg);
+          })
+          .catch(err => { cleanup(); reject(err); });
+      } catch(err){ cleanup(); reject(err); }
+    };
+    f.srcdoc = html;
+    document.body.appendChild(f);
+  });
+}
+
+// SVG → canvas พื้นขาว (canvas ใสแปลงเป็น JPEG = พื้นดำ) → JPEG 0.85 · เกิน 700 KB ลดเป็น 0.75 ครั้งเดียว
+function receiptRasterize(svg){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = RECEIPT_IMG_W; c.height = RECEIPT_IMG_H;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, RECEIPT_IMG_W, RECEIPT_IMG_H);
+        g.drawImage(img, 0, 0, RECEIPT_IMG_W, RECEIPT_IMG_H);
+        const done = b => { c.width = c.height = 0; b ? resolve(b) : reject(new Error('receipt toBlob')); };
+        c.toBlob(b => {
+          if(b && b.size > RECEIPT_MAX_BYTES){
+            try { c.toBlob(b2 => done(b2 || b), 'image/jpeg', 0.75); } catch(err){ done(b); }
+          } else done(b);
+        }, 'image/jpeg', 0.85);
+      } catch(err){ reject(err); }   // SecurityError (canvas taint) = ใบรับรถล้ม
+    };
+    img.onerror = () => reject(new Error('receipt svg decode'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+// ภาพใบรับรถ 1240x1754 JPEG → Promise<Blob> · ประกาศเป็น function ให้ prepareJobShare เรียกผ่านชื่อ global
+function renderReceiptImage(job){
+  return new Promise((resolve, reject) => {
+    const html = jobShareReceiptHtml(job);   // ข้อมูล ณ ตอนแตะ ก่อนรอฟอนต์
+    const timer = setTimeout(() => reject(new Error('receipt timeout')), RECEIPT_RENDER_TIMEOUT_MS);
+    loadReceiptFontCss()
+      .then(fontCss => receiptLayoutSvg(html, fontCss))
+      .then(receiptRasterize)
+      .then(b => { clearTimeout(timer); resolve(b); }, err => { clearTimeout(timer); reject(err); });
+  });
 }
 
 function renderJobDetail(jobId){
@@ -18996,18 +19431,16 @@ function renderJobDetail(jobId){
 
   html += `<div class="no-print">`;
 
-  html += jobShareCardHtml(job);   // v4.6.5 — ส่งใบเสนอราคา + รูป เข้ากลุ่มไลน์
-
   html += `<div class="card">
     <h3>ลายเซ็นใบรับรถ</h3>
     <p class="muted" style="margin-top:-6px;">เซ็นตรงนี้แล้วลายเซ็นจะไปโผล่บนใบรับรถที่พิมพ์ออกด้วย</p>
     <div class="sig-status-row">
       ${[['staffReceive','เจ้าหน้าที่รับรถ'],['customerAck','ลูกค้า (รับทราบ)']].map(([key,label]) => {
-        const sig = job.signatures && job.signatures[key];
+        const sig = signatureSrc(job, key);
         return `<div class="sig-status-item">
           <div class="sig-status-label">${escapeHtml(label)}</div>
           ${sig
-            ? `<img class="sig-thumb" src="${sig}" alt="ลายเซ็น ${escapeAttr(label)}">
+            ? `<img class="sig-thumb" src="${escapeAttr(sig)}" alt="ลายเซ็น ${escapeAttr(label)}">
                <div class="sig-status-btns">
                  <button class="btn secondary small" onclick="openSignaturePad('${job.id}','${key}','${escapeAttr(label)}')">เซ็นใหม่</button>
                  <button class="btn secondary small" onclick="clearSignature('${job.id}','${key}', event)">ลบ</button>
@@ -19025,8 +19458,8 @@ function renderJobDetail(jobId){
   if(!prevSvc && job.vehicleId && !vehicleHistoryComplete(job.vehicleId)) loadVehicleHistory(job.vehicleId);
   const lineRepeat = !!prevSvc || isRepeatCustomer(job.customerId, job.id);
   html += `<div class="card">
-    <h3>สรุปข้อความลงกลุ่มไลน์</h3>
-    <p class="muted" style="margin-top:-6px;">กรอกคิว/หมายเหตุแล้วกดคัดลอก เพื่อวางในไลน์กลุ่มได้ทันที</p>
+    <h3>${icon('chat',15)} สรุปข้อความลงกลุ่มไลน์</h3>
+    ${jobShareSectionHtml(job)}
     <div class="pv-intake-row" style="gap:14px;">
       <div class="field" style="flex:1 1 120px; margin-bottom:0;"><label>คิวที่</label><input type="text" value="${escapeAttr(job.queueNo||'')}" placeholder="เช่น 8" onchange="onJobQueueNoChange('${job.id}', this.value)"></div>
       <div class="field" style="flex:1 1 140px; margin-bottom:0;"><label>ราคาซ่อม (ประมาณ)</label><input type="text" inputmode="numeric" value="${job.priceEstimate ? escapeAttr(String(job.priceEstimate)) : ''}" placeholder="เช่น 3500" onchange="onJobPriceEstimateChange('${job.id}', this.value)"></div>
@@ -19061,7 +19494,9 @@ function renderJobDetail(jobId){
       </div>`;
     }
   }
-  html += `<textarea id="line-summary-text" class="line-summary-box" rows="9" spellcheck="false">${escapeHtml(buildLineSummaryText(job))}</textarea>
+  /* v4.6.6 — ร่างที่แก้เองอยู่รอด render() (เก็บใน view.lineDraft ผ่าน oninput) · ใส่กลับด้วย escapeHtml เท่านั้น */
+  const lineDraft = view.lineDraft && view.lineDraft.jobId === job.id ? view.lineDraft : null;
+  html += `<textarea id="line-summary-text" class="line-summary-box" rows="9" spellcheck="false" oninput="onLineSummaryEdit(this.value)">${escapeHtml(lineDraft ? lineDraft.text : buildLineSummaryText(job))}</textarea>
     <div style="margin-top:10px;"><button class="btn secondary small" onclick="copyLineSummary('${job.id}')">คัดลอกข้อความ</button></div>
   </div>`;
 
@@ -19361,7 +19796,8 @@ function collectDocCss(root){
 /* ประกอบ HTML เต็มใบจากชิ้นส่วนเอกสารที่แอปสร้างไว้แล้ว
 
    fragmentHtml = HTML ของเอกสาร (เช่นที่ renderJobPrintPage คืนมา)
-   opts = { title, orient, margin, size } */
+   opts = { title, orient, margin, size, webFont }
+   v4.6.6 — webFont:false = ไม่ใส่ <link> Google Fonts (ภาพใบรับรถฝังฟอนต์เองเป็น data: URL) */
 function buildPrintDoc(fragmentHtml, opts){
   const o = opts || {};
   // เอาชิ้นส่วนไปวางในหน้าแอปชั่วคราวเพื่อ "ถามว่าใช้กฎ CSS ข้อไหนบ้าง"
@@ -19401,7 +19837,7 @@ function buildPrintDoc(fragmentHtml, opts){
   return `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${escapeHtml(o.title || 'เอกสาร')}</title>
-${fontLink}
+${o.webFont === false ? '' : fontLink}
 <style>
 ${pageRule(o.orient, o.margin, o.size)}
 ${base}
@@ -19836,9 +20272,11 @@ function doPrint(){
 function printJobCheckin(jobId){
   const job = getJob(jobId);
   if(!job){ flashToast('ไม่พบรายการรถคันนี้'); return; }
-  openPrintFragment(renderJobPrintPage(job), {
-    title: 'ใบรับรถ ' + (job.jobNumber || ''), orient: 'portrait', margin: '12mm 10mm'
-  });
+  openPrintFragment(renderJobPrintPage(job), checkinDocOpts(job));
+}
+// v4.6.6 — ตัวเลือกเอกสารใบรับรถชุดเดียว ใช้ทั้งใบพิมพ์และภาพใบรับรถที่ส่งเข้าไลน์ (jobShareReceiptHtml)
+function checkinDocOpts(job){
+  return { title: 'ใบรับรถ ' + (job.jobNumber || ''), orient: 'portrait', margin: '12mm 10mm' };
 }
 function printJobQuote(jobId){
   const job = getJob(jobId);
@@ -19957,11 +20395,11 @@ function renderJobPartsEditor(job){
       ${discountAmt > 0 ? `<div class="job-total-row job-grand-total-row"><span>ยอดสุทธิที่ต้องชำระ</span><strong class="mono">${fmtMoney(grandTotal)} บาท</strong></div>` : ''}
       <div class="sig-status-row">
         ${[['inspector','ผู้ตรวจเช็ค'],['quoter','ผู้เสนอราคา'],['customerApprove','ลูกค้าอนุมัติ']].map(([key,label]) => {
-          const sig = job.signatures && job.signatures[key];
+          const sig = signatureSrc(job, key);
           return `<div class="sig-status-item">
             <div class="sig-status-label">${escapeHtml(label)}</div>
             ${sig
-              ? `<img class="sig-thumb" src="${sig}" alt="ลายเซ็น ${escapeAttr(label)}">
+              ? `<img class="sig-thumb" src="${escapeAttr(sig)}" alt="ลายเซ็น ${escapeAttr(label)}">
                  <div class="sig-status-btns">
                    <button class="btn secondary small" onclick="openSignaturePad('${job.id}','${key}','${escapeAttr(label)}')">เซ็นใหม่</button>
                    <button class="btn secondary small" onclick="clearSignature('${job.id}','${key}', event)">ลบ</button>
@@ -20112,8 +20550,9 @@ function renderJobFormHeader(job, docTitle, subLine){
 }
 
 /* Printable "ใบรับรถ" page for a saved job — styled like the รุ่นรถ print page
-   (same pv-* classes/banner/table/signatures), hidden on screen, shown only when printing. */
-function renderJobPrintPage(job){
+   (same pv-* classes/banner/table/signatures), hidden on screen, shown only when printing.
+   v4.6.6 — opts ส่งต่อให้ pvSignBoxHtml (ภาพใบรับรถที่ส่งเข้าไลน์ใช้ { signedWord, signed }) ใบพิมพ์ไม่ส่ง = เหมือนเดิม */
+function renderJobPrintPage(job, opts){
   const st = statusOf(job.status);
 
   /* v3.30.0 — ส่วนรายการทำใหม่ทั้งหมดตามที่ร้านออกแบบร่วมกัน
@@ -20174,8 +20613,8 @@ function renderJobPrintPage(job){
     ${shopCallBlockHtml('cb-wide')}
 
     <div class="pv-signatures">
-      ${pvSignBoxHtml(job, 'staffReceive', 'เจ้าหน้าที่รับรถ')}
-      ${pvSignBoxHtml(job, 'customerAck', 'ลูกค้า (รับทราบ)')}
+      ${pvSignBoxHtml(job, 'staffReceive', 'เจ้าหน้าที่รับรถ', opts)}
+      ${pvSignBoxHtml(job, 'customerAck', 'ลูกค้า (รับทราบ)', opts)}
     </div>
   </div>
   </div>`;
@@ -20363,10 +20802,10 @@ function renderJobQuotePage(job){
     `<div class="qt-tot-row ${cls || ''}"><span>${label}</span><span class="qt-tot-v mono">${value}</span></div>`;
 
   const signBox = (role, title) => {
-    const sig = job.signatures && job.signatures[role];
+    const sig = signatureSrc(job, role);
     return `<div class="qt-sign">
       <div class="qt-sign-title">${escapeHtml(title)}</div>
-      ${sig ? `<img class="qt-sign-img" src="${sig}" alt="">` : `<div class="qt-sign-line"></div>`}
+      ${sig ? `<img class="qt-sign-img" src="${escapeAttr(sig)}" alt="">` : `<div class="qt-sign-line"></div>`}
     </div>`;
   };
 
