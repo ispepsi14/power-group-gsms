@@ -89,3 +89,15 @@ public/tasks.json
 public/extensions.json
 public/*.md
 public/gitignore-*.txt
+
+# ===================================================================
+# 24 ต.ค. 2569 — งาน line-bot-queue-command (S8 / C-4)
+# ความลับของ Bot อยู่ใน Secret Manager เท่านั้น (firebase functions:secrets:set)
+# ไฟล์พวกนี้ต้องไม่ขึ้น GitHub ถ้ามีใครเผลอสร้างไว้ในเครื่อง
+# ห้ามสร้าง key ของ service account เป็นไฟล์ JSON — ถ้าเจอ ให้ลบและเพิกถอนใน Console
+functions/.secret.local
+functions/.env*
+.env.*
+.runtimeconfig.json
+functions/.runtimeconfig.json
+*service-account*.json

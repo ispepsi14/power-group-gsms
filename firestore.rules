@@ -245,6 +245,39 @@ service cloud.firestore {
       allow write: if signedIn() && request.auth.uid == uid;
     }
 
+    // ---------- กลุ่ม LINE ที่ Bot ตอบได้ (line-bot-queue-command) ----------
+    // [ใหม่] Cloud Function (Admin SDK ข้าม rules) เป็นคนเดียวที่สร้างเอกสารตอน Bot
+    // ถูกเชิญเข้ากลุ่ม (status: pending) · client สร้างเองไม่ได้แม้เป็นแอดมิน
+    // แอดมินอ่าน/แก้ได้เฉพาะ 4 คีย์ ผ่าน .doc(id).update() ในหน้า "ตั้งค่า → กลุ่ม LINE"
+    // approvedBy ต้องเป็น uid ของคนกดเอง (หลักฐานการอนุมัติต้องเชื่อได้)
+    // approvedAt เป็น ISO string จาก nowIso() เหมือนทั้งแอป (BR-4)
+    // ห้ามใส่ lineGroups ใน SYNC_COLLECTIONS — เครื่องพนักงานจะทำ batch ล้มทั้งก้อน
+    // lineBotState/ (กันซ้ำของ Bot) ไม่มีกฎ = catch-all ข้างล่างปิดให้ client ทั้งหมด
+    match /lineGroups/{groupId} {
+      allow read: if isAdmin();
+      allow create: if false;
+      // เปลี่ยนเป็นอนุมัติ (จากสถานะอื่น) ต้องลงชื่อคนกดเอง (approvedBy = uid) + approvedAt ใหม่ทุกครั้ง
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'approvedBy', 'approvedAt', 'label'])
+        && request.resource.data.status in ['approved', 'revoked', 'pending']
+        && (resource.data.status == 'approved'
+            || request.resource.data.status != 'approved'
+            || (request.resource.data.approvedBy == request.auth.uid
+                && 'approvedAt' in request.resource.data.diff(resource.data).affectedKeys()))
+        && (!('approvedBy' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.approvedBy == request.auth.uid)
+        && (!('approvedAt' in request.resource.data.diff(resource.data).affectedKeys())
+            || (request.resource.data.approvedAt is string
+                && request.resource.data.approvedAt.size() <= 40
+                && request.resource.data.approvedAt.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$')))
+        && (!('label' in request.resource.data)
+            || (request.resource.data.label is string
+                && request.resource.data.label.size() <= 60));
+      // ลบไม่ได้จากแอป (กลุ่มที่ไม่ต้องการ = ไม่รับ / ยกเลิกสิทธิ์) · ถ้าลบได้ การเชิญ Bot ซ้ำจะได้ pending ใหม่
+      allow delete: if false;
+    }
+
     // ---------- ปิดทุกอย่างที่ไม่ได้ระบุไว้ข้างบน ----------
     match /{document=**} {
       allow read, write: if false;

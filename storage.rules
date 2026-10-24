@@ -1,0 +1,103 @@
+rules_version = '2';
+
+// ===================================================================
+// POWER GROUP GSMS — Cloud Storage Security Rules
+//
+// *** ร่าง — ต้องเทียบกับกฎใน Console ก่อน publish ***
+//
+// ไฟล์นี้เขียนจากโค้ดของแอพ (public/index.html v4.6.6) ไม่ได้คัดลอกมาจาก Console
+// เพราะตอนเขียนทีมยังไม่เห็นกฎตัวจริง ถ้าวางทับโดยไม่เทียบ อาจทำให้การอัปโหลดรูป
+// ตอนรับรถพังทั้งร้าน (แอพจะถอยไปเก็บรูปเป็น base64 ใน Firestore แทน งานไม่หาย
+// แต่ข้อมูลจะบวมและแอพเปิดช้าลง)
+//
+// ก่อนกด Publish ให้เทียบทีละข้อ (คู่มือ docs/specs/line-bot-install.md ขั้น 3):
+//   [ ] 1. กฎใน Console มี path อื่นนอกจาก jobPhotos/ jobThumbs/ หรือไม่
+//          ถ้ามี (เช่น feedback/ chat/ avatars/) ต้องเพิ่ม match ของ path นั้นในไฟล์นี้ก่อน
+//          เพราะ catch-all ข้างล่างเป็น if false — path ที่ไม่มีชื่อในไฟล์นี้จะถูกปิดทันที
+//   [ ] 2. กฎเดิมของ jobPhotos/ jobThumbs/ ใช้เงื่อนไขอะไร ถ้าเป็นแค่
+//          "request.auth != null" แปลว่าตอนนี้ลูกค้า anonymous จากหน้าแชท/หน้าตามรถ
+//          ก็เขียนได้ — ไฟล์นี้บีบให้เหลือเฉพาะบัญชีที่มี users/{uid} (พนักงาน/แอดมิน)
+//   [ ] 3. ถ้ากฎเดิมจำกัดขนาด/ชนิดไฟล์ไว้ เทียบกับตัวเลขข้างล่าง (รูปรถ < 10 MB, image/*)
+//   [ ] 4. ใน Console มีกฎแบบ catch-all ที่เปิด read/write ให้ request.auth != null หรือไม่
+//          (มี = ยืนยันความเสี่ยง S7 — ไฟล์นี้ปิดแล้ว)
+//   [ ] 5. ตอน Publish ครั้งแรก Console จะถามให้อนุญาต Storage อ่าน Firestore
+//          (สำหรับ firestore.exists) ให้กด Grant/อนุญาต ไม่งั้นทุกการอัปโหลดจะถูกปฏิเสธ
+//   [ ] 6. คัดลอกกฎเดิมทั้งหมดเก็บไว้ในโน้ตก่อน — ถ้าพังให้วางของเดิมกลับแล้ว Publish
+//   [ ] 7. ทีม (qa-tester) ต้องรันกับ Storage emulator ด้วย anonymous / พนักงาน / แอดมิน
+//          ก่อน publish (security S7 ข้อ 4) — ยังไม่ได้รัน
+//
+// การเรียก getDownloadURL() / getMetadata() ผ่าน SDK "ตรวจกฎ read" ข้างล่าง (แอพเรียก
+// getDownloadURL ทันทีหลังพนักงานอัปโหลด จึงผ่าน hasAccess) · สิ่งที่ไม่ตรวจกฎคือการ
+// "เปิดลิงก์ที่มี token ติดมา" (ลิงก์ที่ getDownloadURL คืนให้และเก็บไว้ใน Firestore)
+// → หน้า board/ หน้าแชทลูกค้า และปุ่มส่งเข้า LINE ที่ fetch จากลิงก์เดิม ยังเปิดรูปได้เหมือนเดิม
+//
+// วิธีใช้: Firebase Console -> Storage -> แท็บ Rules -> วางไฟล์นี้ -> Publish
+// ไฟล์นี้ไม่ได้ผูกกับ firebase.json (ตั้งใจ — กัน "firebase deploy" เปล่า ๆ เขียนทับ Console)
+// ===================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ---------- ตัวช่วย (ต้องตรงกับ firestore.rules) ----------
+    // บัญชีแอดมินตั้งต้น เหมือน bootstrapAdmin() ใน firestore.rules
+    function bootstrapAdmin() {
+      return request.auth != null
+        && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
+    }
+
+    // พนักงาน/แอดมิน = มีเอกสาร users/{uid} (เหมือน hasAccess() ใน firestore.rules)
+    // ลูกค้าที่ล็อกอินแบบ anonymous จากหน้าแชท/หน้าตามรถ ไม่มี users/{uid} จึงไม่ผ่าน
+    function hasAccess() {
+      return bootstrapAdmin()
+        || (request.auth != null
+            && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)));
+    }
+
+    // รูปที่แอพอัปโหลด: แอพย่อรูปเป็น JPEG ก่อนส่งเสมอ (dataUrlToBlob)
+    function isPhotoUpload() {
+      return request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ---------- รูปรถตอนรับรถ ----------
+    // แอพเขียน: jobPhotos/{jobId}/{uid}.jpg  (index.html uploadJobPhoto)
+    // แอพลบ:    deleteStoragePath() ตอนลบรูป/ลบงานถาวร
+    match /jobPhotos/{jobId}/{f} {
+      allow read: if hasAccess();
+      allow create, update: if hasAccess() && isPhotoUpload();
+      allow delete: if hasAccess();
+    }
+
+    // ---------- รูปย่อหน้าปก ----------
+    // แอพเขียน: jobThumbs/{jobId}/{uid}.jpg  (index.html uploadJobThumb)
+    match /jobThumbs/{jobId}/{f} {
+      allow read: if hasAccess();
+      allow create, update: if hasAccess() && isPhotoUpload();
+      allow delete: if hasAccess();
+    }
+
+    // ---------- ภาพใบรับรถ / ใบเสนอราคา สำหรับ LINE Bot (งาน line-bot-queue-command, S7) ----------
+    // แอพเขียน receipt.jpg / quote-<n>.jpg · Bot อ่านผ่าน Admin SDK + signed URL (ไม่ผ่านกฎนี้)
+    // มีชื่อ เบอร์ ทะเบียน ราคา → ห้าม anonymous อ่าน/เขียน · ห้ามลบจาก client
+    // เงื่อนไขเขียน firestore.exists ไว้ตรง ๆ (ไม่เรียก hasAccess()) ให้ guard ตรวจได้
+    match /jobPrints/{jobId}/{file} {
+      allow read: if request.auth != null
+        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
+            || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)));
+      allow create, update: if request.auth != null
+        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
+            || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)))
+        && file.matches('receipt[.]jpg|quote-[0-9]{1,2}[.]jpg')
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.size < 2 * 1024 * 1024;
+      allow delete: if false;
+    }
+
+    // ---------- ที่เหลือทั้งหมด: ปิด ----------
+    // Storage rules เป็น OR — ถ้ามี match ไหนเปิดกว้าง กฎเข้มข้างบนก็ไร้ผล
+    // path ใหม่ต้องเพิ่ม match ของตัวเองข้างบน ห้ามแก้บล็อกนี้ให้เปิด
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

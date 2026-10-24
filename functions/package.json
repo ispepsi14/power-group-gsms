@@ -1,0 +1,13 @@
+{
+  "name": "gsms-linebot",
+  "description": "POWER GROUP GSMS - LINE Bot ตอบคำสั่ง !เลขคิว (Cloud Functions 2nd gen)",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  }
+}

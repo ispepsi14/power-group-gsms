@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.6";
+  const APP_VERSION = "4.6.7";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3166,6 +3166,30 @@
               buildQuoteShareText คงไว้แบบไม่มีผู้เรียก
 
               เทสต์ใหม่: tests/wguard.js · tests/shot78cdp.js (shot78) · lguard ปรับตาม spec ข้อ 9
+     v4.6.7 — ส่วนแอพของ LINE Bot ตอบคำสั่ง !เลขคิว (spec docs/specs/line-bot-queue-command.md · PM-1/PM-2)
+              1. เก็บภาพตอนกดปริ้น (ส่วน A): printJobQuote / printJobCheckin เปิดพรีวิวก่อน แล้วหลัง
+                 PRINT_CAPTURE_DELAY_MS (2 วิ) สร้างภาพเบื้องหลังด้วยท่อเดียวกับภาพใบรับรถ 4.6.6
+                 → Storage jobPrints/{jobId}/receipt.jpg · quote-{n}.jpg (1 ภาพต่อหน้า · หน้า 2..N ก่อน quote-1)
+                 metadata: image/jpeg · private, no-cache · printId/printedAt/pages/grandTotal/appVersion/printedBy(uid)
+                 ช่องลายเซ็นในภาพเป็นคำว่า "เซ็นแล้ว" (วาดจากสำเนา ไม่แตะ job.signatures) · ใบพิมพ์จริงเหมือนเดิม
+                 renderJobQuotePage(job, opts) — opts.printedAt (วันที่บนใบ = พรีวิว = ภาพ) / signedWord / asPages
+                 ไม่เขียนใบงาน / Firestore / config/main / state.settings / localStorage · ไม่เรียก getDownloadURL
+                 ล้ม = ลองใหม่ 1 ครั้งแล้วเงียบ · กดซ้ำ = ครั้งหลังชนะ · doPrint / ใบเสนอราคาฝั่งลูกค้าไม่เก็บภาพ
+                 บรรทัดเตือนเล็กใต้ปุ่มพิมพ์ (U4) เฉพาะเน็ต/หมดเวลา/อัปโหลดล้ม · rules ยังไม่ publish = console อย่างเดียว
+              2. formatter ร่วมกับ Bot: บล็อก LINE-SHARED (fmtDateBEBangkok, normalizeJobForSummary,
+                 pickLastService, summarizeService, formatLineSummary) · buildLineSummaryText เป็นตัวห่อ
+                 ผลเหมือน 4.6.6 ทุกตัวอักษร · ไม่ย้ายฟังก์ชันเงินเดิม (BR-6) · scripts/extract-line-shared.js
+                 คัดบล็อก + ฟังก์ชันเดิมตามชื่อ → functions/shared/lineSummary.js (GENERATED)
+                 lastServiceFor ใช้ pickLastService (เรียง → ตัด 20 ใบ → กรอง) ตัวเดียวกับ Bot
+              3. ตั้งค่า → กลุ่ม LINE (แอดมินเท่านั้น): view.lineGroups โหลดด้วย .get() เฉพาะแอดมินตอนเปิดหน้า
+                 อนุมัติต้องพิมพ์รหัส 4 ตัวที่ Bot ส่งในกลุ่ม (PM-1) แล้วยืนยัน · .update() + approvedAt เป็น ISO string
+                 + approvedBy = uid · ไม่รับ / ยกเลิกสิทธิ์ / เปิดใช้อีกครั้ง / ตั้งชื่อเรียก + undo
+                 ไม่โชว์รหัสบนการ์ด ("รหัส: ดูในกลุ่มไลน์") + จำนวนสมาชิก (memberCount) · กลุ่มที่ไม่เคยอนุมัติ
+                 เปิดใช้อีกครั้งต้องพิมพ์รหัสเหมือนอนุมัติครั้งแรก
+                 ปุ่มพก groupId ใน data-* (ไม่มี onclick) · ชื่อ/label/code ผ่าน escapeHtml · ไม่อยู่ใน SYNC_COLLECTIONS
+              4. ปุ่ม "ส่งเข้า LINE กลุ่ม" และการ์ดสรุปข้อความของ 4.6.6 ไม่เปลี่ยน
+
+              เทสต์ใหม่: tests/line-bot-app.guard.js · tests/line-bot-shared.guard.js
               -->
 
 
@@ -5347,6 +5371,33 @@
   }
   .settings-nav-btn:hover{border-color:var(--navy); background:var(--surface);}
   .settings-nav-btn small{font-weight:400; font-size:11.5px; color:var(--text-2);}
+  /* v4.6.7 — บรรทัดเตือน U4 ใต้ปุ่มพิมพ์ (ภาพยังไม่ถึง Bot) + หน้า ตั้งค่า → กลุ่ม LINE (UX U1) */
+  .print-capture-warn{display:flex; align-items:center; gap:6px; margin:6px 0 10px; font-size:12.5px; color:var(--text-2);
+    border-left:3px solid var(--hazard); padding-left:8px;}
+  .lg-steps{margin:0 0 10px; padding-left:20px; line-height:1.9;}
+  .lg-top-btns{display:flex; flex-wrap:wrap; gap:10px; margin-top:12px;}
+  .lg-offline{margin:-4px 0 12px; padding:8px 10px; border-radius:8px; background:var(--surface); color:var(--text);
+    border-left:3px solid var(--hazard); font-size:13.5px;}
+  .lg-head{display:block; margin:18px 2px 8px; font-size:15px; font-weight:700; color:var(--text);}
+  .lg-toggle{background:none; border:0; padding:6px 2px; cursor:pointer; font-family:inherit; text-align:left; min-height:44px;}
+  .lg-row{display:flex; flex-direction:column; gap:10px;}
+  .lg-info{min-width:0; flex:1 1 auto;}
+  .lg-name{font-size:16px; font-weight:700; margin:6px 0 2px; overflow-wrap:anywhere; word-break:break-word;}
+  .lg-sub{font-size:13px; color:var(--text-2); overflow-wrap:anywhere;}
+  .lg-code{display:inline-flex; align-items:baseline; gap:8px; align-self:flex-start; padding:6px 14px; border-radius:8px;
+    background:var(--surface); border:2px solid var(--hazard);}
+  .lg-code small{font-size:12px; color:var(--text-2);}
+  .lg-code span{font-size:14px; font-weight:600; color:var(--text);}
+  .lg-code b{font-family:var(--font-mono); font-size:28px; font-weight:800; letter-spacing:.15em; color:var(--text);}
+  .lg-btns{display:flex; flex-direction:column; gap:8px;}
+  .lg-btns .btn{min-height:44px; justify-content:center;}
+  .lg-badge-pending{background:var(--hazard); color:var(--hazard-dark);}
+  .lg-danger-text{color:var(--red-ink) !important;}
+  @media (min-width:701px){
+    .lg-row{flex-direction:row; align-items:center;}
+    .lg-code{align-self:center;}
+    .lg-btns{flex-direction:row; flex-wrap:wrap; justify-content:flex-end;}
+  }
   @media (max-width:520px){ .settings-nav{grid-template-columns:1fr;} .settings-nav-btn{flex-direction:row; justify-content:flex-start; gap:10px; padding:14px;} .settings-nav-btn small{margin-left:auto;} }
   .model-nav-btns{display:flex; gap:6px; margin-left:auto;}
   .model-nav-btns button:disabled{opacity:0.4; cursor:not-allowed;}
@@ -5913,6 +5964,8 @@
   .qt-sign-title{ font-size:11.5px; font-weight:700; color:#0f8a4a !important; margin-bottom:6px; }
   .qt-sign-img{ display:block; height:44px; margin:2px 0 0; object-fit:contain; }
   .qt-sign-line{ border-bottom:1px dotted #8b9a92; height:34px; }
+  /* v4.6.7 — ภาพใบเสนอราคาที่เก็บให้ Bot: ช่องที่เซ็นแล้วขึ้นคำนี้แทนลายเส้น (ใบพิมพ์ไม่มี) */
+  .qt-sign-line.qt-sign-done{ display:flex; align-items:flex-end; font-size:12px; font-weight:600; color:#1b1f24; padding-bottom:3px; }
   .qt-stamp{ margin-top:8px; border:1px dashed #cfd8d2; border-radius:4px; height:52px;
     display:flex; align-items:center; justify-content:center; font-size:10.5px; color:#9aa8a1; }
   .qt-foot{ margin-top:14px; border-top:2px solid #0f8a4a; padding-top:7px;
@@ -11291,6 +11344,8 @@ function handleAuthChange(user){
     currentUser = null;
     dataReady = false;
     clearJobShare();
+    // v4.6.7 — รายชื่อกลุ่ม LINE (ของแอดมิน) และบรรทัดเตือนภาพปริ้น อยู่ในหน่วยความจำเท่านั้น ล้างเมื่อออกจากระบบ
+    view.lineGroups = []; view.lineGroupsState = ''; view.lineGroupBusy = null; view.printCaptureFail = {};
     render();   // goes through the hub gate first, then falls through to renderLogin()
     return;
   }
@@ -12015,6 +12070,7 @@ function goTab(tab){
   }
   render();
   if(tab === 'users') loadUsersList();
+  if(tab === 'linegroups') loadLineGroups();   // v4.6.7 — loadLineGroups เช็ก isAdmin เอง
 }
 function openJob(id){
   clearJobShare();   // v4.6.5 — ห้ามส่งของที่เตรียมจากใบเก่าในหน้าใบใหม่
@@ -16245,7 +16301,7 @@ function render(){
     view.tab = 'joblist';
     view.modelId = null;
   }
-  const settingsActive = !view.modelId && ['shop','models','master','pricebook','users'].includes(view.tab);
+  const settingsActive = !view.modelId && ['shop','models','master','pricebook','users','linegroups'].includes(view.tab);
   let html = `<div class="app-bar no-print">
     <div class="left-group">
       <div class="brand-block"><span class="brand-mark">${icon('bolt',18)}</span><span class="brand">POWER GROUP</span><span class="ver">v${APP_VERSION}</span></div>
@@ -16340,6 +16396,8 @@ function render(){
     html += settingsBackLink('รวมรุ่นซ้ำ') + renderDupMergeTab();
   } else if(view.tab === 'users'){
     html += settingsBackLink('ผู้ใช้งาน') + renderUsersTab();
+  } else if(view.tab === 'linegroups'){
+    html += settingsBackLink('กลุ่ม LINE') + renderLineGroupsTab();
   } else if(view.tab === 'delivered'){
     html += renderDeliveredTab();
   } else if(view.tab === 'rejected'){
@@ -18440,30 +18498,23 @@ function previousJobsForVehicle(job){
     .sort((a, b) => usableVisitTime(b) - usableVisitTime(a));
 }
 
+/* v4.6.7 — ตัวเลือก "ครั้งก่อน" อยู่ใน pickLastService (บล็อก LINE-SHARED) ตัวเดียวกับ LINE Bot
+   เรียงใหม่ก่อน → ตัด VEHICLE_HISTORY_ROWS ใบ → กรองใบที่เก่ากว่าใบนี้ → ใบที่ทำเสร็จใบแรก (BR-2 ก) */
 function lastServiceFor(job){
-  return previousJobsForVehicle(job)
-    .find(j => LAST_SERVICE_DONE_STATUSES.indexOf(j.status) >= 0) || null;
+  if(!job || !job.vehicleId) return null;
+  return pickLastService(vehicleHistoryRows(job.vehicleId), job);
 }
 
 function lastServiceSummary(job){
   const prev = lastServiceFor(job);
   if(!prev) return null;
-  const items = (prev.partsNeeded || [])
-    .filter(p => p && !p.promoParent && !isDeductRow(p))
-    .map(p => String((p && p.partName) || '').trim())
-    .filter(Boolean);
-  /* ราคาต้องเป็น "ยอดที่เก็บไปจริง" เท่านั้น
-     jobBestPrice() ถอยไปใช้ job.priceEstimate เมื่อใบนั้นไม่มีรายการที่คีย์ราคา
-     ซึ่งถูกสำหรับการโชว์ราคาคร่าว ๆ ของใบที่กำลังทำ แต่ผิดสำหรับที่นี่ —
-     priceEstimate คือเลขที่เดาไว้ตอนรับรถ ไม่ใช่เงินที่ลูกค้าจ่าย เอาไปบอกใน
-     กลุ่มไลน์ว่า "ค่าซ่อมครั้งก่อน 12,000" ทั้งที่ไม่เคยออกบิลเลข นั้นคือการ
-     สร้างตัวเลขขึ้นมาเอง · ใบที่ไม่มีรายการราคา = ไม่รู้ว่าเก็บเท่าไร → null */
-  const billed = jobHasPricedLines(prev) ? jobGrandTotal(prev) : null;
+  // วันที่ / รายการ / ยอดที่เก็บจริง มาจาก summarizeService ตัวเดียวกับข้อความของ Bot (บล็อก LINE-SHARED)
+  const s = summarizeService(prev, fmtDateBE);
   return {
-    jobNumber: prev.jobNumber || '',
-    date: fmtDateBE(prev.createdAt),
-    items: items.join(', '),
-    price: billed,
+    jobNumber: s.jobNumber,
+    date: s.date,
+    items: s.items,
+    price: s.price,
     complete: vehicleHistoryComplete(job.vehicleId),
     offline: !!vehicleHistoryOffline[job.vehicleId]
   };
@@ -18495,34 +18546,106 @@ function lineFieldValue(job, field){
   return field === 'line_prevDate' ? s.date : s.items;
 }
 
-function buildLineSummaryText(job){
-  const v = getVehicle(job.vehicleId) || {};
-  const c = getCustomer(job.customerId) || {};
-  const repeat = isRepeatCustomer(job.customerId, job.id);
-  const q = (job.queueNo || view.line_queueNo || '').trim();
+/* LINE-SHARED:BEGIN */
+/* v4.6.7 — formatter ร่วมระหว่างแอพกับ LINE Bot (spec line-bot-queue-command ข้อ 7.2 · BR-6)
+   บล็อกนี้ถูกคัดออกไปเป็น functions/shared/lineSummary.js ด้วย scripts/extract-line-shared.js
+   พร้อมฟังก์ชันเดิมตามรายชื่อในสคริปต์นั้น (parseMoney / jobGrandTotal / fmtMoney / usableVisitTime ฯลฯ)
+   กติกา: ตรรกะล้วนเท่านั้น ห้ามอ้างตัวแปรของหน้าแอพ (ค่าของเครื่อง / DOM / ฐานข้อมูล) — ค่าทุกตัวต้องรับผ่านพารามิเตอร์
+   ถ้าเผลออ้าง ตัวคัดจะล้มทันที (ตรวจตัวเองใน vm เปล่า) และเทสต์ line-bot-shared.guard ตก
+   แก้ที่นี่แล้วต้องรัน node scripts/extract-line-shared.js ใหม่ทุกครั้ง (guard X5 จับ drift) */
+
+// วันที่ d/m/yy พ.ศ. ตามเวลาไทย ไม่พึ่ง timezone ของเครื่อง (Cloud Functions เป็น UTC)
+// ไทยไม่มี DST จึงบวก 7 ชั่วโมงแล้วอ่านแบบ UTC ได้ตรงทุกวัน
+function fmtDateBEBangkok(iso){
+  const t = iso ? new Date(iso).getTime() : Date.now();
+  const d = new Date(t + 7 * 3600 * 1000);
+  return `${d.getUTCDate()}/${d.getUTCMonth()+1}/${String(d.getUTCFullYear() + 543).slice(-2)}`;
+}
+
+// สำเนาใบงานที่มีฟิลด์ครบพอให้ formatter อ่าน (แบบ ensureJobFields เฉพาะส่วนที่ข้อความใช้)
+// ไม่แก้ object ต้นฉบับ — ใบที่ Bot ดึงตรงจากฐาน (นอก 600 ใบ) อาจไม่เคยผ่าน ensureJobFields
+function normalizeJobForSummary(job){
+  const j = Object.assign({}, job || {});
+  if(!Array.isArray(j.complaints)){
+    j.complaints = (j.complaint && String(j.complaint).trim())
+      ? [{ text: String(j.complaint).trim() }] : [];
+  }
+  if(!Array.isArray(j.partsNeeded)) j.partsNeeded = [];
+  if(j.discountType === undefined) j.discountType = 'amount';
+  if(j.discountValue === undefined) j.discountValue = 0;
+  return j;
+}
+
+// ใบเก่าของรถคันนี้ที่รับเข้า "ก่อน" ใบนี้ ใหม่สุดก่อน: กรองใบที่ไม่ลบ / ไม่ใช่ใบนี้ / วันที่อ่านออกและเก่ากว่าใบนี้
+// → เรียงใหม่สุดก่อน → แล้วค่อยตัดเหลือ VEHICLE_HISTORY_ROWS ใบ (ตัดหลังกรอง — ถ้าตัดก่อน รถที่เข้ามาเกิน 20 ครั้ง
+// ถามใบเก่าแล้วหา "ครั้งก่อน" ไม่เจอ ซึ่งต่างจาก 4.6.6 · QA round 1)
+function previousServiceRows(rows, job){
+  if(!job) return [];
+  const cutoff = usableVisitTime(job);
+  if(!isFinite(cutoff)) return [];
+  return (rows || [])
+    .filter(j => {
+      if(!j || j.deletedAt || j.id === job.id) return false;
+      const t = usableVisitTime(j);
+      return isFinite(t) && t < cutoff;
+    })
+    .sort((a, b) => usableVisitTime(b) - usableVisitTime(a))
+    .slice(0, VEHICLE_HISTORY_ROWS);
+}
+
+// ใบ "ครั้งก่อน" = ใบแรกที่ทำเสร็จแล้วใน previousServiceRows · ทั้งแอพและ Bot เรียกตัวนี้
+function pickLastService(rows, job){
+  if(!job || !job.vehicleId) return null;
+  return previousServiceRows(rows, job)
+    .find(j => LAST_SERVICE_DONE_STATUSES.indexOf(j.status) >= 0) || null;
+}
+
+/* สรุปใบครั้งก่อน: วันที่ / รายการ / ยอดที่เก็บจริง
+   ราคาต้องเป็น "ยอดที่เก็บไปจริง" เท่านั้น — ใบที่ไม่มีรายการที่คีย์ราคา = ไม่รู้ว่าเก็บเท่าไร → null
+   (ห้ามถอยไปใช้ priceEstimate ซึ่งเป็นเลขที่เดาไว้ตอนรับรถ ไม่ใช่เงินที่ลูกค้าจ่าย) */
+function summarizeService(prev, fmtDate){
+  const items = (prev.partsNeeded || [])
+    .filter(p => p && !p.promoParent && !isDeductRow(p))
+    .map(p => String((p && p.partName) || '').trim())
+    .filter(Boolean);
+  const billed = jobHasPricedLines(prev) ? jobGrandTotal(prev) : null;
+  return {
+    jobNumber: prev.jobNumber || '',
+    date: fmtDate(prev.createdAt),
+    items: items.join(', '),
+    price: billed
+  };
+}
+
+/* ข้อความสรุปใบงานสำหรับกลุ่มไลน์ — แหล่งเดียวของรูปแบบข้อความ (การ์ดในแอพ + ปุ่ม 4.6.6 + Bot)
+   ctx = { vehicle, customer, seenBefore, lastService, priceNote, prevDate, prevWork, queueFallback, fmtDate }
+     lastService   สรุปใบครั้งก่อน { jobNumber, date, items, price } จาก summarizeService(pickLastService(...)) หรือ null
+     prevDate/prevWork  ค่าที่ช่างพิมพ์ทับในการ์ด · null/undefined = ใช้ค่าอัตโนมัติจาก lastService
+     queueFallback ใช้เมื่อใบงานไม่มีเลขคิว · fmtDate แอพส่ง fmtDateBE / Bot ส่ง fmtDateBEBangkok */
+function formatLineSummary(job, ctx){
+  const o = ctx || {};
+  const j = normalizeJobForSummary(job);
+  const fmtDate = typeof o.fmtDate === 'function' ? o.fmtDate : fmtDateBEBangkok;
+  const v = o.vehicle || {};
+  const c = o.customer || {};
+  const q = String(j.queueNo ? j.queueNo : (o.queueFallback || '')).trim();
   const lines = [];
-  lines.push(`คิวที่${q ? ' ('+q+')' : ''} ${fmtDateBE(job.createdAt)}`);
-  /* v4.3.8 — ป้ายนี้ต้องใช้เกณฑ์เดียวกับบล็อก "ครั้งก่อน" ที่อยู่ใต้มันสามบรรทัด
-     ของเดิมยึด isRepeatCustomer (ยึดลูกค้า + เห็นแค่ 600 ใบล่าสุด) ผลคือข้อความ
-     เดียวกันบอกว่าไม่มีป้ายลูกค้าเดิม แล้วบรรทัดถัดมาบอกว่า "เข้าทำ 3/3/68" */
-  const seenBefore = repeat || previousJobsForVehicle(job).length > 0;
-  lines.push(`คุณ${c.name || '-'}${seenBefore ? ' (ลูกค้าเดิม)' : ''}`);
+  lines.push(`คิวที่${q ? ' ('+q+')' : ''} ${fmtDate(j.createdAt)}`);
+  lines.push(`คุณ${c.name || '-'}${o.seenBefore ? ' (ลูกค้าเดิม)' : ''}`);
   lines.push(c.phone || '-');
   lines.push(`${v.plate || '-'}${v.province || ''}`);
   lines.push(`${v.brand || ''} ${v.model || ''}`.trim() || '-');
   lines.push(v.color || '-');
-  /* v4.3.8 — ของเดิมอ่าน view.line_prev* ตรง ๆ ซึ่งว่างเสมอจนกว่าจะมีคนพิมพ์
-     ตอนนี้อ่านผ่าน lineFieldValue() ที่เติมจากใบงานเก่าให้เองเมื่อยังไม่มีใครแตะ
-     และเพิ่มราคาครั้งก่อนเข้าไปด้วย ซึ่งเดิมไม่มีช่องให้กรอกเลย */
-  const prevDate = lineFieldValue(job, 'line_prevDate').trim();
-  const prevWork = lineFieldValue(job, 'line_prevWork').trim();
+  const svc = o.lastService || null;
+  const typedDate = o.prevDate !== null && o.prevDate !== undefined;
+  const typedWork = o.prevWork !== null && o.prevWork !== undefined;
+  const prevDate = (typedDate ? String(o.prevDate) : (svc ? svc.date : '')).trim();
+  const prevWork = (typedWork ? String(o.prevWork) : (svc ? svc.items : '')).trim();
   if(prevDate || prevWork){
     if(prevDate) lines.push(`เข้าทำ ${prevDate}`);
     if(prevWork) lines.push(`- ${prevWork}`);
-    /* ราคาผูกกับ "ใบที่ระบบหยิบมา" ไม่ใช่กับข้อความที่อยู่ในช่อง
-       ตัวตัดสินอยู่ที่ช่องวันที่ช่องเดียว (ดูเหตุผลเต็มที่ autoPrevPrice):
-       วันที่คือสิ่งที่ชี้ว่าหมายถึงการเข้าครั้งไหน ส่วนรายการเป็นคำบรรยายของครั้งนั้น */
-    const pv = autoPrevPrice(job);
+    // ราคาผูกกับ "ใบที่ระบบหยิบมา" ตัวตัดสินคือช่องวันที่ช่องเดียว (ช่างพิมพ์ทับวันที่ = ไม่ใช่ใบนั้นแล้ว)
+    const pv = (!typedDate && svc && svc.price !== null) ? svc.price : null;
     if(pv !== null){
       // 0 บาทต้องพูดเป็นคำ ไม่ใช่ "ค่าซ่อมครั้งก่อน 0.00 บาท" ซึ่งอ่านเหมือนข้อมูลหาย
       lines.push(pv > 0 ? `- ค่าซ่อมครั้งก่อน ${fmtMoney(pv)} บาท`
@@ -18530,15 +18653,12 @@ function buildLineSummaryText(job){
     }
   }
   lines.push('อาการ');
-  if(job.complaints.length === 0){
+  if(j.complaints.length === 0){
     lines.push('- ไม่มีข้อมูล');
   } else {
-    job.complaints.forEach(cp => lines.push(`- ${cp.text}`));
+    j.complaints.forEach(cp => lines.push(`- ${cp.text}`));
   }
-  /* Once parts have been quoted the same message gets posted to the LINE group a
-     SECOND time, so from that point on it has to carry the quote and the customer's
-     answer instead of still saying "รอเช็ค". */
-  const parts = job.partsNeeded || [];
+  const parts = j.partsNeeded || [];
   if(parts.length > 0){
     lines.push('');
     lines.push('รายการเสนอราคา');
@@ -18547,33 +18667,31 @@ function buildLineSummaryText(job){
       const price = parseMoney(p.price);
       const qtyTxt = p.qty ? ` ${p.qty} ${p.unit || ''}`.trimEnd() : '';
       const brandTxt = p.brand ? ` (${p.brand})` : '';
-      // v4.6.6 — ลูกชุดโปรคิดเงินรวมในราคาชุดแล้ว (ใบพิมพ์เขียน "อยู่ในรายการโปร") ห้ามโชว์ราคาค้าง
+      // ลูกชุดโปรคิดเงินรวมในราคาชุดแล้ว (ใบพิมพ์เขียน "อยู่ในรายการโปร") ห้ามโชว์ราคาค้าง
       const priceTxt = price && !isPromoChild(p) ? ` = ${fmtMoney(price * qty)}` : '';
       lines.push(`- ${p.partName}${p.variant ? ' ('+p.variant+')' : ''}${qtyTxt}${brandTxt}${priceTxt}`);
     });
-    /* v4.3.7 — ของเดิม `total > 0` ใช้แทนความหมาย "มีรายการที่คีย์ราคาแล้ว" ซึ่งเคย
-       ถูกตอนที่ยอดรวมติดลบไม่ได้ พอมีบรรทัดหักลบ (v4.3.6) ยอดรวมติดลบได้จริง
-       ข้อความที่โพสต์ลงกลุ่มไลน์จึงตัดบล็อก รวม/ส่วนลด/ยอดสุทธิ ทิ้งทั้งก้อนเงียบ ๆ
-       ขณะที่ใบที่พิมพ์บอก 0 — จอกับกระดาษไม่ตรงกันอีกแบบหนึ่ง (ตัวเดียวกับ jobBestPrice) */
-    const total = jobPartsTotal(job);
-    if(jobHasPricedLines(job)){
-      const discountAmt = jobDiscountAmount(job);
+    // ตัดสินด้วย "มีรายการที่คีย์ราคาแล้ว" ไม่ใช่ยอดรวม > 0 (บรรทัดหักลบทำยอดติดลบได้ · v4.3.7)
+    const total = jobPartsTotal(j);
+    if(jobHasPricedLines(j)){
+      const discountAmt = jobDiscountAmount(j);
       if(discountAmt > 0){
         lines.push(`รวม ${fmtMoney(total)} บาท`);
-        lines.push(`ส่วนลด ${job.discountType === 'percent' ? job.discountValue+'%' : fmtMoney(discountAmt)+' บาท'}`);
-        lines.push(`ยอดสุทธิ ${fmtMoney(jobGrandTotal(job))} บาท`);
+        lines.push(`ส่วนลด ${j.discountType === 'percent' ? j.discountValue+'%' : fmtMoney(discountAmt)+' บาท'}`);
+        lines.push(`ยอดสุทธิ ${fmtMoney(jobGrandTotal(j))} บาท`);
       } else {
         lines.push(`รวม ${fmtMoney(total)} บาท`);
       }
     }
-  } else if(Number(job.priceEstimate) > 0){
+  } else if(Number(j.priceEstimate) > 0){
     lines.push('');
-    lines.push(`ราคาประมาณ ${fmtMoney(Number(job.priceEstimate))} บาท`);
+    lines.push(`ราคาประมาณ ${fmtMoney(Number(j.priceEstimate))} บาท`);
   }
 
-  if((view.line_priceNote||'').trim()) lines.push(`(${view.line_priceNote.trim()})`);
+  const note = String(o.priceNote || '').trim();
+  if(note) lines.push(`(${note})`);
 
-  // Closing line mirrors where the job actually is.
+  // บรรทัดปิดบอกว่างานอยู่ขั้นไหน
   const CLOSING = {
     received:  'รอเช็ค',
     inspecting:'รอเช็ค',
@@ -18587,8 +18705,27 @@ function buildLineSummaryText(job){
     delivered: 'ส่งแล้ว',
     carout:    'เอารถลง'
   };
-  lines.push(CLOSING[job.status] || 'รอเช็ค');
+  lines.push(CLOSING[j.status] || 'รอเช็ค');
   return lines.join('\n');
+}
+/* LINE-SHARED:END */
+
+/* v4.6.7 — ตัวห่อของแอพ: อ่านค่าของเครื่อง (ช่องที่ช่างพิมพ์ในการ์ด / รถ / ลูกค้า / ประวัติ) แล้วส่งเข้า
+   formatLineSummary ตัวเดียวกับ Bot · ผลเหมือน 4.6.6 ทุกตัวอักษร (tests/line-bot-golden-466.json) */
+function buildLineSummaryText(job){
+  /* v4.3.8 — ป้ายลูกค้าเดิมใช้เกณฑ์เดียวกับบล็อก "ครั้งก่อน" (ลูกค้ามีใบอื่น หรือรถคันนี้เคยเข้ามาแล้ว) */
+  const seenBefore = isRepeatCustomer(job.customerId, job.id) || previousJobsForVehicle(job).length > 0;
+  return formatLineSummary(job, {
+    vehicle: getVehicle(job.vehicleId) || {},
+    customer: getCustomer(job.customerId) || {},
+    seenBefore,
+    lastService: lastServiceSummary(job),
+    priceNote: view.line_priceNote,
+    prevDate: view.line_prevDate,
+    prevWork: view.line_prevWork,
+    queueFallback: view.line_queueNo,
+    fmtDate: fmtDateBE
+  });
 }
 
 /* ---------------- v4.6.5 — ส่งเข้ากลุ่มไลน์ (spec docs/specs/line-share-quote-photos.md) ----------------
@@ -19422,7 +19559,7 @@ function renderJobDetail(jobId){
       <button class="btn secondary small" onclick="printJobCheckin('${job.id}')">${icon('printer',13)} พิมพ์ใบรับรถ</button>
       <button class="btn secondary small" onclick="printJobQuote('${job.id}')">${icon('printer',13)} พิมพ์ใบเสนอราคา</button>
     </div>
-  </div>`;
+  </div>${printCaptureWarnHtml(job.id)}`;
 
   if(view.je_editing && view.je_jobId === jobId){
     html += renderJobEditForm(job);
@@ -20273,6 +20410,7 @@ function printJobCheckin(jobId){
   const job = getJob(jobId);
   if(!job){ flashToast('ไม่พบรายการรถคันนี้'); return; }
   openPrintFragment(renderJobPrintPage(job), checkinDocOpts(job));
+  schedulePrintCapture(job, 'receipt');   // v4.6.7 — ภาพให้ LINE Bot (เบื้องหลัง หลังพรีวิวเปิด)
 }
 // v4.6.6 — ตัวเลือกเอกสารใบรับรถชุดเดียว ใช้ทั้งใบพิมพ์และภาพใบรับรถที่ส่งเข้าไลน์ (jobShareReceiptHtml)
 function checkinDocOpts(job){
@@ -20281,9 +20419,127 @@ function checkinDocOpts(job){
 function printJobQuote(jobId){
   const job = getJob(jobId);
   if(!job){ flashToast('ไม่พบรายการรถคันนี้'); return; }
-  openPrintFragment(renderJobQuotePage(job), {
+  // v4.6.7 — วันที่บนใบมาจาก printedAt ตัวเดียวกันทั้งพรีวิวและภาพที่เก็บให้ Bot (กันกดตอน 23:59:59)
+  const printedAt = nowIso();
+  openPrintFragment(renderJobQuotePage(job, { printedAt }), {
     title: 'ใบเสนอราคา ' + (job.jobNumber || ''), orient: 'portrait', margin: '0mm'
   });
+  schedulePrintCapture(job, 'quote', printedAt);
+}
+
+/* ---------------- v4.6.7 — เก็บภาพตอนกดปริ้น ให้ LINE Bot ส่งเข้ากลุ่ม (spec line-bot-queue-command ส่วน A · BR-3 · U4) ----------------
+   กด "พิมพ์ใบรับรถ" / "พิมพ์ใบเสนอราคา" → พรีวิวเปิดก่อนเสมอ → หน่วง PRINT_CAPTURE_DELAY_MS → สร้างภาพเบื้องหลัง
+   ด้วยท่อเดียวกับภาพใบรับรถ 4.6.6 (loadReceiptFontCss → receiptLayoutSvg → receiptRasterize) → อัปโหลด Storage
+     jobPrints/{jobId}/receipt.jpg · jobPrints/{jobId}/quote-{n}.jpg (หน้า 2..N ก่อน quote-1 สุดท้าย — Bot เชื่อ printId/pages ของ quote-1)
+   ข้อห้าม (BR-3): ไม่เขียนอะไรลงใบงาน / Firestore / state.settings / config/main / localStorage · ไม่แตะ job.signatures
+     (ภาพวาดจากสำเนาที่ signatures ว่าง ช่องที่เซ็นแล้วขึ้นคำว่า "เซ็นแล้ว") · ไม่เรียก getDownloadURL (Bot ใช้ signed URL เอง)
+   ล้ม → ลองใหม่ 1 ครั้ง แล้วเลิกเงียบ ๆ (console) · ไม่มี modal/toast · บรรทัดเตือนเล็กใต้ปุ่มพิมพ์ (U4)
+     เฉพาะเหตุที่ช่างแก้เองได้ (เน็ต/หมดเวลา/อัปโหลดล้ม) — permission-denied/unauthenticated (rules ยังไม่ publish) = console อย่างเดียว
+   กดปริ้นซ้ำ = ครั้งหลังชนะ (A9): งานเก่าเช็ก printCaptureSeq ก่อนทุกขั้นแล้วเลิกเอง
+   สถานะทั้งหมดอยู่ในหน่วยความจำ (ตัวแปรโมดูล + view.printCaptureFail) หายเมื่อรีโหลดแอพ */
+let PRINT_CAPTURE_DELAY_MS = 2000;       // UX U4: อย่าแย่งเครื่องตอนช่างกำลังจะกดพิมพ์ในพรีวิว
+let PRINT_UPLOAD_TIMEOUT_MS = 60000;     // อัปโหลดค้างนานกว่านี้ (เน็ตแย่) = นับว่าล้ม
+const printCaptureSeq = Object.create(null);   // jobId|kind -> รอบล่าสุด
+let printCaptureCounter = 0;
+
+function makePrintId(){
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function printCaptureQuiet(err){
+  return /unauthorized|unauthenticated|permission-denied/i.test(String((err && err.code) || ''));
+}
+function setPrintCaptureFail(jobId, kind, failed){
+  const all = view.printCaptureFail || (view.printCaptureFail = {});
+  const had = !!(all[jobId] && all[jobId][kind]);
+  if(had === !!failed) return;
+  const cur = Object.assign({}, all[jobId] || {});
+  if(failed) cur[kind] = true; else delete cur[kind];
+  if(cur.quote || cur.receipt) all[jobId] = cur; else delete all[jobId];
+  safeRender();
+}
+// บรรทัดเตือน U4 ใต้ปุ่มพิมพ์ในหน้ารายละเอียดใบงาน ('' เมื่อไม่มีอะไรล้ม)
+function printCaptureWarnHtml(jobId){
+  const f = view.printCaptureFail && view.printCaptureFail[jobId];
+  if(!f || !(f.quote || f.receipt)) return '';
+  const what = f.quote && f.receipt ? 'ใบรับรถและใบเสนอราคา' : (f.quote ? 'ใบเสนอราคา' : 'ใบรับรถ');
+  return `<div class="print-capture-warn no-print" role="status">${icon('bell',13)}<span>ภาพ${what}ยังไม่ถึง Bot ในไลน์ กดพิมพ์อีกครั้งตอนมีเน็ต</span></div>`;
+}
+
+// ภาพใบเสนอราคา 1 หน้า (1240x1754 JPEG) จาก fragment ของหน้านั้น — เอกสารชุดเดียวกับใบพิมพ์ (margin 0mm)
+function renderQuotePageImage(fragment, job){
+  return new Promise((resolve, reject) => {
+    const html = buildPrintDoc(fragment, { title: 'ใบเสนอราคา ' + (job.jobNumber || ''), orient: 'portrait', margin: '0mm', webFont: false });
+    const timer = setTimeout(() => { const e = new Error('quote image timeout'); e.code = 'print/timeout'; reject(e); }, RECEIPT_RENDER_TIMEOUT_MS);
+    loadReceiptFontCss()
+      .then(fontCss => receiptLayoutSvg(html, fontCss))
+      .then(receiptRasterize)
+      .then(b => { clearTimeout(timer); resolve(b); }, err => { clearTimeout(timer); reject(err); });
+  });
+}
+
+function putPrintFile(path, blob, meta){
+  const md = { contentType: 'image/jpeg', cacheControl: 'private, no-cache', customMetadata: Object.assign({}, meta) };
+  const once = () => new Promise((resolve, reject) => {
+    const task = storage.ref().child(path).put(blob, md);
+    const timer = setTimeout(() => {
+      try { if(task && task.cancel) task.cancel(); } catch(e){}
+      const e = new Error('upload timeout'); e.code = 'print/timeout'; reject(e);
+    }, PRINT_UPLOAD_TIMEOUT_MS);
+    Promise.resolve(task).then(r => { clearTimeout(timer); resolve(r); }, err => { clearTimeout(timer); reject(err); });
+  });
+  // ลองใหม่ 1 ครั้ง · ถูกปฏิเสธสิทธิ์ไม่ต้องลองซ้ำ (ผลเหมือนเดิมแน่นอน)
+  return once().catch(err => { if(printCaptureQuiet(err)) throw err; return once(); });
+}
+
+function schedulePrintCapture(job, kind, printedAt){
+  try {
+    if(!storage || !job || !job.id || !currentUser) return;
+    const jobId = job.id, key = jobId + '|' + kind;
+    const seq = ++printCaptureCounter;
+    printCaptureSeq[key] = seq;
+    const live = () => printCaptureSeq[key] === seq;
+    const at = printedAt || nowIso();
+    const meta = { printId: makePrintId(), printedAt: at, grandTotal: String(jobGrandTotal(job)),
+                   appVersion: APP_VERSION, printedBy: String(currentUser.uid || '') };
+    let render;
+    if(kind === 'quote'){
+      /* fragment ของทุกหน้าสร้างตอนกด (ข้อมูลและวันที่ชุดเดียวกับพรีวิว) จากสำเนาที่ไม่มีลายเซ็นจริง */
+      const signed = {};
+      ['inspector', 'quoter', 'customerApprove'].forEach(r => { if(signatureSrc(job, r)) signed[r] = true; });
+      const snap = Object.assign({}, job, { signatures: {} });
+      const pages = renderJobQuotePage(snap, { printedAt: at, signedWord: true, signed, asPages: true });
+      meta.pages = String(pages.length);
+      render = () => pages.reduce((p, frag) => p.then(out => {
+        if(!live()) throw { stale: true };
+        return renderQuotePageImage(frag, snap).then(b => out.concat([b]));
+      }), Promise.resolve([]));
+    } else {
+      const snap = JSON.parse(JSON.stringify(job));   // ใบรับรถ ณ ตอนกด · renderReceiptImage ตัดลายเซ็นเอง
+      render = () => renderReceiptImage(snap).then(b => [b]);
+    }
+    setTimeout(() => {
+      if(!live()) return;
+      render()
+        .catch(err => { if(err && err.stale) throw err; return render(); })   // สร้างภาพล้ม ลองใหม่ 1 ครั้ง
+        .then(blobs => {
+          const files = blobs.map((b, i) => ({ path: 'jobPrints/' + jobId + '/' + (kind === 'quote' ? 'quote-' + (i + 1) + '.jpg' : 'receipt.jpg'), blob: b }));
+          const order = files.slice(1).concat(files.slice(0, 1));
+          return order.reduce((p, f) => p.then(() => {
+            if(!live()) throw { stale: true };
+            return putPrintFile(f.path, f.blob, meta);
+          }), Promise.resolve());
+        })
+        .then(() => { if(live()) setPrintCaptureFail(jobId, kind, false); })
+        .catch(err => {
+          if(err && err.stale) return;
+          console.warn('[print capture]', kind, (err && (err.code || err.message)) || err);
+          if(!live() || printCaptureQuiet(err)) return;
+          setPrintCaptureFail(jobId, kind, true);
+        });
+    }, PRINT_CAPTURE_DELAY_MS);
+  } catch(err){
+    console.warn('[print capture]', kind, (err && err.message) || err);
+  }
 }
 
 /* Parts / quote editor on the job detail page. Staff use this after the mechanic has
@@ -20742,7 +20998,12 @@ function fmtQuoteDate(iso){
 /* ใบเสนอราคาที่สั่งพิมพ์จากหน้าใบงาน — พิมพ์หลังช่างตรวจเช็กและใส่ราคาแล้ว
    ให้ลูกค้าเซ็นอนุมัติ ยอดทุกบรรทัดมาจาก jobPartsTotal / jobDiscountAmount /
    jobGrandTotal ชุดเดียวกับที่หน้าจอใช้ ใบกับจอจึงไม่มีทางบอกยอดต่างกัน */
-function renderJobQuotePage(job){
+/* v4.6.7 — opts (ไม่ส่ง = ผลเดิมทุกไบต์):
+     printedAt  วันที่บนใบ (ISO) แทน nowIso() — พรีวิวกับภาพที่เก็บให้ Bot ได้วันเดียวกัน
+     signedWord + signed{role:true}  ช่องเซ็นไม่ใส่ลายเซ็นจริง ช่องที่เซ็นแล้วขึ้นคำว่า "เซ็นแล้ว" (ภาพให้ Bot)
+     asPages    คืน array ของ html ทีละหน้า (1 ภาพต่อ 1 หน้า) แทนสตริงที่คั่นด้วยตัวแบ่งหน้า */
+function renderJobQuotePage(job, opts){
+  const qo = opts || {};
   const s = state.shop || {};
   const v = getVehicle(job.vehicleId) || {};
   const c = getCustomer(job.customerId) || {};
@@ -20802,10 +21063,12 @@ function renderJobQuotePage(job){
     `<div class="qt-tot-row ${cls || ''}"><span>${label}</span><span class="qt-tot-v mono">${value}</span></div>`;
 
   const signBox = (role, title) => {
-    const sig = signatureSrc(job, role);
+    const sig = qo.signedWord ? '' : signatureSrc(job, role);
+    const word = !!(qo.signedWord && qo.signed && qo.signed[role]);
     return `<div class="qt-sign">
       <div class="qt-sign-title">${escapeHtml(title)}</div>
-      ${sig ? `<img class="qt-sign-img" src="${escapeAttr(sig)}" alt="">` : `<div class="qt-sign-line"></div>`}
+      ${sig ? `<img class="qt-sign-img" src="${escapeAttr(sig)}" alt="">`
+            : word ? `<div class="qt-sign-line qt-sign-done">เซ็นแล้ว</div>` : `<div class="qt-sign-line"></div>`}
     </div>`;
   };
 
@@ -20840,7 +21103,7 @@ function renderJobQuotePage(job){
       </div>
       <div class="qt-meta-col">
         <div class="qt-row"><span class="qt-k">เลขที่</span><span class="qt-v mono">${escapeHtml(job.jobNumber || '-')}</span></div>
-        <div class="qt-row"><span class="qt-k">วันที่</span><span class="qt-v">${fmtQuoteDate(nowIso())}</span></div>
+        <div class="qt-row"><span class="qt-k">วันที่</span><span class="qt-v">${fmtQuoteDate(qo.printedAt || nowIso())}</span></div>
         <div class="qt-row"><span class="qt-k">ระยะเวลาซ่อม</span><span class="qt-v">${escapeHtml(estLabel(job) || '-')}</span></div>
       </div>
     </div>
@@ -20895,9 +21158,9 @@ function renderJobQuotePage(job){
     </div>
   </div>`;
 
-  return pages
-    .map((chunk, i) => onePage(chunk, i * QUOTE_ROWS_PER_PAGE, i + 1))
-    .join('<div class="brk"></div>');
+  const htmls = pages.map((chunk, i) => onePage(chunk, i * QUOTE_ROWS_PER_PAGE, i + 1));
+  if(qo.asPages) return htmls;
+  return htmls.join('<div class="brk"></div>');
 }
 
 function renderJobEditForm(job){
@@ -23962,6 +24225,261 @@ function downloadAiPriceBook(){
   flashToast('ดาวน์โหลดตำราราคาแล้ว');
 }
 
+/* ---------------- v4.6.7 — ตั้งค่า → กลุ่ม LINE (spec line-bot-queue-command ส่วน B · UX U1 · PM-1 · BR-4 · S2/S6/S10) ----------------
+   แอดมินเท่านั้น: อนุมัติ / ไม่รับ / ยกเลิกสิทธิ์ / เปิดใช้อีกครั้ง / ตั้งชื่อเรียก กลุ่มที่ Bot ถูกเชิญเข้าไป
+   - เอกสาร lineGroups/{groupId} สร้างโดย Cloud Function เท่านั้น แอพแก้ด้วย .update() เฉพาะ
+     status / approvedBy (= uid ของคนกด) / approvedAt (ISO string) / label (ห้าม .set() — ไม่ merge แล้วจะลบ name/code ทิ้ง)
+   - ไม่อยู่ใน SYNC_COLLECTIONS และไม่อยู่ใน state (rules อ่านได้แค่แอดมิน ถ้าเข้า batch เครื่องพนักงานจะล้มทั้งก้อน)
+     รายการอยู่ใน view.lineGroups · โหลดด้วย .get() เฉพาะตอนแอดมินเปิดหน้านี้ / กดโหลดใหม่
+   - PM-1: อนุมัติต้อง "พิมพ์รหัส 4 ตัวที่ Bot ส่งในกลุ่ม" ให้ตรงก่อน แล้วจึงขึ้นกล่องยืนยัน
+   - ชื่อกลุ่ม / label / code ผ่าน escapeHtml · groupId อยู่ใน data-* เท่านั้น (ปุ่มไม่มี onclick — ใช้ตัวฟังกลางตัวเดียว) */
+const LINE_GROUP_LABEL_MAX = 30;
+
+function lineGroupTime(v){
+  let d = null;
+  if(v && typeof v.toDate === 'function') d = v.toDate();
+  else if(v && typeof v.seconds === 'number') d = new Date(v.seconds * 1000);
+  else if(v) d = new Date(v);
+  if(!d || isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getDate()}/${d.getMonth() + 1}/${String(d.getFullYear() + 543).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function lineGroupById(id){
+  return (view.lineGroups || []).find(g => g && g.id === id) || null;
+}
+function lineGroupName(g){ return String((g && g.name) || '').trim() || '(ไม่ทราบชื่อกลุ่ม)'; }
+function lineGroupsOffline(){ return typeof navigator !== 'undefined' && navigator.onLine === false; }
+
+function loadLineGroups(){
+  if(!isAdmin() || !db) return;
+  view.lineGroupsState = 'loading';
+  render();
+  db.collection('lineGroups').get()
+    .then(snap => {
+      const rows = [];
+      snap.forEach(d => rows.push(Object.assign({}, d.data(), { id: d.id })));
+      view.lineGroups = rows;
+      view.lineGroupsState = 'ok';
+      render();
+    })
+    .catch(err => {
+      const code = String((err && err.code) || '');
+      view.lineGroups = [];
+      view.lineGroupsState = code === 'permission-denied' ? 'denied'
+        : ((code === 'unavailable' || lineGroupsOffline()) ? 'offline' : 'error');
+      console.warn('[lineGroups]', code || err);
+      render();
+    });
+}
+
+function renderLineGroupsTab(){
+  if(!isAdmin()) return `<div class="empty-state">เฉพาะผู้ดูแลระบบเท่านั้น</div>`;
+  const offline = lineGroupsOffline() || view.lineGroupsState === 'offline';
+  const busy = view.lineGroupBusy || null;
+  const rows = view.lineGroups || [];
+  const pending = rows.filter(g => g.status === 'pending');
+  const approved = rows.filter(g => g.status === 'approved');
+  const revoked = rows.filter(g => g.status !== 'pending' && g.status !== 'approved');
+  const dis = id => (offline || busy) ? 'disabled' : '';
+  const btnLabel = (id, act, label) => (busy && busy.id === id && busy.act === act) ? 'กำลังบันทึก...' : label;
+  const btn = (g, act, cls, label, ic) =>
+    `<button type="button" class="btn ${cls}" data-lg-act="${act}" data-lg-id="${escapeAttr(g.id)}" ${dis(g.id)}>${ic ? icon(ic, 15) + ' ' : ''}${escapeHtml(btnLabel(g.id, act, label))}</button>`;
+
+  let html = `<div class="card lg-card">
+    ${offline ? `<div class="lg-offline">ไม่มีอินเทอร์เน็ต อนุมัติหรือยกเลิกสิทธิ์ไม่ได้ตอนนี้</div>` : ''}
+    <h3>วิธีเปิดให้ Bot ตอบในกลุ่ม</h3>
+    <ol class="lg-steps">
+      <li>เชิญ Bot เข้ากลุ่มไลน์ของร้าน</li>
+      <li>Bot จะส่งรหัส 4 ตัวในกลุ่ม</li>
+      <li>กด "พิมพ์รหัสเพื่ออนุมัติ" แล้วใส่รหัสที่เห็นในกลุ่มไลน์</li>
+    </ol>
+    <p class="muted">ทุกคนในกลุ่มที่อนุมัติ จะดูชื่อ เบอร์ ทะเบียน และราคาของทุกคิวได้ อนุมัติเฉพาะกลุ่มที่มีแต่คนของร้าน</p>
+    <div class="lg-top-btns">
+      ${pending.length ? `<button type="button" class="btn" data-lg-act="approve-code" ${(offline || busy) ? 'disabled' : ''}>${icon('check', 15)} พิมพ์รหัสเพื่ออนุมัติ</button>` : ''}
+      <button type="button" class="btn secondary" data-lg-act="reload">${icon('history', 15)} โหลดรายชื่อใหม่</button>
+    </div>
+  </div>`;
+
+  const st = view.lineGroupsState;
+  if(st === 'loading' && !rows.length){
+    return html + `<div class="empty-state">กำลังโหลดรายชื่อกลุ่ม...</div>`;
+  }
+  if(st === 'denied') return html + `<div class="empty-state">ยังเปิดรายชื่อกลุ่มไม่ได้ ต้อง publish firestore.rules ชุดใหม่ใน Firebase Console ก่อน</div>`;
+  if(st === 'error' || (st === 'offline' && !rows.length)) return html + `<div class="empty-state">โหลดรายชื่อกลุ่มไม่ได้ ลองกด "โหลดรายชื่อใหม่"</div>`;
+  if(!rows.length) return html + `<div class="empty-state">ยังไม่มีกลุ่ม เชิญ Bot เข้ากลุ่มไลน์ของร้านก่อน แล้วกด "โหลดรายชื่อใหม่"</div>`;
+
+  const userName = uid => {
+    const u = (view.usersList || []).find(x => x && x.id === uid);
+    return (u && u.name) || 'แอดมิน';
+  };
+  const labelLine = g => g.label ? `<div class="lg-sub">ชื่อเรียกในร้าน: ${escapeHtml(g.label)}</div>` : '';
+  // security round 1: ไม่โชว์รหัสบนจอ (แอดมินต้องอ่านจากกลุ่มไลน์จริงแล้วพิมพ์เอง · PM-1/S2)
+  const memberLine = g => (typeof g.memberCount === 'number' && isFinite(g.memberCount) && g.memberCount >= 0)
+    ? `<div class="lg-sub">สมาชิก ${escapeHtml(String(Math.floor(g.memberCount)))} คน</div>` : '';
+  const timeLine = (txt, v) => { const t = lineGroupTime(v); return t ? `<div class="lg-sub">${escapeHtml(txt)} ${escapeHtml(t)}</div>` : ''; };
+
+  if(pending.length){
+    html += `<h4 class="lg-head">รออนุมัติ (${pending.length})</h4>`;
+    pending.forEach(g => {
+      html += `<div class="card lg-row">
+        <div class="lg-info">
+          <span class="badge lg-badge-pending">รออนุมัติ</span>
+          <div class="lg-name">${escapeHtml(lineGroupName(g))}</div>
+          ${timeLine('Bot เข้ากลุ่มเมื่อ', g.firstSeenAt)}
+          ${memberLine(g)}
+        </div>
+        <div class="lg-code lg-code-hidden"><small>รหัส:</small><span>ดูในกลุ่มไลน์</span></div>
+        <div class="lg-btns">
+          ${btn(g, 'approve', '', 'อนุมัติกลุ่มนี้', 'check')}
+          ${btn(g, 'reject', 'secondary', 'ไม่รับกลุ่มนี้')}
+        </div>
+      </div>`;
+    });
+  }
+  if(approved.length){
+    html += `<h4 class="lg-head">ใช้งานได้ (${approved.length})</h4>`;
+    approved.forEach(g => {
+      const ap = lineGroupTime(g.approvedAt);
+      html += `<div class="card lg-row">
+        <div class="lg-info">
+          <span class="badge st-approved">ใช้งานได้</span>
+          <div class="lg-name">${escapeHtml(lineGroupName(g))}</div>
+          ${labelLine(g)}
+          ${ap ? `<div class="lg-sub">อนุมัติ ${escapeHtml(ap)} โดย ${escapeHtml(userName(g.approvedBy))}</div>` : ''}
+          ${timeLine('ใช้ล่าสุด', g.lastSeenAt)}
+        </div>
+        <div class="lg-btns">
+          ${btn(g, 'label', 'secondary', 'ตั้งชื่อเรียก')}
+          ${btn(g, 'revoke', 'secondary lg-danger-text', 'ยกเลิกสิทธิ์')}
+        </div>
+      </div>`;
+    });
+  }
+  if(revoked.length){
+    const open = !!view.lineGroupsShowRevoked;
+    html += `<button type="button" class="lg-head lg-toggle" data-lg-act="toggle-revoked" aria-expanded="${open ? 'true' : 'false'}">${open ? '▾' : '▸'} ยกเลิกสิทธิ์แล้ว (${revoked.length})</button>`;
+    if(open){
+      revoked.forEach(g => {
+        html += `<div class="card lg-row">
+          <div class="lg-info">
+            <span class="badge st-rejected">ยกเลิกสิทธิ์แล้ว</span>
+            <div class="lg-name">${escapeHtml(lineGroupName(g))}</div>
+            ${labelLine(g)}
+          </div>
+          <div class="lg-btns">${btn(g, 'reenable', 'secondary', 'เปิดใช้อีกครั้ง')}</div>
+        </div>`;
+      });
+    }
+  }
+  return html;
+}
+
+// เขียนเอกสารกลุ่มด้วย .update() เท่านั้น · ห้ามแสดงว่าสำเร็จก่อน update ตอบกลับ
+function updateLineGroup(id, act, patch, onDone){
+  if(!isAdmin() || !db || view.lineGroupBusy) return;
+  if(lineGroupsOffline()){ flashToast('ไม่มีอินเทอร์เน็ต อนุมัติหรือยกเลิกสิทธิ์ไม่ได้ตอนนี้'); return; }
+  view.lineGroupBusy = { id, act };
+  render();
+  db.collection('lineGroups').doc(id).update(patch)
+    .then(() => {
+      view.lineGroupBusy = null;
+      const g = lineGroupById(id);
+      if(g){
+        Object.keys(patch).forEach(k => { g[k] = patch[k]; });
+      }
+      render();
+      if(onDone) onDone();
+    })
+    .catch(err => {
+      view.lineGroupBusy = null;
+      console.warn('[lineGroups update]', (err && err.code) || err);
+      flashToast('บันทึกไม่สำเร็จ ลองอีกครั้ง');
+      render();
+    });
+}
+function lineGroupApprovePatch(){
+  return { status: 'approved', approvedBy: currentUser.uid,
+           approvedAt: nowIso() };   // ISO string (rules: string ≤ 40 ตัว · PM ตัดสิน 24 ต.ค.)
+}
+// RE-5: เปิดใช้อีกครั้งสำเร็จ = undo กลับเป็น revoked ได้ 6 วินาที
+function reenableUndoToast(g){
+  showUndoToast('เปิดใช้กลุ่มนี้แล้ว', () => updateLineGroup(g.id, 'undo', { status: 'revoked' }));
+}
+function confirmApproveLineGroup(g, act){
+  uiModal({
+    message: `อนุมัติกลุ่ม "${lineGroupName(g)}" รหัส ${String(g.code || '')}?\n\nดูให้แน่ใจว่ารหัสตรงกับที่ Bot ส่งในกลุ่มไลน์\nหลังอนุมัติ ทุกคนในกลุ่มนี้พิมพ์ !เลขคิว แล้วเห็นชื่อ เบอร์ และราคาของลูกค้าได้`,
+    danger: false, okLabel: 'อนุมัติ', cancelLabel: 'ยังไม่อนุมัติ',
+    onOk: () => updateLineGroup(g.id, act || 'approve', lineGroupApprovePatch(),
+      () => act === 'reenable' ? reenableUndoToast(g) : flashToast('อนุมัติแล้ว ลองพิมพ์ !เลขคิว ในกลุ่มได้เลย'))
+  });
+}
+// PM-1: พิมพ์รหัสที่เห็นในกลุ่มก่อน · มี g = ตรวจกับกลุ่มนั้น / ไม่มี = หากลุ่ม pending ที่รหัสตรง
+// opts.allowRevoked = เปิดใช้กลุ่มที่ "ไม่เคยอนุมัติ" (ไม่รับไปแล้ว) ต้องพิมพ์รหัสเหมือนอนุมัติครั้งแรก
+function promptLineGroupCode(g, opts){
+  const o = opts || {};
+  uiPrompt('พิมพ์รหัส 4 ตัวที่ Bot ส่งในกลุ่มไลน์', '', value => {
+    const code = String(value || '').replace(/\s+/g, '').toUpperCase();
+    if(!code) return;
+    const okStatus = x => x.status === 'pending' || (!!g && !!o.allowRevoked && x === g && x.status === 'revoked');
+    const same = x => x && okStatus(x) && String(x.code || '').toUpperCase() === code;
+    const hit = g ? (same(g) ? g : null) : (view.lineGroups || []).filter(same);
+    if(g ? !hit : hit.length !== 1){
+      flashToast(g || !hit.length ? 'รหัสไม่ตรงกับกลุ่มที่รออนุมัติ ดูรหัสในกลุ่มไลน์อีกครั้ง'
+                                  : 'รหัสนี้ตรงกับหลายกลุ่ม ให้กดอนุมัติที่แถวของกลุ่มนั้นแทน');
+      return;
+    }
+    confirmApproveLineGroup(g ? hit : hit[0], o.act);
+  }, 'เช่น K7MX');
+}
+
+function lineGroupAction(act, id){
+  if(!isAdmin()) return;
+  if(act === 'reload'){ loadLineGroups(); return; }
+  if(act === 'toggle-revoked'){ view.lineGroupsShowRevoked = !view.lineGroupsShowRevoked; render(); return; }
+  if(act === 'approve-code'){ promptLineGroupCode(null); return; }
+  const g = lineGroupById(id);
+  if(!g) return;
+  const name = lineGroupName(g);
+  if(act === 'approve'){ promptLineGroupCode(g); return; }
+  if(act === 'reject'){
+    uiModal({ message: `ไม่รับกลุ่ม "${name}"?\n\nBot จะไม่ตอบข้อมูลใด ๆ ในกลุ่มนี้`,
+      danger: true, okLabel: 'ไม่รับกลุ่มนี้', cancelLabel: 'ย้อนกลับ',
+      onOk: () => updateLineGroup(g.id, act, { status: 'revoked' },
+        () => showUndoToast('ไม่รับกลุ่มนี้แล้ว', () => updateLineGroup(g.id, 'undo', { status: 'pending' }))) });
+    return;
+  }
+  if(act === 'revoke'){
+    uiModal({ message: `ยกเลิกสิทธิ์กลุ่ม "${name}"?\n\nภายใน 1 นาที Bot จะหยุดส่งข้อมูลลูกค้าในกลุ่มนี้`,
+      danger: true, okLabel: 'ยกเลิกสิทธิ์', cancelLabel: 'ย้อนกลับ',
+      onOk: () => updateLineGroup(g.id, act, { status: 'revoked' },
+        () => showUndoToast('ยกเลิกสิทธิ์แล้ว Bot จะหยุดตอบภายใน 1 นาที', () => updateLineGroup(g.id, 'undo', lineGroupApprovePatch()))) });
+    return;
+  }
+  if(act === 'reenable'){
+    // ไม่เคยอนุมัติมาก่อน (ไม่รับตั้งแต่ pending) = เหมือนอนุมัติครั้งแรก ต้องพิมพ์รหัสก่อน
+    if(!g.approvedBy){ promptLineGroupCode(g, { allowRevoked: true, act }); return; }
+    uiModal({ message: `อนุมัติกลุ่ม "${name}"?\n\nหลังอนุมัติ ทุกคนในกลุ่มนี้พิมพ์ !เลขคิว แล้วเห็นชื่อ เบอร์ และราคาของลูกค้าได้`,
+      danger: false, okLabel: 'เปิดใช้', cancelLabel: 'ย้อนกลับ',
+      onOk: () => updateLineGroup(g.id, act, lineGroupApprovePatch(), () => reenableUndoToast(g)) });
+    return;
+  }
+  if(act === 'label'){
+    uiPrompt('ชื่อเรียกกลุ่มนี้ในร้าน เช่น หน้าร้าน / ช่าง', String(g.label || ''), value => {
+      const label = String(value || '').trim().slice(0, LINE_GROUP_LABEL_MAX);
+      updateLineGroup(g.id, act, { label }, () => flashToast('บันทึกชื่อเรียกแล้ว'));
+    }, 'ไม่เกิน ' + LINE_GROUP_LABEL_MAX + ' ตัวอักษร');
+  }
+}
+// ตัวฟังกลางตัวเดียวของหน้ากลุ่ม LINE — ปุ่มพก groupId ใน data-lg-id ไม่ต่อสตริงเข้า onclick (S10)
+function onLineGroupsClick(e){
+  const t = e && e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-lg-act]') : null;
+  if(!t || t.disabled) return;
+  lineGroupAction(t.getAttribute('data-lg-act') || '', t.getAttribute('data-lg-id') || '');
+}
+if(typeof document !== 'undefined' && document && typeof document.addEventListener === 'function'){
+  document.addEventListener('click', onLineGroupsClick);
+}
+
 function renderSettingsTab(){
   const s = state.shop;
   const C = {};      // การ์ดแต่ละใบ สร้างไว้ก่อน ค่อยจัดลงหมวดตอนท้าย
@@ -23981,6 +24499,7 @@ function renderSettingsTab(){
         return `<button class="settings-nav-btn" onclick="goTab('unitfix')">${icon('wrench',18)}<span>ราคาต่อหน่วย</span><small>${mixed ? mixed + ' กลุ่มราคาไม่ตรงกัน' : g.length + ' กลุ่ม'}</small></button>`; })()}
       ${(function(){ const g = findDuplicateModelGroups();
         return g.length ? `<button class="settings-nav-btn" onclick="goTab('dupmerge')">${icon('wrench',18)}<span>รวมรุ่นซ้ำ</span><small>${g.length} กลุ่มรอรวม</small></button>` : ''; })()}
+      ${isAdmin() ? `<button class="settings-nav-btn" onclick="goTab('linegroups')">${icon('chat',18)}<span>กลุ่ม LINE</span><small>อนุมัติกลุ่มให้ Bot ตอบ</small></button>` : ''}
     </div>
   </div>`;
 
