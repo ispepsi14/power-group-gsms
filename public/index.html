@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.7";
+  const APP_VERSION = "4.6.8";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3190,6 +3190,24 @@
               4. ปุ่ม "ส่งเข้า LINE กลุ่ม" และการ์ดสรุปข้อความของ 4.6.6 ไม่เปลี่ยน
 
               เทสต์ใหม่: tests/line-bot-app.guard.js · tests/line-bot-shared.guard.js
+     v4.6.8 — รวมแก้บั๊ก (spec docs/specs/bugfix-sweep.md + .decisions.md · คำตอบเจ้าของ 24 ต.ค. 2569)
+              1. นำเข้า Excel (แอดมิน): B1 "ล้างความจำราคาของรุ่นที่นำเข้า" ล้างได้จริง (คีย์ตรงกับที่จำ)
+                 · B2 อะไหล่ใหม่ที่มีสองแบรนด์ = อะไหล่ตัวเดียวสองแบรนด์ ไม่สร้างซ้ำ
+                 · B3 แถวหัวรุ่นหาย = เตือนในหน้าสรุป ไม่ยัดเข้ารุ่นก่อนเงียบ ๆ
+                 · B4 อะไหล่เดิมสองแบรนด์ + ชื่อเปลี่ยน = เปลี่ยนชื่อครั้งเดียว ไม่นับซ้ำ
+              2. K2 การตั้งค่าที่แก้ในเครื่องแล้วยังบันทึกไม่เสร็จ ไม่ถูกข้อมูลจากเซิร์ฟเวอร์ทับ (ตัดสินทีละคีย์)
+              3. K4 ชุดโปร: เทียบชื่อด้วย partNameKey + variant (เว้นวรรค/ตัวพิมพ์ต่างไม่คิดเงินซ้ำ)
+                 · มีบรรทัดชื่อเดียวกันนอกโปร = เตือน · ใส่โปรที่อะไหล่ทับกับโปรในใบ = ยืนยันก่อน
+              4. K6 เลขคิว: ร่างรับรถค้างข้ามวันออกเลขใหม่ · แก้เลขคิวในใบงานเป็นเลขที่มีรถใช้แล้ววันนี้ = ไม่รับ
+                 พร้อมบอกใบที่ชน · พิมพ์เลขเองแล้วตัวนับคิวขยับตาม
+              5. K7 ล้างถังขยะ (แอดมิน) ลบใบเก่าที่ไม่ขึ้นบนจอด้วย · ยืนยันพร้อมจำนวนจริง · ข้ามใบที่ยังบันทึกไม่เสร็จ
+              6. M2 กล่องชื่อคล้าย บอก "ชื่อเดียวกัน" เฉพาะชื่อที่ตรงจริง · M3 กล่อง "อยู่ในใบแล้ว" มีปุ่ม "ไปดูแถวนั้น"
+              7. M4 โหมดมืด: กฎสีที่ไม่เคยทำงานใช้ได้แล้ว · กล่อง "ลูกค้าตอบว่า" ไม่เป็นพื้นครีม
+                 · ปุ่มลบ/ยืนยันสีแดง (.btn.danger-solid) เป็นสีแดงในโหมดมืดด้วย (เดิมถูกกฎ .btn มืดทับเป็นสีเทา)
+              8. หน้า ?feedback ลองถามข้อมูลรถผ่าน function lookupMyCar ก่อน ไม่ได้ = ทางเดิม
+              ฝั่ง functions/ (Bot) และ firestore.rules (ห้องแชท) เปลี่ยนด้วย — เจ้าของ deploy / publish เอง
+
+              เทสต์ใหม่: tests/iguard.js · tests/jguard.js · tests/kguard.js · tests/vguard.js · tests/sweep-rules.guard.js · tests/line-bot-sweep.guard.js
               -->
 
 
@@ -6684,6 +6702,9 @@
   html[data-mode="dark"] .btn{background:linear-gradient(180deg,#34383E,#25282D); border-color:#42474D;}
   html[data-mode="dark"] .btn.secondary{background:transparent; border-color:#454A51; color:var(--text);}
   html[data-mode="dark"] .btn.danger{background:var(--card-bg); border-color:#5C2A2C;}
+  /* v4.6.8 — กฎ .btn มืดข้างบน (0,2,1) ชนะ .btn.danger-solid (0,2,0) ปุ่มลบ/ยืนยันจึงกลายเป็นสีเทา
+     ต้องบอกซ้ำในโหมดมืด · :hover/:active ของ .btn ไม่เปลี่ยนพื้น จึงไม่ต้องเขียนซ้ำ */
+  html[data-mode="dark"] .btn.danger-solid{background:var(--red);border-color:var(--red);color:#fff;}
   /* The dark .btn rule above outranks .btn.hazard / .btn.back-step on specificity,
      so both have to be restated here or they lose their fill in dark mode. */
   html[data-mode="dark"] .btn.hazard{
@@ -7514,12 +7535,12 @@
 .spb-chip:active{transform:scale(.97);}
 .spb-n{background:var(--accent,#1f9d55);color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;}
 .chk-price{margin-left:5px;font-size:11px;font-weight:700;opacity:.85;}
-body.dark .sym-price-bar{background:rgba(31,157,85,.16);}
-body.dark .spb-chip{background:#1c2530;color:#8ee5b0;}
+html[data-mode="dark"] .sym-price-bar{background:rgba(31,157,85,.16);}
+html[data-mode="dark"] .spb-chip{background:#1c2530;color:#8ee5b0;}
 
 .ci-year-hint{font-size:11px;color:var(--muted,#6b7280);margin-top:4px;min-height:14px;line-height:1.3;}
 .ci-year-hint.warn{color:#b45309;font-weight:600;}
-body.dark .ci-year-hint.warn{color:#fbbf24;}
+html[data-mode="dark"] .ci-year-hint.warn{color:#fbbf24;}
 
 .svc-grid{display:flex;flex-direction:column;gap:8px;}
 .svc-row{border:1px solid var(--line,#e5e7eb);border-left-width:4px;border-radius:8px;padding:9px 11px;}
@@ -7544,11 +7565,17 @@ body.dark .ci-year-hint.warn{color:#fbbf24;}
 .cdw-head{font-size:13px;font-weight:700;color:#991b1b;display:flex;align-items:center;gap:6px;margin-bottom:6px;}
 .cdw-row{font-size:12px;padding:3px 0;}
 .cdw-why{font-size:11px;color:var(--muted,#6b7280);margin-top:2px;}
-body.dark .svc-row.ok  .svc-badge{background:rgba(31,157,85,.25);color:#8ee5b0;}
-body.dark .svc-row.bad .svc-badge{background:rgba(220,38,38,.25);color:#fca5a5;}
-body.dark .svc-chip.ok{background:rgba(31,157,85,.22);color:#8ee5b0;}
-body.dark .svc-chip.bad{background:rgba(220,38,38,.22);color:#fca5a5;}
-body.dark .cdw-head{color:#fca5a5;}
+html[data-mode="dark"] .svc-row.ok  .svc-badge{background:rgba(31,157,85,.25);color:#8ee5b0;}
+html[data-mode="dark"] .svc-row.bad .svc-badge{background:rgba(220,38,38,.25);color:#fca5a5;}
+/* v4.6.8 M4 — ป้าย "ไม่ระบุ" เดิมไม่มีกฎมืด (#4b5563 บนพื้นมืด ~1.6:1 อ่านไม่ออก) */
+html[data-mode="dark"] .svc-row.unk .svc-badge{background:var(--surface-2);color:var(--text);}
+/* v4.6.8 M4 — กล่องพื้นครีม #fffdf2 ตายตัว ในโหมดมืดตัวอักษร (--text-2 / --hazard-dark) จมพื้น
+   เปลี่ยนแค่โหมดมืด โหมดสว่างคงเดิม · .draft-note ต้องตั้ง color ด้วย ไม่งั้น --hazard-dark จมพื้นมืด */
+html[data-mode="dark"] .jc-decide{background:var(--surface);}
+html[data-mode="dark"] .draft-note{background:var(--surface);color:var(--text);}
+html[data-mode="dark"] .svc-chip.ok{background:rgba(31,157,85,.22);color:#8ee5b0;}
+html[data-mode="dark"] .svc-chip.bad{background:rgba(220,38,38,.22);color:#fca5a5;}
+html[data-mode="dark"] .cdw-head{color:#fca5a5;}
 
 .pb-price-input{width:100%;max-width:150px;padding:5px 8px;border:1px solid var(--line,#d1d5db);
   border-radius:6px;font-family:inherit;font-size:13px;text-align:right;background:#fff;color:inherit;}
@@ -7567,8 +7594,8 @@ body.dark .cdw-head{color:#fca5a5;}
 .pb-add-foot .btn{min-height:40px;}
 .pb-del-btn{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;}
 .pb-del-btn:hover{color:var(--danger);}
-body.dark .pb-name-input{background:#1c2530;border-color:#374151;}
-body.dark .pb-missing{color:#fbbf24;}
+html[data-mode="dark"] .pb-name-input{background:#1c2530;border-color:#374151;}
+html[data-mode="dark"] .pb-missing{color:#fbbf24;}
 @media print{
   .pb-price-input{border:none;box-shadow:none;background:none;text-align:left;padding:0;max-width:none;}
 }
@@ -7602,7 +7629,7 @@ body.dark .pb-missing{color:#fbbf24;}
 .ctp-why{margin-top:11px;padding:7px 11px;border-radius:7px;background:#fff0e2;
   color:#a65312;font-size:11.5px;font-weight:600;}
 /* โหมดมืดของแอปนี้ตั้งที่ html[data-mode="dark"] (ดู applyDarkMode) ไม่ใช่ body.dark
-   — ในไฟล์มีกฎ body.dark ที่ไม่เคยทำงานค้างอยู่อีกราว 30 ข้อ ยังไม่ได้ตามเก็บรอบนี้ */
+   — ในไฟล์มีกฎ body.dark ที่ไม่เคยทำงานค้างอยู่อีกราว 30 ข้อ (v4.6.8 M4 เปลี่ยน selector เป็น html[data-mode="dark"] หมดแล้ว ค่าเดิม) */
 html[data-mode="dark"] .ctp-opt.on{background:transparent;}
 html[data-mode="dark"] .ctp-new.on .ctp-lab{color:#8ee5b0;}
 html[data-mode="dark"] .ctp-new.on .ctp-doc{color:#7fc79b;}
@@ -7698,8 +7725,8 @@ html[data-mode="dark"] .upf-row b{color:#8ee5b0;}
 html[data-mode="dark"] .upf-row-del > td{background:rgba(240,117,106,.10);}
 html[data-mode="dark"] .upf-calc input{background:rgba(255,255,255,.04);}
 
-body.dark .promo-child-row > td{background:rgba(31,157,85,.10);}
-body.dark .in-promo-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
+html[data-mode="dark"] .promo-child-row > td{background:rgba(31,157,85,.10);}
+html[data-mode="dark"] .in-promo-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
 
 .last-price-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px;}
 .lp-tag{font-size:11px;font-weight:700;color:#14532d;background:rgba(31,157,85,.14);
@@ -7707,7 +7734,7 @@ body.dark .in-promo-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
 .lp-meta{font-size:10px;color:var(--muted,#6b7280);}
 .pb-price-line.pb-last .pb-price-brand{color:#1f9d55;font-weight:700;}
 .pb-price-line.pb-last .pb-price{font-weight:700;}
-body.dark .lp-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
+html[data-mode="dark"] .lp-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
 
 /* v3.40.0 — ปุ่มเสนอราคาที่เคยคีย์ไว้ ใต้ช่องราคาที่ยังว่าง
    ราคาของรุ่นเดียวกันเป็นสีเขียว (เติมได้เลย) ราคาของรุ่นอื่นเป็นสีส้ม เพื่อให้
@@ -7717,8 +7744,8 @@ body.dark .lp-tag{background:rgba(31,157,85,.24);color:#8ee5b0;}
 .price-hint .ph-txt{color:#14532d;background:rgba(31,157,85,.12);border-radius:999px;
   padding:2px 7px;font-weight:600;}
 .price-hint.other-model .ph-txt{color:#92400e;background:rgba(217,119,6,.14);}
-body.dark .price-hint .ph-txt{background:rgba(31,157,85,.24);color:#8ee5b0;}
-body.dark .price-hint.other-model .ph-txt{background:rgba(217,119,6,.26);color:#fbbf24;}
+html[data-mode="dark"] .price-hint .ph-txt{background:rgba(31,157,85,.24);color:#8ee5b0;}
+html[data-mode="dark"] .price-hint.other-model .ph-txt{background:rgba(217,119,6,.26);color:#fbbf24;}
 
 .model-warn{border:1px solid rgba(217,119,6,.35);background:rgba(217,119,6,.08);
   border-radius:10px;padding:10px 12px;margin:8px 0 12px;}
@@ -7726,7 +7753,7 @@ body.dark .price-hint.other-model .ph-txt{background:rgba(217,119,6,.26);color:#
   display:flex;align-items:center;gap:6px;}
 .model-warn .mw-sub{font-size:12px;color:var(--muted,#6b7280);margin-top:4px;line-height:1.5;}
 .model-warn .mw-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;}
-body.dark .model-warn .mw-head{color:#fbbf24;}
+html[data-mode="dark"] .model-warn .mw-head{color:#fbbf24;}
 
 /* v3.46.0 — ปุ่มเพิ่มรายการท้ายแต่ละหมวด */
 .pp-add{padding:6px 0 2px; border-top:1px dashed var(--line,#e5e7eb); margin-top:4px;}
@@ -7756,8 +7783,8 @@ body.dark .model-warn .mw-head{color:#fbbf24;}
 .pm-fix{font-size:12px;margin-top:6px;line-height:1.5;}
 .pm-nums{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px;
   color:var(--muted,#6b7280);}
-body.dark .pm-step{color:#fbbf24;}
-body.dark .pm-diag.ok .pm-step{color:#8ee5b0;}
+html[data-mode="dark"] .pm-step{color:#fbbf24;}
+html[data-mode="dark"] .pm-diag.ok .pm-step{color:#8ee5b0;}
 
 /* v3.42.0 — ช่องวันเริ่มเรียนรู้ราคา */
 .learn-from{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;
@@ -7767,12 +7794,12 @@ body.dark .pm-diag.ok .pm-step{color:#8ee5b0;}
   border-radius:8px;font:inherit;background:var(--card,#fff);color:inherit;}
 .learn-from .lf-hint{color:var(--muted,#6b7280);}
 .lf-skip{color:#92400e;}
-body.dark .lf-skip{color:#fbbf24;}
+html[data-mode="dark"] .lf-skip{color:#fbbf24;}
 
 .ai-book-stat,.backfill-stat{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12px;
   color:var(--muted,#6b7280);}
 .ai-book-stat b{font-size:15px;color:#1f9d55;}
-body.dark .ai-book-stat b{color:#8ee5b0;}
+html[data-mode="dark"] .ai-book-stat b{color:#8ee5b0;}
 </style>
 
 <style>
@@ -9281,7 +9308,7 @@ function addSymptomItemsToJob(jobId, text){
   s.promos.forEach(pr => (pr.itemIds || []).forEach(id => inAddedPromo[id] = true));
   s.parts.forEach(mp => {
     if(inAddedPromo[mp.id]) return;
-    if(job.partsNeeded.some(p => p.partName === mp.partName && (p.variant||'') === (mp.variant||''))) return;
+    if(job.partsNeeded.some(p => samePartLine(p, mp.partName, mp.variant))) return;   // v4.6.8 K4-a
     job.partsNeeded.push({ id: uid(), partName: mp.partName, variant: mp.variant || '',
                            qty: mp.qty || '', unit: mp.unit || 'ชิ้น',
                            brand: '', price: partPriceOf(mp), note: '' });
@@ -10431,6 +10458,7 @@ var view = {
   ci_newModelKey:'', ci_newBrand:'', ci_newModel:'', ci_newYear:'', ci_newColor:'', ci_newProvince:'',
   ci_newCustomerName:'', ci_newCustomerPhone:'',
   ci_queueNo:'', ci_queueLocked:false, ci_queueBusy:false, ci_queueErr:'',
+  ci_queueDay:'', ci_queueStale:false,   // v4.6.8 K6-P1 — วันที่ของเลขคิวในร่าง (เครื่องนี้เท่านั้น)
   ci_mileage:'', ci_checked:[], ci_customComplaints:[], ci_customInput:'', ci_photos:[], ci_selectedParts:[],
   coverMigrating:false, coverMigrateDone:0,
   modelId:null, modelTab:'parts', selectMode:false, selectedModelIds:[], modelSearch:'', modelBrandFilter:'all', modelServiceFilter:'all', promoFilter:'all',
@@ -11513,21 +11541,7 @@ function startSync(){
 
   let firstCfg = true;
   const unsubCfg = db.collection('config').doc('main').onSnapshot(doc => {
-    if(doc.exists){
-      const d = doc.data();
-      if(d.shop){
-        state.shop = d.shop;
-        // The launcher renders BEFORE login, when nothing has been read from
-        // Firestore yet — which is exactly when someone who cannot log in needs
-        // the admin's number. So the last known contact is mirrored locally.
-        cacheAdminContact(d.shop);
-      }
-      if(d.settings) state.settings = d.settings;
-      state.deletedMasterPartNames = d.deletedMasterPartNames || [];
-      state.technicians = d.technicians || [];
-      state.unitOptions = d.unitOptions || [];
-      shadowConfig = JSON.stringify(buildConfigPayload());
-    }
+    if(doc.exists) applyConfigSnapshot(doc.data() || {});
     if(firstCfg){ firstCfg = false; oneReady('config'); }
     else if(dataReady){ applyTheme(state.settings && state.settings.themeId); applyDarkMode(isDarkOn()); safeRender(); }
   }, err => {
@@ -11569,15 +11583,64 @@ function saveState(showToast){
 
    unitOptions ใส่ลงไปเฉพาะตอนมีค่าจริง — ดูเหตุผลเต็มที่ allUnitOptions:
    เครื่องของพนักงานที่ไม่ใช่แอดมินห้ามแตะคีย์นี้ ไม่งั้น batch ล้มทั้งก้อน */
-function buildConfigPayload(){
+function buildConfigPayload(src){
+  src = src || state;
   const cfg = {
-    shop: state.shop,
-    settings: state.settings,
-    deletedMasterPartNames: state.deletedMasterPartNames || [],
-    technicians: state.technicians || []
+    shop: src.shop,
+    settings: src.settings,
+    deletedMasterPartNames: src.deletedMasterPartNames || [],
+    technicians: src.technicians || []
   };
-  if((state.unitOptions || []).length) cfg.unitOptions = state.unitOptions;
+  if((src.unitOptions || []).length) cfg.unitOptions = src.unitOptions;
   return cfg;
+}
+
+/* v4.6.8 K2 — ตัวกัน pending-edit ของ config/main (แบบเดียวกับ mergeSnapshotRows)
+   เดิมตัวฟังเขียนทับ state.shop / settings / technicians ... ทุกครั้งที่ snapshot เข้า
+   แล้วตั้ง shadowConfig จาก state -> ชื่อช่างที่เพิ่งเพิ่มแต่ยังไม่ถึงรอบบันทึก (250 ms
+   หรือช่วงออฟไลน์) หายเงียบ ๆ เมื่อเครื่องอื่นแก้การตั้งค่าร้าน และรอบบันทึกถัดไป
+   ก็ไม่เห็นความต่างเพราะ shadowConfig ถูกตั้งจากของที่ถูกทับแล้ว
+
+   ตัดสินทีละคีย์บนสุด: คีย์ที่ของในเครื่อง ≠ shadowConfig (= ค้างไม่ได้บันทึก) และบัญชีนี้
+   เขียนคีย์นั้นได้ (แอดมิน = ทุกคีย์ · พนักงาน = CONFIG_KEYS_STAFF_MAY_CHANGE) -> เก็บของ
+   ในเครื่อง · คีย์อื่นรับของเซิร์ฟเวอร์ (คีย์ต้องห้ามของพนักงานต้องถูกทับกลับ ตามที่ด่าน
+   v4.2.11 สัญญาไว้) · shadowConfig = สภาพของเซิร์ฟเวอร์เสมอ ไม่ใช่ของที่รวมของค้างแล้ว */
+const CONFIG_TOP_KEYS = ['shop', 'settings', 'deletedMasterPartNames', 'technicians', 'unitOptions'];
+
+function applyConfigSnapshot(d){
+  d = d || {};
+  let prev = null;
+  if(shadowConfig){ try { prev = JSON.parse(shadowConfig) || null; } catch(e){ prev = null; } }
+  const local = buildConfigPayload(state);
+  const mayKeep = k => isAdmin() || CONFIG_KEYS_STAFF_MAY_CHANGE.indexOf(k) >= 0;
+  const pending = {};
+  if(prev){
+    CONFIG_TOP_KEYS.forEach(k => {
+      if(mayKeep(k) && stableJson(local[k]) !== stableJson(prev[k])) pending[k] = true;
+    });
+  }
+  // สภาพของเซิร์ฟเวอร์ — shop/settings ที่ไม่มีในเอกสารคงค่าเดิมในเครื่อง (พฤติกรรมเดิม)
+  const server = {
+    shop: d.shop ? d.shop : state.shop,
+    settings: d.settings ? d.settings : state.settings,
+    deletedMasterPartNames: d.deletedMasterPartNames || [],
+    technicians: d.technicians || [],
+    unitOptions: d.unitOptions || []
+  };
+  if(d.shop){
+    // The launcher renders BEFORE login, when nothing has been read from
+    // Firestore yet — which is exactly when someone who cannot log in needs
+    // the admin's number. So the last known contact is mirrored locally.
+    cacheAdminContact(d.shop);
+  }
+  let kept = 0;
+  CONFIG_TOP_KEYS.forEach(k => {
+    if(pending[k]){ kept++; return; }
+    state[k] = server[k];
+  });
+  shadowConfig = stableJson(buildConfigPayload(server));
+  if(kept) saveState(false);
+  return kept;
 }
 
 /* ---------------------------------------------------------------------------
@@ -11697,9 +11760,11 @@ function flushState(showToast){
   });
 
   const cfg = buildConfigPayload();
-  const cfgEncoded = JSON.stringify(cfg);
+  // v4.6.8 K2 — stableJson เหมือน shadowConfig (Firestore ไม่รับประกันลำดับฟิลด์)
+  const cfgEncoded = stableJson(cfg);
   let cfgPending = null;
-  if(cfgEncoded !== shadowConfig){
+  // เทียบทีละคีย์ด้วย stableJson — สตริงต่างแค่ลำดับคีย์ไม่นับว่าเปลี่ยน (ไม่ส่งซ้ำทุกรอบ)
+  if(cfgEncoded !== shadowConfig && (!shadowConfig || changedConfigKeys(cfgEncoded).length)){
     /* v4.2.11 — ด่านเดียวที่กัน config/main ไม่ให้ลาก batch ทั้งก้อนล้ม
        ดูคำอธิบายเต็มที่ configWriteAllowed ข้างบน */
     const cfgGate = configWriteAllowed(cfgEncoded);
@@ -11723,7 +11788,7 @@ function flushState(showToast){
         if(was){
           allowedChanged.forEach(k => { part[k] = cfg[k]; was[k] = cfg[k]; });
           batch.set(db.collection('config').doc('main'), cleanForFirestore(part), { merge:true });
-          cfgPending = JSON.stringify(was);   // สภาพบนเซิร์ฟเวอร์หลัง commit ผ่าน
+          cfgPending = stableJson(was);   // สภาพบนเซิร์ฟเวอร์หลัง commit ผ่าน
           bump();
         }
       }
@@ -12759,8 +12824,13 @@ function ensureQueueReserved(){
     .then(n => {
       view.ci_queueBusy = false;
       view.ci_queueNo = String(n);
+      view.ci_queueDay = queueDayKey();   // v4.6.8 K6-P1
       view.ci_queueLocked = true;
       saveCheckinDraft();
+      if(view.ci_queueStale){
+        view.ci_queueStale = false;
+        flashToast('ร่างค้างจากวันก่อน — ออกเลขคิวใหม่ให้แล้ว: คิว ' + n);
+      }
       safeRender();
     })
     .catch(err => {
@@ -12768,6 +12838,10 @@ function ensureQueueReserved(){
       // เหมือนเดิม แล้วบอกตรง ๆ ว่าทำไม
       view.ci_queueBusy = false;
       view.ci_queueLocked = false;
+      if(view.ci_queueStale){
+        view.ci_queueStale = false;
+        flashToast('ร่างค้างจากวันก่อน — ล้างเลขคิวเก่าแล้ว กด "ออกเลขคิวใหม่"');
+      }
       const code = String((err && (err.code || err.message)) || '');
       view.ci_queueErr = code.indexOf('permission-denied') >= 0
         ? 'ออกเลขคิวอัตโนมัติไม่ได้ — บัญชีนี้ไม่มีสิทธิ์เขียนตั้งค่า (กรอกเลขเองไปก่อนได้)'
@@ -12879,6 +12953,7 @@ function resetCheckin(){
   view.ci_estUnit='hour'; view.ci_estValue=0;
   view.ci_queueLocked=false; view.ci_queueBusy=false; view.ci_queueErr='';
   view.ci_queueClash=null;   // v4.3.4 Q2
+  view.ci_queueDay=''; view.ci_queueStale=false;   // v4.6.8 K6-P1
   view.ci_docTone=null;      // v4.3.7 — กลับไปใช้ค่าที่ระบบเสนอ
   clearCheckinDraft();
 }
@@ -12898,7 +12973,9 @@ const CI_DRAFT_FIELDS = [
   'ci_estUnit','ci_estValue',
   // v4.3.7 — โทนที่ช่างเลือกเองต้องติดไปกับร่างด้วย ไม่งั้นบันทึกร่างแล้วเปิดกลับมา
   // suggestedDocTone() จะชนะ แล้วสีที่เลือกไว้เด้งกลับเงียบ ๆ = "เสนอ" กลายเป็น "บังคับ"
-  'ci_docTone'
+  'ci_docTone',
+  // v4.6.8 K6-P1 — วันที่ของเลขคิวในร่าง (localStorage เท่านั้น ไม่ขึ้นเซิร์ฟเวอร์)
+  'ci_queueDay'
 ];
 
 /* v3.23.0 — คืนค่าว่าเซฟผ่านจริงไหม
@@ -12910,6 +12987,9 @@ const CI_DRAFT_FIELDS = [
 function saveCheckinDraft(){
   try{
     const d = {};
+    // v4.6.8 K6-P1 — เลขคิวต้องพกวันของมันไปด้วย ไม่มีเลข = ไม่มีวัน
+    if(!(view.ci_queueNo || '').toString().trim()) view.ci_queueDay = '';
+    else if(!view.ci_queueDay) view.ci_queueDay = queueDayKey();
     CI_DRAFT_FIELDS.forEach(f => { d[f] = view[f]; });
     localStorage.setItem(CI_DRAFT_KEY, JSON.stringify(d));
     return true;
@@ -12927,6 +13007,18 @@ function loadCheckinDraft(){
     if(!raw) return false;
     const d = JSON.parse(raw);
     CI_DRAFT_FIELDS.forEach(f => { if(d[f] !== undefined) view[f] = d[f]; });
+    view.ci_queueDay = d.ci_queueDay || '';
+    /* v4.6.8 K6-P1 — ร่างค้างข้ามวัน: เลขคิวในร่างเป็นของเมื่อวาน คิวรีเซ็ตทุกเที่ยงคืน
+       ถ้าใช้ต่อ = ชนกับคันที่ได้เลขเดียวกันวันนี้ ทิ้งเลขเก่า ให้ ensureQueueReserved จองใหม่
+       (ร่างรุ่นเก่าที่ไม่มี ci_queueDay ตัดสินไม่ได้ ปล่อยตามเดิม — ด่าน checkinErrors ยังกันซ้ำ) */
+    if((view.ci_queueNo || '').toString().trim() && view.ci_queueDay && view.ci_queueDay !== queueDayKey()){
+      view.ci_queueNo = '';
+      view.ci_queueDay = '';
+      view.ci_queueLocked = false;
+      view.ci_queueClash = null;
+      view.ci_queueStale = true;
+      saveCheckinDraft();
+    }
     return true;
   }catch(e){ return false; }
 }
@@ -12967,9 +13059,11 @@ function hasCheckinDraft(){
 function clearCheckinForm(){
   uiConfirm('ล้างฟอร์มรับรถทั้งหมด?', () => {
     const keepQueue = (view.ci_queueNo || '').toString().trim();
+    const keepDay = view.ci_queueDay || '';   // v4.6.8 K6-P1 — เลขเดิมคงวันเดิม
     resetCheckin();
     if(keepQueue){
       view.ci_queueNo = keepQueue;
+      view.ci_queueDay = keepDay;
       view.ci_queueLocked = true;
       saveCheckinDraft();
     } else {
@@ -13125,6 +13219,7 @@ function onCiFieldInput(field, value){
   if(field === 'ci_queueNo'){
     const dup = queueNoTakenToday(value);
     view.ci_queueClash = dup ? (dup.jobNumber || dup.id || '1') : null;
+    view.ci_queueDay = String(value || '').trim() ? queueDayKey() : '';   // v4.6.8 K6-P1 — พิมพ์วันนี้ = เลขของวันนี้
   }
   saveCheckinDraft();
 }
@@ -14770,17 +14865,163 @@ function purgeJob(jobId){
   }, 'ลบถาวร');
 }
 
+/* v4.6.8 K7 — ถังขยะเกิน 600 ใบ ล้างไม่ได้
+   ตัวฟัง jobs เห็นแค่ RECENT_JOBS_LIMIT ใบล่าสุด (ห้ามขยาย) ใบที่ลบลงถังขยะแล้วและเก่ากว่า
+   หน้าต่างนั้นไม่เคยเข้าเครื่อง -> ไม่ขึ้นในถังขยะ และ flushState ลบไม่ถึง (ลบได้เฉพาะที่อยู่
+   ใน shadow) ค้างบนเซิร์ฟเวอร์พร้อมรูปและข้อมูลลูกค้าตลอดไป
+
+   แก้: แอดมินกดเอง -> query jobs where deletedAt > '' แยกต่างหาก (ฟิลด์เดียว ไม่ต้องมี
+   composite index) แบ่งเป็นสองกอง
+     - ใบที่อยู่ในเครื่อง (ในหน้าต่าง) -> ทางเดิม: เอาออกจาก state ให้ flushState ส่ง delete
+       shadow จึงไม่เพี้ยน
+     - ใบนอกหน้าต่าง -> batch ของตัวเอง ≤400 op: jobs/{id} + board/{id} + jobPhotos ของใบนั้น
+       ห้ามใส่เข้า state.jobs / shadow.jobs
+   ใบที่เซิร์ฟเวอร์ว่าอยู่ในถังขยะ แต่ในเครื่องกู้คืนไว้แล้วและยังบันทึกไม่เสร็จ = ข้าม
+   พนักงาน: กฎให้ลบ jobs ได้เฉพาะแอดมิน ส่งไปเท่ากับ batch ล้มทั้งก้อน -> ไม่ทำอะไรเลย */
+const TRASH_BATCH_OPS = 400;
+
 function emptyTrash(){
-  const rows = deletedJobs();
-  if(rows.length === 0){ flashToast('ถังขยะว่างอยู่แล้ว'); return; }
-  uiConfirm(`ลบถาวรทั้งหมด ${rows.length} รายการ?\n\nรวมรูปภาพทั้งหมด — กู้คืนไม่ได้อีก`, () => {
-    rows.forEach(j => deletePhotosForJob(j.id));
-    const ids = rows.map(j => j.id);
+  if(!isAdmin()){ flashToast('ล้างถังขยะถาวรต้องให้ผู้ดูแลระบบทำ'); return; }
+  if(!db) return;
+  if(!isOnline || (typeof navigator !== 'undefined' && navigator.onLine === false)){
+    flashToast('ต้องต่อเน็ตก่อนล้างถังขยะ');
+    return;
+  }
+  if(view.trashBusy) return;
+  view.trashBusy = 'count';
+  render();
+  db.collection('jobs').where('deletedAt', '>', '').get()
+    .then(snap => {
+      view.trashBusy = false;
+      const localById = {};
+      (state.jobs || []).forEach(j => { if(j && j.id) localById[j.id] = j; });
+      const shadowJobs = shadow.jobs || {};
+      const inWin = deletedJobs();
+      const remote = [];
+      let skipped = 0;
+      snap.forEach(doc => {
+        const id = doc.id;
+        const local = localById[id];
+        if(local){
+          if(!local.deletedAt) skipped++;   // กู้คืนในเครื่องแล้ว ยังไม่ได้บันทึก — ห้ามลบ
+          return;                           // ในเครื่องและอยู่ในถังขยะ = นับใน inWin แล้ว
+        }
+        if(shadowJobs[id] !== undefined) return;   // กำลังถูกลบโดย flushState อยู่แล้ว
+        remote.push({ id: id, data: doc.data() || {} });
+      });
+      const total = inWin.length + remote.length;
+      if(total === 0){
+        if(skipped) uiModal({ message: `ถังขยะว่างอยู่แล้ว · ข้าม ${skipped} รายการที่ยังบันทึกไม่เสร็จ — กดล้างอีกครั้งภายหลัง`, okLabel:'รับทราบ', cancelLabel:'ปิด', onOk: () => {} });
+        else flashToast('ถังขยะว่างอยู่แล้ว');
+        render();
+        return;
+      }
+      const mid = remote.length
+        ? `บนจอนี้ ${inWin.length} รายการ + รายการเก่าที่ไม่ขึ้นบนจอ ${remote.length} รายการ\n`
+        : '';
+      render();
+      uiConfirm(`ลบถาวรทั้งหมด ${total} รายการ?\n\n${mid}รวมรูปภาพทั้งหมด — กู้คืนไม่ได้อีก`,
+        () => runEmptyTrash(inWin, remote, skipped),
+        `ลบถาวร ${total} รายการ`, 'ยกเลิก');
+    })
+    .catch(err => {
+      console.error('emptyTrash count', err);
+      view.trashBusy = false;
+      flashToast('นับรายการในถังขยะไม่สำเร็จ — ลองใหม่อีกครั้ง');
+      render();
+    });
+}
+
+function runEmptyTrash(inWin, remote, skipped){
+  // กองที่ 1: ใบในเครื่อง — ทางเดิม (state + flushState) shadow ตรงกับเซิร์ฟเวอร์เสมอ
+  const ids = inWin.map(j => j.id).filter(id => {
+    const j = getJob(id);
+    return j && j.deletedAt;              // กู้คืนระหว่างที่กล่องยืนยันเปิดอยู่ = ไม่ลบ
+  });
+  ids.forEach(id => deletePhotosForJob(id));
+  if(ids.length){
     state.jobs = state.jobs.filter(j => ids.indexOf(j.id) === -1);
-    saveState(true);
-    flashToast('ล้างถังขยะแล้ว');
+    saveState(false);
+  }
+  skipped += inWin.length - ids.length;
+  const finish = (doneRemote, failed) => {
+    view.trashBusy = false;
+    const done = ids.length + doneRemote;
+    const all = ids.length + remote.length;
+    if(failed){
+      uiModal({ message: `ลบได้ ${done} จาก ${all} รายการ — เน็ตหลุดหรือระบบปฏิเสธ กดล้างอีกครั้งเพื่อลบที่เหลือ`,
+                okLabel:'รับทราบ', cancelLabel:'ปิด', onOk: () => {} });
+    } else if(skipped){
+      uiModal({ message: `ล้างถังขยะแล้ว ${done} รายการ · ข้าม ${skipped} รายการที่ยังบันทึกไม่เสร็จ — กดล้างอีกครั้งภายหลัง`,
+                okLabel:'รับทราบ', cancelLabel:'ปิด', onOk: () => {} });
+    } else {
+      flashToast(`ล้างถังขยะแล้ว ${done} รายการ`);
+    }
     render();
-  }, 'ลบถาวรทั้งหมด');
+  };
+  if(!remote.length){ finish(0, false); return; }
+
+  view.trashBusy = 'delete';
+  render();
+  // กองที่ 2: ใบนอกหน้าต่าง — หาเอกสารรูปของทุกใบก่อน (where in ทีละ 30 = เพดานของ Firestore)
+  const remoteIds = remote.map(r => r.id);
+  const chunks = [];
+  for(let i = 0; i < remoteIds.length; i += 30) chunks.push(remoteIds.slice(i, i + 30));
+  const photosByJob = {};
+  Promise.all(chunks.map(c => db.collection('jobPhotos').where('jobId', 'in', c).get()
+    .then(snap => snap.forEach(d => {
+      const jid = (d.data() || {}).jobId;
+      (photosByJob[jid] = photosByJob[jid] || []).push(d);
+    }))))
+    .then(() => {
+      // ไม่แบ่งใบเดียวข้าม batch — นับ "ลบแล้ว" ได้ตรงเมื่อ batch นั้น commit ผ่าน
+      const groups = [];
+      let cur = { ops: 0, jobs: [] };
+      remote.forEach(r => {
+        const n = 2 + (photosByJob[r.id] || []).length;
+        if(cur.jobs.length && cur.ops + n > TRASH_BATCH_OPS){ groups.push(cur); cur = { ops: 0, jobs: [] }; }
+        cur.jobs.push(r); cur.ops += n;
+      });
+      if(cur.jobs.length) groups.push(cur);
+      let done = 0;
+      const paths = [];
+      const step = gi => {
+        if(gi >= groups.length) return Promise.resolve();
+        const batch = db.batch();
+        const gPaths = [];
+        groups[gi].jobs.forEach(r => {
+          (photosByJob[r.id] || []).forEach(d => {
+            const p = (d.data() || {}).path;
+            if(p) gPaths.push(p);
+            batch.delete(d.ref);
+          });
+          if(r.data.thumbPath) gPaths.push(r.data.thumbPath);
+          batch.delete(db.collection('board').doc(r.id));
+          batch.delete(db.collection('jobs').doc(r.id));
+        });
+        return batch.commit().then(() => {
+          done += groups[gi].jobs.length;
+          gPaths.forEach(p => paths.push(p));
+          if(groups.length > 1) flashToast(`กำลังลบ… ${ids.length + done}/${ids.length + remote.length}`);
+          return step(gi + 1);
+        });
+      };
+      return step(0)
+        .then(() => {
+          // เอกสารก่อน แล้วค่อยไฟล์ — ไฟล์ค้างเสียแค่ค่าเก็บ เอกสารชี้ไปที่ไฟล์ที่หายไปแล้วแย่กว่า
+          Promise.all(paths.map(p => deleteStoragePath(p))).catch(() => {});
+          finish(done, false);
+        })
+        .catch(err => {
+          console.error('emptyTrash delete', err);
+          Promise.all(paths.map(p => deleteStoragePath(p))).catch(() => {});
+          finish(done, true);
+        });
+    })
+    .catch(err => {
+      console.error('emptyTrash photos', err);
+      finish(0, true);
+    });
 }
 
 /* ================= Catalog: รุ่นรถ (models) ================= */
@@ -15221,22 +15462,28 @@ function similarPartNames(name, pool, limit){
 function confirmIfSimilarPartName(name, pool, scopeLabel, onYes){
   const hits = similarPartNames(name, pool, 8);
   if(hits.length === 0){ onYes(); return; }
-  const exact = hits.filter(h => h.why === 'same').length;
+  /* v4.6.8 M2 — "ชื่อเดียวกัน" ใช้เฉพาะเมื่อ partNameKey ตรงกันจริง
+     h.why === 'same' ของ similarPartNames() เทียบบน partNameCore (ตัดวงเล็บ) จึงจับ
+     "ลูกหมากปีกนก" กับ "ลูกหมากปีกนก (ล่าง)" ว่า same — ถูกต้องสำหรับการหาชื่อคล้าย
+     แต่บอกช่างว่า "ชื่อเดียวกัน" ไม่ได้ เพราะเป็นคนละตัว (บน/ล่าง) · ไม่แตะ similarPartNames() */
+  const myKey = partNameKey(name);
+  const isSameKey = h => partNameKey(h.name) === myKey;
+  const exact = hits.filter(isSameKey).length;
   const head = exact
     ? `"${name}" มีชื่อเดียวกันอยู่ในระบบแล้ว`
-    : `"${name}" มีชื่อคล้ายกันอยู่ในระบบแล้ว ${hits.length} รายการ`;
+    : `"${name}" มีชื่อคล้ายกันในระบบ ${hits.length} รายการ`;
   /* v4.6.1 — เดิมไล่ชื่อทั้งหมดได้ถึง 8 บรรทัด ช่างกดผ่านโดยไม่อ่าน แล้วงงว่าทำไมไม่เพิ่ม
      เหลือ 3 ชื่อแรกพอ ที่เหลือบอกเป็นจำนวน */
   const show = hits.slice(0, 3);
   const lines = show.map(h =>
-    '  • ' + h.name + (h.where ? '  — ' + h.where : '') + (h.why === 'same' ? '  (ชื่อเดียวกัน)' : ''));
+    '  • ' + h.name + (h.where ? '  — ' + h.where : '') + (isSameKey(h) ? '  (ชื่อเดียวกัน)' : ''));
   if(hits.length > show.length) lines.push('  • (และอีก ' + (hits.length - show.length) + ' รายการ)');
   /* ไม่ใช้ uiConfirm เพราะอันนั้นย้อมปุ่มยืนยันเป็นสีแดง (danger) ซึ่งเอาไว้ใช้กับ
      "ลบ" การเพิ่มอะไหล่ไม่ใช่เรื่องอันตราย ปุ่มแดงตรงนี้จะสอนให้คนกลัวผิดที่ */
   uiModal({
     message: head + ':\n\n' + lines.join('\n') +
-             `\n\nถ้า "${name}" เป็นคนละตัวกับที่อยู่ข้างบน กด "เพิ่มเป็นรายการใหม่"` +
-             '\nถ้าเป็นตัวเดียวกัน กด "ไม่เพิ่ม" แล้วแตะชิปของตัวที่มีอยู่แทน ราคาจะตามมาด้วย',
+             '\n\nคนละตัวกัน → กด "เพิ่มเป็นรายการใหม่"' +
+             '\nตัวเดียวกัน → กด "ไม่เพิ่ม" แล้วแตะชิปของตัวนั้น ราคาจะตามมา',
     okLabel: 'เพิ่มเป็นรายการใหม่',
     cancelLabel: 'ไม่เพิ่ม',
     onOk: onYes
@@ -17127,12 +17374,73 @@ function isRepeatCustomer(customerId, excludeJobId){
 
 function onLineFieldInput(field, value){ view[field] = value; render(); }
 
+/* v4.6.8 K6-P2 — แก้เลขคิวของใบที่รับไปแล้ว: ด่านคิวซ้ำเดียวกับตอนรับรถ
+   เดิมรับค่าอะไรก็ได้ = ทางที่ยังเปิดให้สองคันได้คิวเดียวกันในวันเดียว (LINE Bot !เลขคิว
+   ตอบเป็นรายการ "คิวนี้ซ้ำ" แทนข้อมูลรถ) · ซ้ำ = ไม่บันทึก ช่องกลับเป็นเลขเดิม
+   เทียบกับใบของ "วันเดียวกับใบนี้" ที่ไม่อยู่ในถังขยะ ไม่นับตัวเอง (ตรวจได้แค่ใบในเครื่อง) */
+function queueNoClashForJob(job, no){
+  const q = String(no == null ? '' : no).trim();
+  if(!q) return null;
+  const day = job.createdAt ? dayKey(new Date(job.createdAt)) : queueDayKey();
+  return (state.jobs || []).find(j =>
+    j && j.id !== job.id && !j.deletedAt
+    && j.createdAt && dayKey(new Date(j.createdAt)) === day
+    && sameQueueNo(j.queueNo, q)) || null;
+}
+
 function onJobQueueNoChange(jobId, value){
   const job = getJob(jobId);
   if(!job) return;
-  job.queueNo = (value || '').trim();
+  const next = (value || '').trim();
+  const prev = String(job.queueNo == null ? '' : job.queueNo).trim();
+  if(next === prev){ render(); return; }
+  const clash = queueNoClashForJob(job, next);
+  if(clash){
+    const v = getVehicle(clash.vehicleId) || {};
+    const who = [clash.jobNumber || clash.id, v.plate].filter(Boolean).join(' · ');
+    render();   // ช่องกลับไปแสดงเลขเดิมทันที ไม่ค้างเลขที่ถูกปฏิเสธ
+    uiModal({
+      message: `เลขคิว ${next} มีรถใช้ไปแล้ววันนี้ (${who}) — ` +
+               (prev ? `ยังเป็นคิว ${prev} เหมือนเดิม` : 'ยังไม่มีเลขคิวเหมือนเดิม'),
+      okLabel: 'แก้เลขคิว',
+      cancelLabel: 'คงคิวเดิม',
+      onOk: () => {
+        setTimeout(() => {
+          const el = document.getElementById('job-queue-' + jobId);
+          if(el){ el.focus(); try{ el.select(); }catch(e){} }
+        }, 30);
+      }
+    });
+    return;
+  }
+  job.queueNo = next;
   saveState(true);
   render();
+  // พิมพ์เลขเองเกินตัวนับ -> ขยับตัวนับตาม ไม่งั้นคันถัดไปที่รับรถได้เลขนี้ซ้ำ
+  if(queueIsFromToday(job) && /^\d+$/.test(next)) bumpQueueCounterTo(parseInt(next, 10));
+}
+
+/* v4.6.8 K6-P2 — ขยับ config/queueCounter ขึ้นไปอย่างน้อย n (ไม่ลด) ใน transaction
+   แบบเดียวกับ reserveQueueNo · ล้ม (ออฟไลน์/สิทธิ์) = เงียบ ด่านคิวซ้ำในเครื่องยังทำงาน */
+function bumpQueueCounterTo(n){
+  n = Number(n);
+  if(!db || !isFinite(n) || n <= 0) return Promise.resolve(false);
+  const ref = queueCounterRef();
+  const day = queueDayKey();
+  return db.runTransaction(tx =>
+    tx.get(ref).then(snap => {
+      const d = (snap.exists && snap.data()) || {};
+      const useDay = queueDayForCounter(d, day);
+      if(useDay !== day) return false;   // ตัวนับเชื่อวันอื่น (นาฬิกาเครื่องนี้ช้า) — ไม่แตะ
+      const base = (d.day === day) ? (Number(d.n) || 0) : 0;
+      if(n <= base) return false;
+      const payload = { day: day, n: n, at: nowIso() };
+      const st = serverStamp();
+      if(st) payload.atServer = st;
+      tx.set(ref, payload, { merge: true });
+      return true;
+    })
+  ).catch(() => false);
 }
 
 // A rough price staff can jot down before there's a full itemized quote (job.partsNeeded
@@ -17421,14 +17729,90 @@ function togglePromoOnJob(jobId, promoId){
     const back = restorePromoChildLines(job, promoId);
     if(back) flashToast(`เอาชุดโปรออกแล้ว · คืนรายการที่คีย์ไว้เอง ${back} บรรทัด`);
   } else {
-    job.partsNeeded.push({
-      id: uid(), partName: promo.name, variant:'', qty:'1', unit:'ชุด',
-      brand:'', price: promo.price || '', note:'', promoId: promo.id
-    });
-    addPromoChildLines(job, model, promo);
+    /* v4.6.8 K4-c (เจ้าของตัดสิน "เตือน แต่ใส่ได้") — ชุดที่จะใส่มีอะไหล่ทับกับชุดที่อยู่ในใบแล้ว
+       = อะไหล่ตัวนั้นถูกคิดในราคาชุดสองครั้ง ถามก่อน ยืนยัน = ใส่ตามเดิม ยกเลิก = ไม่ใส่ */
+    const overlap = promoOverlapOnJob(job, model, promo);
+    if(overlap.names.length){
+      uiConfirm(
+        `ชุด "${promo.name}" มีอะไหล่ซ้ำกับชุดที่อยู่ในใบแล้ว (${overlap.promoNames.join(', ')}):\n\n` +
+        overlap.names.slice(0, 5).map(n => '  • ' + n).join('\n') +
+        (overlap.names.length > 5 ? `\n  • (และอีก ${overlap.names.length - 5} รายการ)` : '') +
+        '\n\nใส่ทั้งสองชุด = อะไหล่ที่ซ้ำถูกคิดเงินในราคาชุดทั้งสองครั้ง',
+        () => {
+          // กล่องค้างได้นาน snapshot อาจแทนวัตถุใบงานไปแล้ว — หาใหม่จาก id
+          const j = getJob(jobId), m = j && getJobModel(j);
+          const pr = m && (m.promotions || []).find(p => p.id === promoId);
+          if(j && pr) addPromoToJob(j, m, pr);
+        },
+        'ใส่ชุดนี้ด้วย', 'ไม่ใส่');
+      return;
+    }
+    addPromoToJob(job, model, promo);
+    return;
   }
   saveState(true);
   render();
+}
+
+/* v4.6.8 K4-a — ชื่อบรรทัดในใบตรงกับอะไหล่ของรุ่นไหม เทียบด้วย partNameKey (ตัวตน)
+   ไม่ใช่ชื่อตรงตัว: "ปีกนก " (เว้นวรรคท้าย) / "shock absorber" ตัวพิมพ์ต่าง = ตัวเดียวกัน
+   เดิมเทียบ === จึงเกิดบรรทัดที่สองแล้วคิดเงินซ้ำกับราคาชุด */
+function samePartLine(p, name, variant){
+  return !!p && partNameKey(p.partName) === partNameKey(name)
+    && partNameKey(p.variant || '') === partNameKey(variant || '');
+}
+
+function addPromoToJob(job, model, promo){
+  if((job.partsNeeded || []).some(p => p.promoId === promo.id)) return;
+  job.partsNeeded = job.partsNeeded || [];
+  job.partsNeeded.push({
+    id: uid(), partName: promo.name, variant:'', qty:'1', unit:'ชุด',
+    brand:'', price: promo.price || '', note:'', promoId: promo.id
+  });
+  addPromoChildLines(job, model, promo);
+  saveState(true);
+  render();
+  warnPromoLeftoverLines(job, model, promo);
+}
+
+/* อะไหล่ของชุดนี้ที่ "อยู่ในชุดอื่นที่ใส่ในใบแล้ว" — คืนชื่ออะไหล่ที่ทับ + ชื่อชุดที่ทับ */
+function promoOverlapOnJob(job, model, promo){
+  const names = [], promoNames = [];
+  (promo.itemIds || []).forEach(pid => {
+    const mp = (model.parts || []).find(x => x.id === pid);
+    if(!mp) return;
+    const hit = (job.partsNeeded || []).find(p => p.promoParent && p.promoParent !== promo.id
+      && samePartLine(p, mp.partName, mp.variant));
+    if(!hit) return;
+    names.push(partLabelOf(mp));
+    const head = (job.partsNeeded || []).find(p => p.promoId === hit.promoParent);
+    const pn = head ? head.partName : '';
+    if(pn && promoNames.indexOf(pn) < 0) promoNames.push(pn);
+  });
+  return { names, promoNames };
+}
+
+/* v4.6.8 K4-b (เจ้าของตัดสิน "เตือนช่าง แต่ปล่อยไว้") — ใส่ชุดแล้วยังมีบรรทัดชื่อเดียวกัน
+   นอกชุดเหลืออยู่ (เช่น คีย์ไว้สองแบรนด์ บรรทัดแรกย้ายเข้าชุด บรรทัดที่สองยังคิดเงินแยก)
+   ไม่รวมให้เอง เพราะอาจตั้งใจ (ลูกค้าเอาสองชิ้น) — แค่บอกให้เห็น */
+function warnPromoLeftoverLines(job, model, promo){
+  const left = [];
+  (promo.itemIds || []).forEach(pid => {
+    const mp = (model.parts || []).find(x => x.id === pid);
+    if(!mp) return;
+    const n = (job.partsNeeded || []).filter(p => !p.promoId && !p.promoParent
+      && samePartLine(p, mp.partName, mp.variant)).length;
+    if(n) left.push(`  • ${partLabelOf(mp)} — ${n} บรรทัด`);
+  });
+  if(!left.length) return;
+  uiModal({
+    message: `ใส่ชุด "${promo.name}" แล้ว แต่ยังมีรายการชื่อเดียวกันอยู่นอกชุด (ยังคิดเงินแยก):\n\n` +
+             left.join('\n') +
+             '\n\nถ้าเป็นชิ้นเดียวกับในชุด ให้ลบบรรทัดนั้นออกเอง ถ้าลูกค้าเอาเพิ่มจริง ปล่อยไว้ได้',
+    okLabel: 'รับทราบ',
+    cancelLabel: 'ปิด',
+    onOk: () => {}
+  });
 }
 
 /* v3.37.0 — แตกรายการในชุดโปรออกมาเป็นบรรทัดใต้หัวชุด
@@ -17484,8 +17868,8 @@ function addPromoChildLines(job, model, promo){
   ids.forEach(pid => {
     const mp = (model.parts || []).find(x => x.id === pid);
     if(!mp) return;                       // อะไหล่ถูกลบไปแล้ว ข้ามไป ไม่ต้องสร้างบรรทัดเปล่า
-    const sameName = p => p.partName === mp.partName
-                       && (p.variant || '') === (mp.variant || '');
+    // v4.6.8 K4-a — เทียบด้วย partNameKey + variant (เดิม === ชื่อตรงตัว)
+    const sameName = p => samePartLine(p, mp.partName, mp.variant);
 
     // ใส่ชุดเดิมซ้ำรอบสอง (เช่น กดชิปอาการหลังกดชิปโปร) — ลูกมีอยู่แล้ว ไม่ต้องทำอะไร
     if(job.partsNeeded.some(p => p.promoParent === promo.id && sameName(p))) return;
@@ -17560,7 +17944,8 @@ function toggleJobPartFromModel(jobId, modelPartId){
   if(!mp) return;
 
   job.partsNeeded = job.partsNeeded || [];
-  const sameName = p => p.partName === mp.partName && (p.variant || '') === (mp.variant || '');
+  // v4.6.8 K4-a — เทียบด้วย partNameKey + variant (เดิม === ชื่อตรงตัว)
+  const sameName = p => samePartLine(p, mp.partName, mp.variant);
 
   /* v4.3.2 — ข้อ M1: ชิปของอะไหล่ที่อยู่ในชุดโปรขึ้นเป็น "ติ๊กแล้ว" อยู่แล้ว
      (ถูกต้อง เพราะมันอยู่ในใบจริง) แต่ของเดิม findIndex ไม่เช็ก promoParent
@@ -17623,9 +18008,11 @@ function jpTellAlreadyOnJob(job, label, row){
   const unit  = (row && row.unit) ? row.unit : 'ชิ้น';
   const price = (row && parsePrice(row.price) > 0) ? fmtMoney(parsePrice(row.price)) : 'ยังไม่ใส่ราคา';
   uiModal({
-    message: '"' + label + '" อยู่ในใบนี้อยู่แล้ว\n\nตอนนี้ลงไว้ ' + qty + ' ' + unit + ' · ' + price +
-             '\n\nจึงไม่ได้เพิ่มซ้ำให้ — กดปิดแล้วดูแถวที่ไฮไลต์ไว้ ถ้าจะแก้จำนวนหรือราคาแก้ที่แถวนั้นได้เลย',
-    okLabel: 'เข้าใจแล้ว ไปดูแถวนั้น',
+    /* v4.6.8 M3 — ข้อความเดิมบอกให้ "กดปิด" แล้วดูแถวที่ไฮไลต์ แต่ปุ่ม "ปิด" แค่ปิดกล่อง
+       (uiModal ไม่มี onCancel) ปุ่มที่ไฮไลต์มีปุ่มเดียวคือปุ่มหลัก จึงให้ข้อความไม่พูดถึงไฮไลต์เลย */
+    message: '"' + label + '" อยู่ในใบแล้ว — ' + qty + ' ' + unit + ' · ' + price +
+             '\n\nไม่ได้เพิ่มซ้ำ แก้จำนวนหรือราคาที่แถวเดิมได้เลย',
+    okLabel: 'ไปดูแถวนั้น',
     cancelLabel: 'ปิด',
     onOk: () => { if(row) jpFlashRow(job.id, row.id); }
   });
@@ -17947,7 +18334,7 @@ function addAllModelPartsToJob(jobId){
   if(!picker.items.length) return;
   let added = 0;
   picker.items.forEach(mp => {
-    const exists = job.partsNeeded.some(p => p.partName === mp.partName && (p.variant||'') === (mp.variant||''));
+    const exists = job.partsNeeded.some(p => samePartLine(p, mp.partName, mp.variant));   // v4.6.8 K4-a
     if(exists) return;
     /* v3.38.0 — ราคาที่ระบบจำจากงานจริงมาก่อนราคาตำรา
        v4.3.2 — ชื่อแบรนด์ต้องมาจากที่เดียวกับราคา ดู partPriceAndBrand (ข้อ M4)
@@ -19598,7 +19985,7 @@ function renderJobDetail(jobId){
     <h3>${icon('chat',15)} สรุปข้อความลงกลุ่มไลน์</h3>
     ${jobShareSectionHtml(job)}
     <div class="pv-intake-row" style="gap:14px;">
-      <div class="field" style="flex:1 1 120px; margin-bottom:0;"><label>คิวที่</label><input type="text" value="${escapeAttr(job.queueNo||'')}" placeholder="เช่น 8" onchange="onJobQueueNoChange('${job.id}', this.value)"></div>
+      <div class="field" style="flex:1 1 120px; margin-bottom:0;"><label>คิวที่</label><input type="text" id="job-queue-${escapeAttr(job.id)}" value="${escapeAttr(job.queueNo||'')}" placeholder="เช่น 8" onchange="onJobQueueNoChange('${job.id}', this.value)"></div>
       <div class="field" style="flex:1 1 140px; margin-bottom:0;"><label>ราคาซ่อม (ประมาณ)</label><input type="text" inputmode="numeric" value="${job.priceEstimate ? escapeAttr(String(job.priceEstimate)) : ''}" placeholder="เช่น 3500" onchange="onJobPriceEstimateChange('${job.id}', this.value)"></div>
       <div class="field" style="flex:2 1 240px; margin-bottom:0;"><label>หมายเหตุ (เช่น ยังไม่คุยราคา)</label><input type="text" value="${escapeAttr(view.line_priceNote||'')}" onchange="onLineFieldInput('line_priceNote', this.value)"></div>
     </div>`;
@@ -20713,7 +21100,8 @@ function renderJobPartsEditor(job){
     groupByCategory(picker.items).forEach(group => {
       html += `<div class="chk-cat-label">${escapeHtml(group.category)}</div><div class="checklist-grid">`;
       group.items.forEach(mp => {
-        const on = parts.some(p => p.partName === mp.partName && (p.variant||'') === (mp.variant||''));
+        // v4.6.8 K4-a — ติ๊กตามกติกาเดียวกับ toggleJobPartFromModel (partNameKey)
+        const on = parts.some(p => samePartLine(p, mp.partName, mp.variant));
         const label = mp.variant ? `${mp.partName} (${mp.variant})` : mp.partName;
         // ราคาติดไว้บนชิปเลย ช่างจะได้ไม่ต้องกดเข้าไปดูทีละตัวว่าตัวไหนมีราคาแล้ว
         const chipPrice = partPriceOf(mp);
@@ -21969,6 +22357,19 @@ function pbParseSheetRows(rows){
     if(a === PB_PROMO_TITLE){ mode = 'promos'; return; }
     if(a === 'ลำดับ') return;                               /* หัวตาราง */
     if(/^อะไหล่ทั้งหมด/.test(a)) return;                    /* บรรทัดสรุป */
+
+    /* v4.6.8 B3 — แถวหัวรุ่นที่ไม่มีแถว "ยี่ห้อ / ชื่อรุ่น" นำหน้า (ถูกลบตอนแก้ไฟล์)
+       เดิมถูกอ่านเป็นอะไหล่ของรุ่นก่อนหน้า แล้วราคาของรุ่นถัดไปไปทับราคารุ่นก่อนเงียบ ๆ
+       "หน้าตาเป็นหัวรุ่น" = ช่อง A และ B มีค่า, ช่อง D (ราคา) ว่าง, ช่อง A ไม่ใช่เลขลำดับ
+       และ (ช่อง C เป็นช่วงปี หรือ ยี่ห้อ+ชื่อรุ่นตรงกับรุ่นที่มีในแอพ) — มีราคาเมื่อไร = อะไหล่เสมอ */
+    if(a && b && !d && !/^\d+$/.test(a) && pbNum(r[3]) === null &&
+       (/^\d{4}(\s*[-–]\s*\d{2,4})?$/.test(c) || pbFindModel({ brand: a, name: b, year: c }).how !== 'none')){
+      warnings.push('บรรทัด ' + lineNo + ': "' + [a, b, c].filter(Boolean).join(' ') +
+                    '" ไม่มีแถว "ยี่ห้อ / ชื่อรุ่น" นำหน้า — อ่านเป็นหัวรุ่นใหม่ให้แล้ว ตรวจไฟล์ด้วย');
+      cur = { brand: a, name: b, year: c, parts: [], promos: [], line: lineNo };
+      models.push(cur); mode = null; cat = '';
+      return;
+    }
     if(!cur) return;
 
     /* ลำดับอาจถูกลบไปตอนแก้ใน Excel — ยึดว่ามีชื่อในช่อง B ก็พอ */
@@ -21998,6 +22399,26 @@ function pbFindModel(x){
   return { model: null, how: 'none' };
 }
 
+/* v4.6.8 B4 — ชื่อของบรรทัด โดยตัดแบรนด์ "ของบรรทัดนั้นเอง" ออก
+   "ยางกันฝุ่นแร็ค (OEM)" แบรนด์ OEM กับ "ยางกันฝุ่นแร็ค (เทียบ)" แบรนด์ เทียบ = ชื่อเดียวกัน (ไม่ต้องเตือน)
+   แต่ "แร็คพวงมาลัย (OEM)" แบรนด์ OEM กับ "แร็คพวงมาลัย OEM" แบรนด์ รีบิ้ว = เขียนไม่ตรงกัน (เตือน) */
+function pbNameSansOwnBrand(name, brand){
+  const bk = partNameKey(brand);
+  let s = String(name == null ? '' : name);
+  if(bk){
+    s = s.replace(/\(([^)]*)\)/g, (m, inner) => partNameKey(inner) === bk ? ' ' : m);
+    s = s.split(/\s+/).filter(t => partNameKey(t) !== bk).join(' ');
+  }
+  return partNameKey(s);
+}
+
+function pbWarnNameMismatch(plan, first, line){
+  if(String(first.name) === String(line.name)) return;
+  if(pbNameSansOwnBrand(first.name, first.brand) === pbNameSansOwnBrand(line.name, line.brand)) return;
+  plan.warnings.push('บรรทัด ' + line.line + ': "' + line.name + '" กับบรรทัด ' + first.line + ': "' + first.name +
+                     '" เป็นอะไหล่ตัวเดียวกันแต่เขียนชื่อไม่ตรงกัน — ใช้ชื่อตามบรรทัด ' + first.line);
+}
+
 function pbBuildImportPlan(parsed){
   const plan = { models: [], warnings: (parsed.warnings || []).slice(),
                  counts: { price: 0, rename: 0, add: 0, ask: 0, untouched: 0, promo: 0 } };
@@ -22014,6 +22435,13 @@ function pbBuildImportPlan(parsed){
 
     const pool = (model.parts || []).map(p => ({ name: p.partName || '', where: 'อยู่ในรุ่นนี้แล้ว', part: p }));
 
+    /* v4.6.8 B2 — อะไหล่ใหม่ (ชั้น 2/3) ที่มีหลายบรรทัด (หลายแบรนด์) ใน Excel = อะไหล่ตัวเดียว
+       รวมตาม pbMatchKey: รายการ add / คำถาม ask เดียว ถือราคาทุกแบรนด์ใน brands[] ตามลำดับไฟล์
+       ช่อง name/brand/price/category ยังเป็นของบรรทัดแรก (หน้าสรุป + เทสต์เดิมอ่านได้) */
+    const newGroups = {};
+    /* v4.6.8 B4 — part เดิมที่ตรงหลายบรรทัด เปลี่ยนชื่อครั้งเดียวตามบรรทัดแรก */
+    const firstLineOf = {};
+
     xm.parts.forEach(line => {
       const alias = pbAliasOf(line.name);
       const wantKey = pbMatchKey(alias || line.name);
@@ -22022,6 +22450,13 @@ function pbBuildImportPlan(parsed){
       let part = (model.parts || []).find(p => pbMatchKey(p.partName) === wantKey);
 
       if(!part){
+        const g = newGroups[wantKey];
+        if(g){
+          /* บรรทัดที่สองขึ้นไปของอะไหล่ใหม่ตัวเดียวกัน — เติมแบรนด์ ไม่สร้างรายการใหม่ */
+          g.brands.push({ brand: line.brand, price: line.price });
+          pbWarnNameMismatch(plan, g.first, line);
+          return;
+        }
         /* ชั้น 2 — คล้าย: ไม่เดา ยกขึ้นให้เจ้าของตัดสิน */
         const hits = similarPartNames(pbStripBrand(line.name),
                       pool.map(e => ({ name: pbStripBrand(e.name), where: e.where })), 4);
@@ -22029,23 +22464,34 @@ function pbBuildImportPlan(parsed){
           const owner = pool.find(e => pbStripBrand(e.name) === h.name);
           return owner ? { partId: owner.part.id, name: owner.part.partName, why: h.why } : null;
         }).filter(Boolean);
+        const brands = [{ brand: line.brand, price: line.price }];
         if(cands.length){
-          entry.ask.push({ key: 'L' + line.line, excelName: line.name, brand: line.brand,
-                           price: line.price, category: line.category, candidates: cands });
+          const q = { key: 'L' + line.line, excelName: line.name, brand: line.brand,
+                      price: line.price, category: line.category, brands: brands, candidates: cands };
+          entry.ask.push(q);
+          newGroups[wantKey] = { brands: brands, first: line };
           plan.counts.ask++;
           return;
         }
         /* ชั้น 3 — ของใหม่จริง */
-        entry.add.push({ name: line.name, brand: line.brand, price: line.price, category: line.category });
+        entry.add.push({ name: line.name, brand: line.brand, price: line.price, category: line.category,
+                         brands: brands });
+        newGroups[wantKey] = { brands: brands, first: line };
         plan.counts.add++;
         return;
       }
 
       entry.touched[part.id] = true;
-      /* ชื่อใน Excel เป็นหลัก — ต่างเมื่อไรเปลี่ยนตาม */
-      if(String(part.partName || '') !== line.name){
-        entry.rename.push({ partId: part.id, from: part.partName, to: line.name });
-        plan.counts.rename++;
+      /* ชื่อใน Excel เป็นหลัก — ต่างเมื่อไรเปลี่ยนตาม (ครั้งเดียวต่อ part ตามบรรทัดแรก) */
+      const first = firstLineOf[part.id];
+      if(first){
+        pbWarnNameMismatch(plan, first, line);
+      } else {
+        firstLineOf[part.id] = line;
+        if(String(part.partName || '') !== line.name){
+          entry.rename.push({ partId: part.id, from: part.partName, to: line.name });
+          plan.counts.rename++;
+        }
       }
       const bk = partNameKey(line.brand);
       const cur = ((part.brands || []).find(b => partNameKey(b.brand) === bk)) || null;
@@ -22098,10 +22544,18 @@ function pbResetModelPriceMemory(model){
     delete p.lastPrice;
     delete p.lastPriceByBrand;
   });
-  const key = partNameKey([model.brand, model.name].filter(Boolean).join(' '));
+  /* v4.6.8 B1 — คีย์ต้องเป็นรูปเดียวกับที่ rememberJobPartPrice เขียน (stamp.forModel = jobVehicleTag(job)
+     = mmNorm(ยี่ห้อ) + ' ' + mmNorm(รุ่น) เช่น "TOYOTA COROLLA ALTIS") · เดิมใช้ partNameKey
+     ("toyotacorollaaltis") ซึ่งไม่ตรงคีย์ใดเลย ความจำรอบก่อนจึงไม่ถูกล้าง แล้วเติมให้เงียบ ๆ (same:true)
+     ลบคีย์รูปเก่าด้วย (ไม่มีผลเสีย) */
+  const key = [mmNorm(model.brand), mmNorm(model.name)].filter(Boolean).join(' ');
+  const oldKey = partNameKey([model.brand, model.name].filter(Boolean).join(' '));
   (state.masterParts || []).forEach(mp => {
-    if(mp.lastPriceByModel)      delete mp.lastPriceByModel[key];
-    if(mp.lastPriceByModelBrand) delete mp.lastPriceByModelBrand[key];
+    [key, oldKey].forEach(k => {
+      if(!k) return;
+      if(mp.lastPriceByModel)      delete mp.lastPriceByModel[k];
+      if(mp.lastPriceByModelBrand) delete mp.lastPriceByModelBrand[k];
+    });
   });
 }
 
@@ -22122,10 +22576,11 @@ function pbApplyImportPlan(plan, decisions){
       const p = (model.parts || []).find(x => x.id === r.partId);
       if(p){ pbSetBrandPrice(p, r.brand, r.to); changed++; }
     });
+    /* v4.6.8 B2 — อะไหล่ใหม่หนึ่งรายการ = หนึ่ง part ที่มีทุกแบรนด์ (แผนเก่าไม่มี brands[] ใช้บรรทัดเดียว) */
     entry.add.forEach(r => {
       const p = { id: uid(), partName: r.name, category: normCategory(r.category) || 'ทั่วไป',
                   qty: '1', unit: 'ชิ้น', variant: '', brands: [] };
-      pbSetBrandPrice(p, r.brand, r.price);
+      pbBrandList(r).forEach(b => pbSetBrandPrice(p, b.brand, b.price));
       (model.parts = model.parts || []).push(p);
       changed++;
     });
@@ -22137,13 +22592,13 @@ function pbApplyImportPlan(plan, decisions){
       if(pick === 'new'){
         const p = { id: uid(), partName: q.excelName, category: normCategory(q.category) || 'ทั่วไป',
                     qty: '1', unit: 'ชิ้น', variant: '', brands: [] };
-        pbSetBrandPrice(p, q.brand, q.price);
+        pbBrandList(q).forEach(b => pbSetBrandPrice(p, b.brand, b.price));
         (model.parts = model.parts || []).push(p);
         changed++;
         return;
       }
       const p = (model.parts || []).find(x => x.id === pick);
-      if(p){ p.partName = q.excelName; pbSetBrandPrice(p, q.brand, q.price); changed++; }
+      if(p){ p.partName = q.excelName; pbBrandList(q).forEach(b => pbSetBrandPrice(p, b.brand, b.price)); changed++; }
     });
 
     entry.promo.forEach(r => {
@@ -22185,6 +22640,10 @@ function pbPickAsk(key, value){
   pbRenderPlan();
 }
 
+function pbBrandList(r){
+  return (r.brands && r.brands.length) ? r.brands : [{ brand: r.brand, price: r.price }];
+}
+
 function pbPlanHtml(plan){
   const dec = view.pbDecisions || {};
   const c = plan.counts;
@@ -22214,7 +22673,9 @@ function pbPlanHtml(plan){
       m.ask.forEach(q => {
         const chosen = dec[q.key] || '';
         h += `<div class="pb-ask">
-          <div class="pb-ask-q">ใน Excel: <b>${escapeHtml(q.excelName)}</b>${q.brand ? ' · ' + escapeHtml(q.brand) : ''} · ${pbMoney(q.price)}</div>
+          <div class="pb-ask-q">ใน Excel: <b>${escapeHtml(q.excelName)}</b>${
+            /* v4.6.8 B2 — คำถามเดียวแสดงทุกแบรนด์: · OEM 5,500.00 · รีบิ้ว 4,200.00 */
+            pbBrandList(q).map(b => ' · ' + (b.brand ? escapeHtml(b.brand) + ' ' : '') + pbMoney(b.price)).join('')}</div>
           <div class="pb-ask-opts">`;
         q.candidates.forEach(cd => {
           h += `<button class="btn small ${chosen === cd.partId ? '' : 'secondary'}"
@@ -22244,8 +22705,12 @@ function pbPlanHtml(plan){
     }
     if(m.add.length){
       h += `<div class="pb-sec"><div class="pb-sec-h">เพิ่มใหม่ ${m.add.length} รายการ</div><table class="pb-tbl">`;
-      m.add.forEach(r => { h += `<tr><td class="b">${escapeHtml(r.name)}</td><td class="muted">${escapeHtml(r.brand || '—')}</td>
-                                  <td class="muted">${escapeHtml(r.category || '')}</td><td class="num b">${pbMoney(r.price)}</td></tr>`; });
+      /* v4.6.8 B2 — แถวเดียวต่ออะไหล่ แบรนด์/ราคาซ้อนกันแบรนด์ละบรรทัด (บรรทัดที่ n คู่กันเสมอ) */
+      m.add.forEach(r => {
+        const bl = pbBrandList(r);
+        h += `<tr><td class="b">${escapeHtml(r.name)}</td><td class="muted">${bl.map(b => `<div>${escapeHtml(b.brand || '—')}</div>`).join('')}</td>
+              <td class="muted">${escapeHtml(r.category || '')}</td><td class="num b">${bl.map(b => `<div>${pbMoney(b.price)}</div>`).join('')}</td></tr>`;
+      });
       h += `</table></div>`;
     }
     if(m.promo.length){
@@ -26054,9 +26519,16 @@ function renderTrashCard(){
   const rows = deletedJobs();
   let html = `<div class="card">
     <h3>${icon('trash',15)} ถังขยะ — รายการที่ลบ (${rows.length})</h3>
-    <p class="muted">รายการที่ลบจะถูกเก็บไว้ที่นี่ กดกู้คืนเพื่อนำกลับเข้ารายการงาน หรือลบถาวรเพื่อล้างทิ้งพร้อมรูปภาพ</p>`;
+    <p class="muted">รายการที่ลบจะถูกเก็บไว้ที่นี่ กดกู้คืนเพื่อนำกลับเข้ารายการงาน หรือลบถาวรเพื่อล้างทิ้งพร้อมรูปภาพ</p>
+    ${isAdmin() ? `<p class="muted">ใบเก่ากว่า ${RECENT_JOBS_LIMIT} ใบล่าสุดไม่ขึ้นในรายการนี้ แต่ "ล้างถังขยะทั้งหมด" จะลบให้ด้วย</p>` : ''}`;
+  /* v4.6.8 K7 — ปุ่มของแอดมินแสดงเสมอ แม้บนจอว่าง ไม่งั้นใบเก่านอกหน้าต่างไม่มีทางลบ */
+  const busyLabel = view.trashBusy === 'count' ? 'กำลังนับรายการในถังขยะ…'
+                  : view.trashBusy ? 'กำลังลบ…' : '';
+  const emptyBtn = isAdmin() ? `<div style="margin-top:12px;">
+      <button class="btn danger" onclick="emptyTrash()" ${busyLabel ? 'disabled' : ''}>${icon('trash',15)} ${busyLabel || 'ล้างถังขยะทั้งหมด'}</button>
+    </div>` : '';
   if(rows.length === 0){
-    html += `<div class="empty-state">ถังขยะว่าง</div></div>`;
+    html += `<div class="empty-state">ถังขยะว่าง</div>${emptyBtn}</div>`;
     return html;
   }
   html += `<div class="trash-list">`;
@@ -26081,9 +26553,7 @@ function renderTrashCard(){
     </div>`;
   });
   html += `</div>
-    ${isAdmin() ? `<div style="margin-top:12px;">
-      <button class="btn danger" onclick="emptyTrash()">${icon('trash',15)} ล้างถังขยะทั้งหมด</button>
-    </div>` : ''}
+    ${emptyBtn}
   </div>`;
   return html;
 }
@@ -28961,6 +29431,60 @@ function feedbackLookup(){
   if(!db){ fbMsg('ยังเชื่อมต่อระบบไม่ได้ กรุณารีเฟรชหน้าใหม่', 'error'); return; }
   fbMsg('กำลังค้นหา...');
 
+  /* v4.6.8 K3 ขั้นที่ 1 — ลอง callable lookupMyCar ก่อน (ทางเดียวกับหน้า ?reception)
+     แล้วค่อยตกไปค้น board/ ตรง ๆ เมื่อ function ยังไม่พร้อม (กติกาเดียวกับ receptionCallableFailed)
+     ข้อต่างจากหน้ารับรอง: หน้านี้ต้องเจอ "รถที่ส่งมอบแล้ว" ด้วย (ดูหัวข้อด้านบน) แต่ lookupMyCar
+     รุ่นแรกตัด delivered/carout ออก ผลว่างจึงถือว่า "ไม่พบ" ได้เฉพาะเมื่อ function บอกเองว่า
+     รวมรถที่ส่งมอบแล้ว (includesDelivered === true) — ไม่งั้นลูกค้าที่รับรถกลับบ้านแล้ว
+     จะให้คะแนนไม่ได้เลยทันทีที่ deploy function */
+  const callable = receptionCallable();
+  if(callable){
+    fbEnsureAnon()
+      .then(() => callable({ last4, queueNo, purpose: 'feedback' }))
+      .then(res => {
+        const data = (res && res.data) || {};
+        const cars = Array.isArray(data.cars) ? data.cars : [];
+        if(cars.length && feedbackUseRows(cars, queueNo)) return;
+        if(data.includesDelivered === true){
+          fbMsg('ไม่พบข้อมูล กรุณาตรวจเลขทั้งสองช่องอีกครั้ง หรือสอบถามพนักงาน', 'error');
+          return;
+        }
+        feedbackDirectLookup(last4, queueNo);   // function รุ่นนี้ยังไม่คืนรถที่ส่งมอบแล้ว
+      })
+      .catch(err => feedbackCallableFailed(err, last4, queueNo));
+    return;
+  }
+  feedbackDirectLookup(last4, queueNo);
+}
+
+function feedbackUseRows(rows, queueNo){
+  const car = pickFeedbackCar(rows, queueNo);
+  if(!car) return false;
+  fbState.car = car;
+  fbState.stars = 0;
+  feedbackRenderForm();
+  return true;
+}
+
+// เหมือน receptionCallableFailed: แสดงเฉพาะคำปฏิเสธที่มาจาก function ที่ทำงานอยู่จริง
+// นอกนั้น (ยังไม่ deploy / ล็อกอินนิรนามไม่ได้ / ออฟไลน์) ตกไปทางเดิม
+function feedbackCallableFailed(err, last4, queueNo){
+  const code = String((err && err.code) || '');
+  console.warn('[feedback] lookupMyCar unavailable →', code, (err && err.message) || err);
+  if(code.indexOf('resource-exhausted') >= 0){
+    fbMsg('ค้นหาบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่<br>หรือสอบถามพนักงานที่เคาน์เตอร์', 'error');
+    return;
+  }
+  if(code.indexOf('invalid-argument') >= 0){
+    fbMsg('กรุณากรอกทั้งเบอร์โทร 4 หลักท้าย และเลขคิวบนใบรับรถ', 'error');
+    return;
+  }
+  receptionFns = false;
+  feedbackDirectLookup(last4, queueNo);
+}
+
+/* ทางเดิม — ค้น board/ ตรง ๆ ใช้จนกว่า function จะพร้อม */
+function feedbackDirectLookup(last4, queueNo){
   db.collection('board').where('phoneLast4', '==', last4).get()
     .then(snap => {
       const rows = [];

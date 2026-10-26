@@ -2,7 +2,7 @@
 // ตรรกะทั้งหมดอยู่ใน lib/handler.js (เทสต์ได้โดยไม่ต้องติดตั้ง firebase-*) ไฟล์นี้แค่ต่อของจริงเข้าไป
 // deploy เฉพาะตัวนี้: firebase deploy --only functions:linebot (เจ้าของเป็นคนสั่งเอง)
 'use strict';
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const { initializeApp } = require('firebase-admin/app');
@@ -10,6 +10,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
 const { createHandler } = require('./lib/handler.js');
 const { createLineClient } = require('./lib/lineApi.js');
+const { createLookupMyCar } = require('./lib/lookupMyCar.js');
 
 initializeApp();
 
@@ -30,7 +31,7 @@ exports.lineWebhook = onRequest({
   region: 'asia-southeast1',
   memory: '512MiB',
   cpu: 1,
-  timeoutSeconds: 30,
+  timeoutSeconds: 60,         // 24 ต.ค. 2569 (H1): handler ตัดเองที่ ~20 วิ · เผื่อไว้ให้ reply ออกทันเสมอ
   minInstances: 0,
   maxInstances: 2,
   concurrency: 10,
@@ -38,3 +39,23 @@ exports.lineWebhook = onRequest({
   invoker: 'public',          // LINE เรียกโดยไม่มี Google auth — ความปลอดภัยมาจากการตรวจลายเซ็น
   secrets: [LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN]
 }, handler);
+
+// หน้า ?reception ค้นรถของลูกค้า (bugfix-sweep K3 ขั้นที่ 1 · 24 ต.ค. 2569) — ตรรกะใน lib/lookupMyCar.js
+// ไม่ใช้ secret ของ LINE · ไม่บังคับ App Check (หน้าเว็บยังไม่ได้ลงทะเบียน — ถ้าบังคับจะตกไปทางเดิมทุกครั้ง)
+// deploy เฉพาะตัวนี้: firebase deploy --only functions:linebot:lookupMyCar (เจ้าของเป็นคนสั่งเอง)
+const lookupMyCar = createLookupMyCar({
+  db: getFirestore(),
+  now: () => new Date(),
+  HttpsError,
+  log: (msg, info) => logger.info(msg, info)
+});
+exports.lookupMyCar = onCall({
+  region: 'asia-southeast1',
+  memory: '256MiB',
+  cpu: 1,
+  timeoutSeconds: 15,
+  minInstances: 0,
+  maxInstances: 2,
+  concurrency: 20,
+  serviceAccount: 'line-bot@power-group-gsms.iam.gserviceaccount.com'
+}, lookupMyCar);

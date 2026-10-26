@@ -58,6 +58,13 @@ service cloud.firestore {
             && profile().role == 'admin');
     }
 
+    // [ใหม่ 24 ต.ค. 2569 — S-NEW-1] คีย์ที่หน้าลูกค้า (?reception แชท) เขียนลง chatThreads/{jobId}
+    // ได้: chatSend (summary) · chatMarkRead (unreadCustomer) · chatRequestHuman (botOff)
+    function chatThreadCustomerKeys() {
+      return ['lastText', 'lastAt', 'lastFrom', 'updatedAt', 'jobId', 'queueNo', 'plate',
+              'province', 'carName', 'unreadAdmin', 'unreadCustomer', 'botOff'];
+    }
+
     // ---------- ผู้ใช้และสิทธิ์ ----------
     // ทุกคนอ่านโปรไฟล์ตัวเองได้ (แอปต้องอ่านเพื่อรู้ว่าเป็น admin หรือ staff)
     // แต่สร้าง/แก้/ลบสิทธิ์ ทำได้เฉพาะ Admin
@@ -206,7 +213,47 @@ service cloud.firestore {
       // ส่วน list (แอดมินใช้ query จริง) สงวนไว้ให้คนที่มีสิทธิ์เท่านั้น
       allow get: if signedIn();
       allow list: if isAdmin();
-      allow create, update: if signedIn();
+      /* [แก้ 24 ต.ค. 2569 — bugfix-sweep S-NEW-1]
+         เดิม create/update ห้อง = signedIn() เฉย ๆ และข้อความไม่ตรวจช่อง from เลย
+         ลูกค้า anonymous จึงปลอมข้อความเป็น from:'admin' / 'bot' ("โอนเงินมาบัญชีนี้")
+         และเขียนคีย์อะไรก็ได้ลงเอกสารห้อง
+         ตอนนี้:
+           - พนักงาน (hasAccess) เขียนห้องได้เหมือนเดิม
+           - ลูกค้าเขียนได้เฉพาะคีย์ที่หน้าลูกค้าเขียนจริง (chatSend / chatMarkRead /
+             chatRequestHuman ใน index.html) ดู chatThreadCustomerKeys() ข้างล่าง
+             และ lastFrom ที่ลูกค้าเปลี่ยนต้องเป็น 'customer'
+           - (รอบ 1 หลังตรวจ security) ลูกค้าแก้ lastText ได้ต่อเมื่อ lastFrom หลังเขียน = 'customer'
+             (กันแก้ lastText เฉย ๆ บนห้องที่แอดมินตอบล่าสุด แล้วรายการแอดมินขึ้น "ทางอู่: <ข้อความปลอม>")
+           - jobId ต้องเท่ากับ id ของห้องเสมอ (ล็อกเฉพาะ jobId ตามคำตัดสิน PM · plate / queueNo /
+             carName / province ยังเขียนได้ เพราะพนักงานแก้ใบงานหลังเปิดห้องแล้ว chatSend พกค่าใหม่มา)
+           - unreadAdmin ต้องเป็น int (increment(1) ของ chatSend / chatRequestHuman)
+           - unreadCustomer ที่ลูกค้าเขียนได้มีค่าเดียวคือ 0 (chatMarkRead / chatSend)
+           - ข้อความ: from ต้องเป็น string · ไม่ใช่พนักงาน = 'customer' เท่านั้น
+             พนักงานเขียน 'admin' ได้ · 'bot' เขียนจากเบราว์เซอร์ไม่ได้ (Bot ใช้ Admin SDK)
+         แก้ฟิลด์ที่หน้าลูกค้าเขียน ต้องแก้รายการคีย์ตรงนี้ด้วย ไม่งั้นแชทลูกค้าพัง */
+      allow create: if hasAccess()
+        || (signedIn()
+            && request.resource.data.keys().hasOnly(chatThreadCustomerKeys())
+            && request.resource.data.get('lastFrom', 'customer') == 'customer'
+            && (!('lastText' in request.resource.data)
+                || request.resource.data.get('lastFrom', '') == 'customer')
+            && request.resource.data.get('jobId', jobId) == jobId
+            && request.resource.data.get('unreadAdmin', 0) is int
+            && request.resource.data.get('unreadCustomer', 0) is int
+            && request.resource.data.get('unreadCustomer', 0) == 0);
+      allow update: if hasAccess()
+        || (signedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(chatThreadCustomerKeys())
+            && (!('lastFrom' in request.resource.data.diff(resource.data).affectedKeys())
+                || request.resource.data.lastFrom == 'customer')
+            && (!('lastText' in request.resource.data.diff(resource.data).affectedKeys())
+                || request.resource.data.get('lastFrom', '') == 'customer')
+            && (!('jobId' in request.resource.data.diff(resource.data).affectedKeys())
+                || request.resource.data.jobId == jobId)
+            && request.resource.data.get('unreadAdmin', 0) is int
+            && (!('unreadCustomer' in request.resource.data.diff(resource.data).affectedKeys())
+                || (request.resource.data.unreadCustomer is int
+                    && request.resource.data.unreadCustomer == 0)));
       allow delete: if false;
       match /messages/{msgId} {
         allow read: if signedIn();
@@ -214,7 +261,10 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['text','from','at','name'])
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
-          && request.resource.data.text.size() <= 2000;
+          && request.resource.data.text.size() <= 2000
+          && request.resource.data.from is string
+          && (request.resource.data.from == 'customer'
+              || (request.resource.data.from == 'admin' && hasAccess()));
         allow update, delete: if false;
       }
     }

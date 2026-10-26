@@ -11,6 +11,9 @@
 //  - log: groupId / คำสั่ง / จำนวน / ผลแต่ละช่อง / เวลา เท่านั้น ห้ามชื่อ เบอร์ ทะเบียน URL replyToken userId
 //    ข้อความที่ไม่ใช่คำสั่ง และ err.message ดิบ (S9 · C27)
 //  - reply ให้เสร็จก่อนตอบ HTTP 200 (2nd gen ตัด CPU หลังตอบ · ข้อ 6.6)
+//  - (24 ต.ค. 2569 bugfix-sweep G4-NET-H1/H2) events ใน POST เดียวประมวลผลขนาน ใต้ deadline รวม
+//    EVENTS_DEADLINE_MS · ทุกการเรียก Firestore มี timeout DB_TIMEOUT_MS -> ข้อความ dbDown (ไม่เงียบ)
+//    · งบภาพ IMAGE_BUDGET_MS · timeoutSeconds ใน index.js ต้องเผื่อเกิน deadline นี้เสมอ
 'use strict';
 const { verifySignature } = require('./signature.js');
 const { parseCommand } = require('./command.js');
@@ -30,7 +33,9 @@ const NOTICE_EVERY_MS = 60 * 60 * 1000;       // "ยังไม่ได้ร
 const PENDING_MAX = 20;                       // B10
 const PENDING_FRESH_MS = 24 * 3600 * 1000;    // S3 (ก) pending ที่เก่ากว่า 24 ชม. ไม่นับเพดาน
 const SIGNED_URL_TTL_MS = 24 * 3600 * 1000;   // ข้อ 6.5 (ต้องพิสูจน์ C19 บนเครื่องจริง)
-const IMAGE_BUDGET_MS = 15000;                // ข้อ 6.6 / C23
+const IMAGE_BUDGET_MS = 9000;                 // ข้อ 6.6 / C23 · เดิม 15000 (H1: สองคำสั่งต้องจบใน ~20 วิ)
+const DB_TIMEOUT_MS = 5000;                   // H2: Firestore ค้าง -> ตัดที่ 5 วิ แล้วตอบ dbDown
+const EVENTS_DEADLINE_MS = 20000;             // H1: เวลารวมของทุก event ใน POST เดียว ก่อนตอบ 200
 const MAX_PHOTOS = 8;                         // = JOB_SHARE_MAX_PHOTOS ของแอป
 const MAX_PHOTO_ROWS_CHECKED = 40;
 const MAX_URL_LEN = 2000;                     // LINE image URL
@@ -89,6 +94,15 @@ function randomCode(taken){
   return null;
 }
 function str(v){ return v === undefined || v === null ? '' : String(v); }
+// Promise ที่ไม่จบใน ms -> reject ด้วย code 'deadline-exceeded' (ผู้เรียกทุกจุดมีทาง catch -> dbDown อยู่แล้ว)
+function withTimeout(p, ms){
+  let timer = null;
+  const t = new Promise((_, rej) => {
+    timer = setTimeout(() => { const e = new Error('timeout'); e.code = 'deadline-exceeded'; rej(e); }, ms);
+    if(timer && timer.unref) timer.unref();
+  });
+  return Promise.race([Promise.resolve(p), t]).finally(() => { if(timer) clearTimeout(timer); });
+}
 function byCreatedAt(a, b){
   const x = str(a.createdAt), y = str(b.createdAt);
   if(x !== y) return x < y ? -1 : 1;
@@ -122,6 +136,9 @@ function createHandler(deps){
   const nowMs = () => now().getTime();
   const logFn = typeof deps.log === 'function' ? deps.log : function(){};
   const imageBudgetMs = deps.imageBudgetMs > 0 ? deps.imageBudgetMs : IMAGE_BUDGET_MS;
+  const dbTimeoutMs = deps.dbTimeoutMs > 0 ? deps.dbTimeoutMs : DB_TIMEOUT_MS;
+  const eventsDeadlineMs = deps.eventsDeadlineMs > 0 ? deps.eventsDeadlineMs : EVENTS_DEADLINE_MS;
+  const dbq = p => withTimeout(p, dbTimeoutMs);   // ห่อทุกการเรียก Firestore
   const S = deps.shared || require('../shared/lineSummary.js');
   for(const k of ['formatLineSummary', 'pickLastService', 'fmtDateBEBangkok', 'jobGrandTotal'])
     if(typeof S[k] !== 'function') throw new Error('shared/lineSummary.js ไม่มี ' + k);
@@ -152,8 +169,8 @@ function createHandler(deps){
     const id = ev.webhookEventId;
     if(typeof id !== 'string' || !EVENT_ID_RE.test(id)){ log('no-event-id', {}); return false; }
     try {
-      await db.collection('lineBotState').doc('evt_' + id).create({
-        at: now().toISOString(), expireAt: new Date(nowMs() + DEDUPE_TTL_MS) });
+      await dbq(db.collection('lineBotState').doc('evt_' + id).create({
+        at: now().toISOString(), expireAt: new Date(nowMs() + DEDUPE_TTL_MS) }));
       return true;
     } catch(e){
       if(isAlreadyExists(e)){ log('duplicate', {}); return false; }
@@ -180,10 +197,10 @@ function createHandler(deps){
     const gid = src.groupId;
     const ref = db.collection('lineGroups').doc(gid);
     let snap;
-    try { snap = await ref.get(); } catch(e){ log('join-error', { gid, code: errCode(e) }); return; }
+    try { snap = await dbq(ref.get()); } catch(e){ log('join-error', { gid, code: errCode(e) }); return; }
     if(snap.exists){ log('join-existing', { gid }); return; }       // ไม่ทับคำตัดสินของแอดมิน
     let pend;
-    try { pend = await db.collection('lineGroups').where('status', '==', 'pending').select('firstSeenAt', 'code').get(); }
+    try { pend = await dbq(db.collection('lineGroups').where('status', '==', 'pending').select('firstSeenAt', 'code').get()); }
     catch(e){ log('join-error', { gid, code: errCode(e) }); return; }
     const t = nowMs();
     let fresh = 0; const taken = new Set();
@@ -210,7 +227,7 @@ function createHandler(deps){
     if(Number.isInteger(count) && count >= 0 && count <= 100000) doc.memberCount = count;
     try {
       // create() เท่านั้น: เอกสารที่มีอยู่แล้ว (revoked / approved) จะไม่ถูกทับ (S3 ข)
-      await ref.create(doc);
+      await dbq(ref.create(doc));
     } catch(e){
       log(isAlreadyExists(e) ? 'join-existing' : 'join-error', { gid, code: errCode(e) });
       return;
@@ -220,7 +237,7 @@ function createHandler(deps){
   }
 
   // ---------------------------------------------------------- ข้อความ (ส่วน C)
-  async function onMessage(ev){
+  async function onMessage(ev, deadlineAt){
     const msg = ev.message || {};
     if(msg.type !== 'text') return;                       // สติกเกอร์ / รูป = เงียบ
     const cmd = parseCommand(msg.text, now());
@@ -241,7 +258,7 @@ function createHandler(deps){
 
     // whitelist อ่านจาก Firestore ทุกครั้ง (ยกเลิกสิทธิ์มีผลทันที · B7)
     let group;
-    try { const s = await db.collection('lineGroups').doc(gid).get(); group = s.exists ? (s.data() || {}) : null; }
+    try { const s = await dbq(db.collection('lineGroups').doc(gid).get()); group = s.exists ? (s.data() || {}) : null; }
     catch(e){ log('group-error', { gid, code: errCode(e) }); await reply(ev, [textMsg(T.dbDown)], { gid, result: 'db-down' }); return; }
 
     const allowed = !!group && group.status === 'approved';
@@ -258,7 +275,7 @@ function createHandler(deps){
 
     if(cmd.kind === 'bad-date'){ await reply(ev, [textMsg(T.badDate)], { gid, cmd: cmd.typed, result: 'bad-date' }); return; }
     if(cmd.kind === 'too-old'){ await reply(ev, [textMsg(T.tooOld)], { gid, cmd: cmd.typed, result: 'too-old' }); return; }
-    const out = await answerQuery(cmd, gid);
+    const out = await answerQuery(cmd, gid, deadlineAt);
     await reply(ev, out.messages, Object.assign({ gid, cmd: cmd.typed }, out.info));
   }
 
@@ -267,12 +284,12 @@ function createHandler(deps){
     const t = nowMs(), last = seenWrites.get(gid);
     if(last !== undefined && t - last < NOTICE_EVERY_MS) return;
     seenWrites.set(gid, t); trimMap(seenWrites, 500);
-    try { await db.collection('lineGroups').doc(gid).update({ lastSeenAt: new Date(t).toISOString() }); }
+    try { await dbq(db.collection('lineGroups').doc(gid).update({ lastSeenAt: new Date(t).toISOString() })); }
     catch(e){ log('lastseen-error', { gid, code: errCode(e) }); }
   }
 
   // ---------------------------------------------------------- หาใบงาน
-  async function answerQuery(cmd, gid){
+  async function answerQuery(cmd, gid, deadlineAt){
     const t0 = nowMs();
     const q = cmd.queue;
     const range = thaiDayRangeUtc(cmd.y, cmd.m, cmd.d);
@@ -281,8 +298,8 @@ function createHandler(deps){
     let found;
     try {
       // range บนฟิลด์เดียว ห้าม where queueNo (ต้องมี composite index และ "04" ต้องเท่ากับ "4") · BR-1
-      const day = await db.collection('jobs').where('createdAt', '>=', range.start).where('createdAt', '<', range.end)
-        .select(...DAY_FIELDS).get();
+      const day = await dbq(db.collection('jobs').where('createdAt', '>=', range.start).where('createdAt', '<', range.end)
+        .select(...DAY_FIELDS).get());
       found = day.docs.map(d => Object.assign({}, d.data() || {}, { id: d.id }))
         .filter(j => !j.deletedAt && sameQueueNo(j.queueNo, q));
     } catch(e){
@@ -294,7 +311,7 @@ function createHandler(deps){
                info: { found: 0, result: 'not-found', ms: nowMs() - t0 } };
     }
     if(found.length > 1) return listDuplicates(found, q, dateLabel, gid, t0);
-    return fullAnswer(found[0].id, cmd, gid, t0);
+    return fullAnswer(found[0].id, cmd, gid, t0, deadlineAt);
   }
 
   // หลายใบ: ข้อความเดียว ไม่มีรูป ไม่มีชื่อ/เบอร์ ทะเบียนไม่มีจังหวัด (U2.7 · C11)
@@ -302,7 +319,7 @@ function createHandler(deps){
     found.sort(byCreatedAt);
     const vids = Array.from(new Set(found.map(j => j.vehicleId).filter(v => typeof v === 'string' && DOC_ID_RE.test(v))));
     const vehicles = {};
-    await Promise.all(vids.map(v => db.collection('vehicles').doc(v).get()
+    await Promise.all(vids.map(v => dbq(db.collection('vehicles').doc(v).get())
       .then(s => { if(s.exists) vehicles[v] = s.data() || {}; }, e => log('vehicle-error', { gid, code: errCode(e) }))));
     const lines = ['คิว ' + q + ' ของวันที่ ' + dateLabel + ' มี ' + found.length + ' ใบ'];
     found.forEach((j, i) => {
@@ -339,21 +356,21 @@ function createHandler(deps){
       .sort((a, b) => vt(b) - vt(a)).slice(0, 20);
   }
 
-  async function fullAnswer(jobId, cmd, gid, t0){
+  async function fullAnswer(jobId, cmd, gid, t0, deadlineAt){
     let job, vehicle, customer, seenBefore, lastService;
     try {
-      const js = await db.collection('jobs').doc(jobId).get();
+      const js = await dbq(db.collection('jobs').doc(jobId).get());
       if(!js.exists) return { messages: [textMsg(T.dbDown)], info: { result: 'db-down' } };
       job = Object.assign({}, js.data() || {}, { id: jobId });
       if(job.queueNo !== undefined && job.queueNo !== null) job.queueNo = String(job.queueNo);   // BR-1 (ข)
       const vid = typeof job.vehicleId === 'string' && DOC_ID_RE.test(job.vehicleId) ? job.vehicleId : null;
       const cid = typeof job.customerId === 'string' && DOC_ID_RE.test(job.customerId) ? job.customerId : null;
       const [vs, cs, hist, cjobs] = await Promise.all([
-        vid ? db.collection('vehicles').doc(vid).get() : null,
-        cid ? db.collection('customers').doc(cid).get() : null,
+        vid ? dbq(db.collection('vehicles').doc(vid).get()) : null,
+        cid ? dbq(db.collection('customers').doc(cid).get()) : null,
         // equality ฟิลด์เดียว ไม่ orderBy / limit (ไม่ต้องมี composite index · BR-2)
-        vid ? db.collection('jobs').where('vehicleId', '==', vid).select(...HISTORY_FIELDS).get() : null,
-        cid ? db.collection('jobs').where('customerId', '==', cid).select('deletedAt').get() : null
+        vid ? dbq(db.collection('jobs').where('vehicleId', '==', vid).select(...HISTORY_FIELDS).get()) : null,
+        cid ? dbq(db.collection('jobs').where('customerId', '==', cid).select('deletedAt').get()) : null
       ]);
       vehicle = vs && vs.exists ? (vs.data() || {}) : {};
       customer = cs && cs.exists ? (cs.data() || {}) : {};
@@ -380,8 +397,11 @@ function createHandler(deps){
     try { grand = S.jobGrandTotal(typeof S.normalizeJobForSummary === 'function' ? S.normalizeJobForSummary(job) : job); } catch(e){}
 
     // ภาพ: งบเวลา imageBudgetMs ถ้าไม่ทัน ส่งแค่ข้อความ (C23)
+    // ไม่เกินเวลาที่เหลือของ deadline รวม (เผื่อ 1.5 วิ ให้ reply ออกทัน) — กรณีอ่าน db ช้ามาก่อนแล้ว
+    let budgetMs = imageBudgetMs;
+    if(isFinite(deadlineAt)) budgetMs = Math.max(0, Math.min(budgetMs, deadlineAt - nowMs() - 1500));
     let timer = null;
-    const budget = new Promise(r => { timer = setTimeout(() => r(null), imageBudgetMs); if(timer && timer.unref) timer.unref(); });
+    const budget = new Promise(r => { timer = setTimeout(() => r(null), budgetMs); if(timer && timer.unref) timer.unref(); });
     const media = await Promise.race([
       prepareMedia(job, cmd, grand, gid).catch(e => { log('media-error', { gid, code: errCode(e) }); return null; }),
       budget]);
@@ -434,7 +454,8 @@ function createHandler(deps){
     const cm = customMeta(m1);
     const printId = str(cm.printId);
     const pages = Math.max(1, parseInt(cm.pages, 10) || 1);
-    const u1 = await sign(base + 'quote-1.jpg');
+    // เซ็นหน้า 1 + อ่าน metadata หน้า 2 พร้อมกัน (H1)
+    const [u1, m2] = await Promise.all([sign(base + 'quote-1.jpg'), pages >= 2 ? meta(base + 'quote-2.jpg') : null]);
     if(!u1) return { status: ['※ ยังไม่ได้ปริ้นใบเสนอราคา'], messages: [], result: 'sign-failed' };
     const status = [], messages = [imageMsg(u1)];
     const printed = Number(cm.grandTotal);
@@ -444,7 +465,6 @@ function createHandler(deps){
     let result = 'p1';
     if(pages >= 2){
       // ส่งหน้า 2 เฉพาะเมื่อ printId ตรงกับหน้า 1 (กันหน้าเก่าค้าง / อัปได้ครึ่งเดียว · C14)
-      const m2 = await meta(base + 'quote-2.jpg');
       const u2 = m2 && printId && str(customMeta(m2).printId) === printId ? await sign(base + 'quote-2.jpg') : null;
       if(u2){
         messages.push(imageMsg(u2)); result = 'p2';
@@ -466,7 +486,7 @@ function createHandler(deps){
   async function preparePhotos(job, cmd, gid){
     let rows;
     try {
-      const s = await db.collection('jobPhotos').where('jobId', '==', job.id).get();   // ไม่ orderBy (BR-2) เรียงเอง
+      const s = await dbq(db.collection('jobPhotos').where('jobId', '==', job.id).get());   // ไม่ orderBy (BR-2) เรียงเอง
       rows = s.docs.map(d => Object.assign({}, d.data() || {}, { __id: d.id }));
     } catch(e){
       log('photos-error', { gid, code: errCode(e) });
@@ -479,8 +499,8 @@ function createHandler(deps){
     const cand = rows.slice(0, MAX_PHOTO_ROWS_CHECKED).map(r => safePhotoPath(r.path, job.id));
     const ok = await Promise.all(cand.map(p => p ? meta(p).then(m => !!m) : false));
     const good = cand.filter((p, i) => p && ok[i]);
-    const urls = [];
-    for(const p of good.slice(0, MAX_PHOTOS)){ const u = await sign(p); if(u) urls.push(u); }
+    // เซ็นพร้อมกันทุกรูป (เดิมทีละรูป · H1) · Promise.all คืนผลตามลำดับ input ลำดับรูปจึงเหมือนเดิม
+    const urls = (await Promise.all(good.slice(0, MAX_PHOTOS).map(p => sign(p)))).filter(Boolean);
     const unchecked = total - cand.length;
     const bad = (cand.length - good.length) + (Math.min(good.length, MAX_PHOTOS) - urls.length);
     if(!urls.length){
@@ -536,24 +556,35 @@ function createHandler(deps){
     try { body = JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw)); } catch(e){ sendStatus(res, 400); return; }
     const events = body && Array.isArray(body.events) ? body.events : null;
     if(!events){ sendStatus(res, 400); return; }
-    for(const ev of events.slice(0, 50)){
+    // H1 (24 ต.ค. 2569): ทุก event ทำพร้อมกัน — เดิมทีละตัว สองคำสั่งที่ภาพช้าใช้ 2 x งบภาพ
+    // เกิน timeout ของ function แล้วคำสั่งหลังเงียบหาย · กันซ้ำยังเป็น claimEvent() ต่อ event เหมือนเดิม
+    const deadlineAt = nowMs() + eventsDeadlineMs;
+    const work = Promise.allSettled(events.slice(0, 50).map(async ev => {
       try {
-        if(!ev || typeof ev !== 'object') continue;
+        if(!ev || typeof ev !== 'object') return;
         // ทิ้ง event ที่เก่ากว่า 5 นาที (หรือมาจากอนาคตเกิน 5 นาที) — กัน replay (S3 ค)
         const ts = Number(ev.timestamp), t = nowMs();
-        if(!isFinite(ts) || t - ts > EVENT_MAX_AGE_MS || ts - t > EVENT_MAX_AGE_MS){ log('stale-event', {}); continue; }
+        if(!isFinite(ts) || t - ts > EVENT_MAX_AGE_MS || ts - t > EVENT_MAX_AGE_MS){ log('stale-event', {}); return; }
         if(ev.type === 'join'){
-          if(!(await claimEvent(ev))) continue;
+          if(!(await claimEvent(ev))) return;
           await onJoin(ev);
         } else if(ev.type === 'message'){
-          await onMessage(ev);
+          await onMessage(ev, deadlineAt);
         }
       } catch(e){
         log('event-error', { code: errCode(e) });
       }
-    }
+    }));
+    // deadline รวม: ถึงเวลาแล้วตอบ 200 เลย (ไม่ควรเกิด เพราะทุกการอ่าน db มี timeout และภาพมีงบแล้ว)
+    let dl = null;
+    const late = await Promise.race([
+      work.then(() => false),
+      new Promise(r => { dl = setTimeout(() => r(true), Math.max(0, deadlineAt - nowMs())); if(dl && dl.unref) dl.unref(); })
+    ]);
+    if(dl) clearTimeout(dl);
+    if(late) log('events-deadline', { events: Math.min(events.length, 50) });
     sendStatus(res, 200);
   };
 }
 
-module.exports = { createHandler, CLOSING, SIGNED_URL_TTL_MS, IMAGE_BUDGET_MS };
+module.exports = { createHandler, CLOSING, SIGNED_URL_TTL_MS, IMAGE_BUDGET_MS, DB_TIMEOUT_MS, EVENTS_DEADLINE_MS };
