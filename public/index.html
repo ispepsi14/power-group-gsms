@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.8";
+  const APP_VERSION = "4.6.9";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3208,6 +3208,23 @@
               ฝั่ง functions/ (Bot) และ firestore.rules (ห้องแชท) เปลี่ยนด้วย — เจ้าของ deploy / publish เอง
 
               เทสต์ใหม่: tests/iguard.js · tests/jguard.js · tests/kguard.js · tests/vguard.js · tests/sweep-rules.guard.js · tests/line-bot-sweep.guard.js
+     v4.6.9 — รวมแก้บั๊กรอบ 2 (spec docs/specs/bugfix-round2.md + .decisions.md · คำตอบเจ้าของ 26 ต.ค. 2569)
+              1. S2 ปิดราคาบนกระดานสาธารณะ: board/ เหลือ allowlist 17 คีย์เมื่อ config/boardMode.stripPublic === true
+                 (ตัวฟังของตัวเอง + localStorage gsms.boardMode.stripPublic · ไม่แตะ config/main)
+                 ของเต็มไปอยู่ boardPrivate/{jobId} (แยก batch หลัง commit หลัก · permission-denied = หยุดทั้ง session)
+                 · การ์ดตั้งค่า "ซ่อนราคาจากกระดานสาธารณะ" (แอดมิน): ตรวจระบบค้นรถ (ต้องได้ v:2 + ยอด/อะไหล่ตรง)
+                 ก่อนปุ่มปิดราคากดได้ · ล้างกระดานครั้งเดียว ≤400 op/batch ล้างต่อได้ · เปิดกลับแบบเดิมได้
+                 · reconcileBoard เทียบทุกคีย์ยกเว้น updatedAt · การ์ดนี้แสดงเฉพาะแอดมิน (พนักงานไม่เห็นการ์ดนี้)
+              2. S2-ฉ หน้า ?reception / ?feedback: lookupMyCar timeout 20 วิ · ล้มชั่วคราวไม่ latch
+                 · ทางสำรอง 0 แถว = "ขออภัย ตอนนี้ค้นหาไม่ได้ชั่วคราว" + ปุ่ม "ลองค้นหาอีกครั้ง"
+              3. M3 ลบใบถาวร / ล้างถังขยะ: ลบรูปปก jobThumbs และภาพใบพิมพ์ jobPrints/{jobId}/ (listAll) หลังเอกสารผ่าน
+              4. M4 อัปโหลดภาพใบพิมพ์: timeout 45 วิ + setMaxUploadRetryTime · รอบเก่าไม่ทับรอบใหม่ · metadata printedAtMs
+              5. M5-a4 ตั้งค่า → กลุ่ม LINE: ป้าย "สมาชิกเปลี่ยนหลังอนุมัติ" (memberChangedAt > approvedAt) + ปุ่ม
+                 "ตรวจแล้ว ทุกคนเป็นคนของร้าน" (lineGroupApprovePatch เดิม ไม่มีคีย์ใหม่) · แค่เตือน ไม่พักสิทธิ์
+              6. M2 ไม่แก้ (reproduce ไม่ได้)
+              ฝั่ง functions/ (lookupMyCar รุ่น 2, Bot), firestore.rules, storage.rules เปลี่ยนด้วย — เจ้าของ deploy / publish เอง
+
+              เทสต์ใหม่: tests/round2-app.guard.js · tests/round2-files.guard.js · tests/line-bot-round2.guard.js · tests/rules-emu/
               -->
 
 
@@ -3648,7 +3665,7 @@
   @media (pointer:coarse){ #jshare-btn{min-height:46px;} }
   .reception-again-btn{
     display:block; width:100%; margin-top:12px; padding:12px; background:var(--surface);
-    border:1px solid var(--border); border-radius:11px; color:var(--text-2);
+    border:1px solid var(--border); border-radius:11px; color:var(--text-2); min-height:44px;
     font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; transition:background .12s;
   }
   .reception-again-btn:hover{background:var(--surface-2); color:var(--text);}
@@ -4897,6 +4914,9 @@
   .est-live.running{background:#e3f5e7;} .est-live.running b{color:#1c7a34;}
   .est-live.done{background:#e3f5e7;}    .est-live.done b{color:#1c7a34;}
   .est-live.late{background:var(--red-bg);} .est-live.late b{color:var(--red);}
+  /* v4.6.9 — โหมดมืด: พื้น .running/.done ยังเป็นเขียวอ่อนตายตัว ตัวรอง --text-2 (#9B9596) จึงจางเหลือ ~2.3:1
+     ใช้เทาเขียวเข้มแทน (~8:1 บน #e3f5e7) — ครอบทั้งนาฬิกาซ่อมในใบงานและกล่อง "ตรวจผ่าน" ของ boardPriv */
+  html[data-mode="dark"] .est-live.running .be-sub, html[data-mode="dark"] .est-live.done .be-sub{color:#3F4A42;}
   .est-restart{
     margin-left:auto; display:inline-flex; align-items:center; gap:4px; cursor:pointer;
     border:1px solid var(--border); background:var(--card-bg); color:var(--text-2);
@@ -10924,56 +10944,43 @@ function shouldReconcileBoardNow(){
   }
 }
 
+/* v4.6.9 S2-17 — เดิมเทียบทีละช่อง ตกหล่น bayAt / statusLabel / statusCls / createdAt
+   (ใบที่ต่างแค่ช่องพวกนี้ไม่ถูกซ่อม) และไม่รู้ว่าเอกสารเดิมมี "คีย์เกิน" อยู่ —
+   ซึ่งหลังปิดราคา (stripPublic) คือราคา/เบอร์ที่เครื่อง 4.6.8 เขียนกลับมา
+   ตอนนี้เทียบ "ทุกคีย์ยกเว้น updatedAt" ทั้งสองทาง: ขาด เกิน หรือค่าต่าง = เขียนใหม่ */
+function boardDocSame(prev, payload){
+  if(!prev || !payload) return false;
+  const a = Object.assign({}, prev), b = Object.assign({}, payload);
+  delete a.updatedAt; delete b.updatedAt;
+  return stableJson(a) === stableJson(b);
+}
+
 function reconcileBoard(showToast){
-  if(!db || !dataReady || !currentUser) return;
-  db.collection('board').get()
+  if(!db || !dataReady || !currentUser) return Promise.resolve();
+  return db.collection('board').get()
     .then(snap => {
       const existing = {};
       snap.forEach(d => existing[d.id] = d.data() || {});
       let batch = db.batch();
       let ops = 0;
       const commits = [];
+      const priv = [];     // v4.6.9 — ใบที่ board ถูกเขียน/ลบ ต้องได้ boardPrivate ตามหลัง commit (แยก batch)
       (state.jobs || []).forEach(job => {
         // A job in the trash must not show on the customer board
         if(job.deletedAt){
           if(existing[job.id]){
             batch.delete(db.collection('board').doc(job.id));
+            priv.push([job.id, null]);
             ops++;
             if(ops >= 400){ commits.push(batch.commit()); batch = db.batch(); ops = 0; }
           }
           return;
         }
-        const payload = boardPayloadFor(job);
-        const prev = existing[job.id];
-        // updatedAt always differs, so compare only the fields customers actually see
-        if(prev
-          && prev.status === payload.status
-          && prev.queueNo === payload.queueNo
-          && prev.queueLabel === payload.queueLabel
-          && prev.plate === payload.plate
-          && prev.province === payload.province
-          && prev.brand === payload.brand
-          && prev.model === payload.model
-          && prev.color === payload.color
-          && prev.phoneLast4 === payload.phoneLast4
-          && prev.price === payload.price
-          && JSON.stringify(prev.complaints||[]) === JSON.stringify(payload.complaints||[])
-          && JSON.stringify(prev.parts||[]) === JSON.stringify(payload.parts||[])
-          && prev.partsSubtotal === payload.partsSubtotal
-          && prev.discountType === payload.discountType
-          && prev.discountValue === payload.discountValue
-          && prev.discountAmount === payload.discountAmount
-          && prev.jobNumber === payload.jobNumber
-          && prev.shopName === payload.shopName
-          && prev.shopPhone === payload.shopPhone
-          && prev.shopLine === payload.shopLine
-          && prev.bay === payload.bay
-          && prev.est === payload.est
-          && prev.estMins === payload.estMins
-          && prev.workStart === payload.workStart
-          && prev.workEnd === payload.workEnd
-          && prev.thumb === payload.thumb) return;
-        batch.set(db.collection('board').doc(job.id), cleanForFirestore(payload));
+        const full = cleanForFirestore(boardPayloadFull(job));
+        const payload = boardStripOn() ? pickBoardPublic(full) : full;
+        if(boardDocSame(existing[job.id], payload)) return;
+        batch.set(db.collection('board').doc(job.id), payload);
+        priv.push([job.id, boardPrivatePayloadFromFull(full)]);
         ops++;
         if(ops >= 400){ commits.push(batch.commit()); batch = db.batch(); ops = 0; }
       });
@@ -10983,6 +10990,8 @@ function reconcileBoard(showToast){
         return;
       }
       return Promise.all(commits).then(() => {
+        queueBoardPrivate(priv);
+        flushBoardPrivate();
         if(showToast) flashToast('อัปเดตกระดานเรียบร้อย');
       });
     })
@@ -10992,7 +11001,383 @@ function reconcileBoard(showToast){
     });
 }
 
+/* ---------------------------------------------------------------------------
+   v4.6.9 S2 — ปิดราคาบนกระดานสาธารณะ (spec bugfix-round2 S2 · .backend.md §1 · .dba.md §1-2)
+
+   board/{jobId} อ่านได้โดยไม่ล็อกอิน แต่ 4.6.8 ใส่ราคา อะไหล่ อาการ เลขท้ายเบอร์ลงไปด้วย
+   (หน้า ?reception เคยต้องใช้) แยกเป็นสองที่:
+     - boardPrivate/{jobId} = payload เต็มตัด thumb + v:1 · client อ่านไม่ได้ (กฎ read:false)
+       lookupMyCar รุ่น 2 (Admin SDK) อ่านแทน · ไม่อยู่ใน SYNC_COLLECTIONS ไม่มีตัวฟัง
+       เขียน "แยก batch หลัง commit หลักผ่าน" เสมอ — กฎยังไม่ publish = ล้มแค่ก้อนนี้
+       ไม่ลาก jobs ล้มทั้งวัน (กติกา flushState) · permission-denied = หยุดทั้ง session
+     - board/{jobId} = BOARD_PUBLIC_KEYS เมื่อ config/boardMode.stripPublic === true
+   สวิตช์อยู่ใน config/boardMode (เขียนได้เฉพาะแอดมิน) มีตัวฟังของตัวเองใน startSync
+   ห้ามผ่าน config/main / buildConfigPayload / state.settings (เครื่องพนักงานจะทำ batch ล้ม)
+   ค่าที่เครื่องนี้เห็นล่าสุดจำใน localStorage ไว้ใช้ตอนเปิดแอพก่อนตัวฟังตอบ
+   --------------------------------------------------------------------------- */
+const BOARD_PUBLIC_KEYS = ['queueNo','queueLabel','plate','province','brand','model','status','statusLabel',
+  'statusCls','estMins','workStart','workEnd','thumb','bay','bayAt','createdAt','updatedAt'];
+// คีย์ลับของ payload 4.6.8 — ใช้ตอนล้างใบที่ไม่อยู่ในเครื่อง (dba 2.2 กรณี C/D)
+const BOARD_SECRET_KEYS = ['price','parts','partsSubtotal','discountType','discountValue','discountAmount',
+  'complaints','jobNumber','phoneLast4','color','est','shopName','shopPhone','shopLine'];
+const BOARD_MODE_LS_KEY = 'gsms.boardMode.stripPublic';
+const BOARD_PRIV_BATCH_OPS = 400;
+
+let boardStripPublic = (function(){
+  try { return localStorage.getItem(BOARD_MODE_LS_KEY) === '1'; } catch(e){ return false; }
+})();
+// สถานะของตัวฟัง config/boardMode ให้การ์ดตั้งค่าใช้ (ไม่ใช่ state — ไม่ถูก sync)
+//   loaded:false = ยังไม่ตอบ · error = รหัส error ล่าสุด · data = เอกสารล่าสุด (null = ไม่มี)
+let boardModeState = { loaded: false, error: null, data: null };
+
+function boardStripOn(){ return boardStripPublic === true; }
+
+function pickBoardPublic(full){
+  const out = {};
+  BOARD_PUBLIC_KEYS.forEach(k => { if(full[k] !== undefined) out[k] = full[k]; });
+  return out;
+}
+
+/* ตัวรับ snapshot ของ config/boardMode (ตัวฟังใน startSync เรียกตัวนี้)
+   true เป๊ะเท่านั้นที่นับว่าเปิด · ไม่มีเอกสาร / ค่าอื่น / สตริง "true" = ปิด (พฤติกรรม 4.6.8) */
+function applyBoardModeSnapshot(data){
+  const on = !!(data && data.stripPublic === true);
+  const was = boardStripPublic;
+  boardStripPublic = on;
+  boardModeState = { loaded: true, error: null, data: data ? Object.assign({}, data) : null, listening: true };
+  try { localStorage.setItem(BOARD_MODE_LS_KEY, on ? '1' : '0'); } catch(e){}
+  // เครื่องนี้อาจเขียนของเต็มไปก่อนรู้ว่าปิดแล้ว (เครื่องใหม่ / localStorage หาย) — ซ่อมหนึ่งรอบ
+  if(on && !was && dataReady && currentUser) reconcileBoard(false);
+}
+
+/* board/{jobId}: ปิดราคาอยู่ = allowlist · ไม่งั้น = payload เต็มแบบ 4.6.8 */
 function boardPayloadFor(job){
+  const full = boardPayloadFull(job);
+  return boardStripOn() ? pickBoardPublic(full) : full;
+}
+
+function boardPrivatePayloadFromFull(full){
+  const p = Object.assign({}, full);
+  delete p.thumb;          // function ไม่คืนรูป และ thumb อาจเป็น data URL หลายสิบ KB
+  p.v = 1;
+  return p;
+}
+function boardPrivatePayload(job){
+  return boardPrivatePayloadFromFull(cleanForFirestore(boardPayloadFull(job)));
+}
+
+/* คิวของ boardPrivate — jobId -> { op:'set', data } | { op:'delete' } (ค่าใหม่ทับค่าเก่า)
+   อยู่ในหน่วยความจำเท่านั้น ใส่เข้าคิวหลัง commit หลักผ่านแล้วเท่านั้น (private ห้ามล้ำหน้า jobs/) */
+let boardPrivQueue = Object.create(null);
+let boardPrivDenied = false;     // กฎยังไม่ publish — หยุดลองทั้ง session ไม่เสียค่าเขียนทุก flush
+let boardPrivBusy = false;
+
+function queueBoardPrivate(list){
+  if(boardPrivDenied || !list || !list.length) return;
+  list.forEach(([id, data]) => {
+    if(!id) return;
+    boardPrivQueue[id] = data ? { op: 'set', data } : { op: 'delete' };
+  });
+}
+
+function flushBoardPrivate(){
+  if(!db || boardPrivDenied || boardPrivBusy) return Promise.resolve();
+  const ids = Object.keys(boardPrivQueue);
+  if(!ids.length) return Promise.resolve();
+  boardPrivBusy = true;
+  const chunks = [];
+  for(let i = 0; i < ids.length; i += BOARD_PRIV_BATCH_OPS) chunks.push(ids.slice(i, i + BOARD_PRIV_BATCH_OPS));
+  let failed = false;
+  const step = ci => {
+    if(ci >= chunks.length) return Promise.resolve();
+    const batch = db.batch();
+    const sent = [];
+    chunks[ci].forEach(id => {
+      const e = boardPrivQueue[id];
+      if(!e) return;
+      const ref = db.collection('boardPrivate').doc(id);
+      if(e.op === 'delete') batch.delete(ref); else batch.set(ref, e.data);
+      sent.push([id, e]);
+    });
+    if(!sent.length) return step(ci + 1);
+    return batch.commit().then(() => {
+      // ลบออกเฉพาะเมื่อยังเป็นตัวเดียวกับที่ส่ง — แก้ซ้ำระหว่างรอ = เก็บไว้ส่งรอบหน้า
+      sent.forEach(([id, e]) => { if(boardPrivQueue[id] === e) delete boardPrivQueue[id]; });
+      return step(ci + 1);
+    });
+  };
+  return step(0)
+    .catch(err => {
+      failed = true;
+      if(err && err.code === 'permission-denied'){
+        boardPrivDenied = true;
+        boardPrivQueue = Object.create(null);
+        console.warn('[boardPrivate] ถูกปฏิเสธ (กฎ firestore.rules ยังไม่ publish?) — หยุดเขียนทั้ง session');
+      } else {
+        console.warn('[boardPrivate] เขียนไม่สำเร็จ จะลองใหม่รอบบันทึกถัดไป', (err && (err.code || err.message)) || err);
+      }
+    })
+    .then(() => {
+      boardPrivBusy = false;
+      // มีของเข้าคิวระหว่างส่ง (และรอบนี้ผ่าน) -> ส่งต่อเลย
+      if(!failed && Object.keys(boardPrivQueue).length) return flushBoardPrivate();
+    });
+}
+
+/* ---- ปุ่มแอดมิน ขั้น 1: ตรวจระบบค้นรถลูกค้า ----
+   เขียน boardPrivate/{jobId} ของใบที่เลือกด้วย .set() ตรงก่อน (พิสูจน์ว่ากฎ publish แล้ว) แล้วเรียก
+   lookupMyCar {last4, queueNo} · ผ่านเมื่อ data.v === 2 (รุ่น 1 ก็ตอบราคาตรงได้จาก board ที่ยังเต็ม)
+   + มีรถ id ตรง + price === jobBestPrice + จำนวนอะไหล่ตรง
+   ผลเก็บใน view.boardPrivCheck (หน่วยความจำ ไม่ sync) · ไม่เขียน config ตอนตรวจ
+   คืน { ok, reason, message, ... } · message = ข้อความตาม ## UX/UI (ยังไม่ escape — ผู้แสดงต้อง escapeHtml) */
+const LOOKUP_TIMEOUT_MS = 20000;
+
+function lookupMyCarCallable(){
+  try {
+    if(firebase.app && firebase.app().functions){
+      return firebase.app().functions('asia-southeast1').httpsCallable('lookupMyCar', { timeout: LOOKUP_TIMEOUT_MS });
+    }
+  } catch(e){}
+  return null;
+}
+
+// ใบที่ใช้ตรวจได้: ยังไม่ส่งมอบ ไม่อยู่ถังขยะ มีเลขคิว เบอร์ลูกค้า ≥4 หลัก มีอะไหล่ ≥1 รายการ (ใหม่สุดก่อน)
+function boardPrivCheckCandidates(limit){
+  return (state.jobs || [])
+    .filter(j => j && !j.deletedAt && j.status !== 'delivered' && j.status !== 'carout'
+      && String(j.queueNo || '').trim()
+      && ((getCustomer(j.customerId) || {}).phone || '').replace(/\D/g, '').length >= 4
+      && (j.partsNeeded || []).some(p => (p.partName || '').trim()))
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, limit || 8);
+}
+
+function boardPrivCheckReason(reason, x){
+  x = x || {};
+  const baht = n => Number(n || 0).toLocaleString('en-US');
+  switch(reason){
+    case 'no-job': return 'ไม่มีใบให้ตรวจ ต้องมีใบที่ยังไม่ส่งมอบ มีเลขคิว เบอร์ลูกค้า และรายการอะไหล่อย่างน้อย 1 รายการ';
+    case 'offline': return 'ไม่มีอินเทอร์เน็ต ตรวจระบบไม่ได้ตอนนี้ ต่อเน็ตแล้วกดตรวจอีกครั้ง';
+    case 'not-deployed': return 'ระบบค้นรถลูกค้ายังไม่ได้ติดตั้งบนเซิร์ฟเวอร์ ต้อง deploy lookupMyCar รุ่นใหม่ก่อน (ขั้น 2 ในคู่มือ) แล้วกดตรวจอีกครั้ง';
+    case 'timeout': return 'ระบบค้นรถลูกค้าไม่ตอบภายใน 20 วินาที ลองกดตรวจอีกครั้ง';
+    case 'rate': return 'ตรวจบ่อยเกินไป รอ 1 นาทีแล้วกดตรวจอีกครั้ง';
+    case 'not-found-car':
+    case 'old-version': return 'ระบบค้นรถหาใบคิว ' + (x.queueNo || '-') + ' ไม่เจอ อาจเป็น lookupMyCar รุ่นเก่า หรือใบนี้ยังไม่ขึ้นเซิร์ฟเวอร์ ลองเลือกใบอื่น หรือรอ 1 นาทีแล้วตรวจใหม่';
+    case 'price': return 'ยอดไม่ตรง: ในแอพ ' + baht(x.appPrice) + ' บาท · ระบบค้นรถตอบ ' + baht(x.fnPrice) + ' บาท ยังปิดราคาไม่ได้ ลองเลือกใบอื่น ถ้ายังไม่ตรงให้แจ้งทีม';
+    case 'parts': return 'รายการอะไหล่ไม่ตรง: ในแอพ ' + (x.appParts || 0) + ' รายการ · ระบบค้นรถตอบ ' + (x.fnParts || 0) + ' รายการ ยังปิดราคาไม่ได้ ลองเลือกใบอื่น ถ้ายังไม่ตรงให้แจ้งทีม';
+    case 'not-admin': return 'ต้องให้ผู้ดูแลระบบเป็นคนกด';
+    default: return 'ระบบค้นรถลูกค้าตอบผิดพลาด (รหัส ' + (x.code || 'unknown') + ') ยังปิดราคาไม่ได้ แจ้งทีมพร้อมรหัสนี้';
+  }
+}
+
+function boardPrivCheck(jobId){
+  if(!isAdmin()){
+    flashToast('ต้องให้ผู้ดูแลระบบเป็นคนกด');
+    return Promise.resolve({ ok: false, reason: 'not-admin', message: boardPrivCheckReason('not-admin') });
+  }
+  const done = r => {
+    r.message = r.ok ? '' : boardPrivCheckReason(r.reason, r);
+    r.at = nowIso();
+    view.boardPrivCheck = r;
+    safeRender();
+    return r;
+  };
+  const job = getJob(jobId);
+  const last4 = job ? ((getCustomer(job.customerId) || {}).phone || '').replace(/\D/g, '').slice(-4) : '';
+  const queueNo = job ? String(job.queueNo || '').trim() : '';
+  if(!db || !job || job.deletedAt || last4.length < 4 || !queueNo){
+    return Promise.resolve(done({ ok: false, jobId, reason: 'no-job' }));
+  }
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    return Promise.resolve(done({ ok: false, jobId, queueNo, reason: 'offline' }));
+  }
+  const priv = boardPrivatePayload(job);
+  const appPrice = priv.price, appParts = (priv.parts || []).length;
+  const base = { jobId, queueNo, appPrice, appParts };
+  view.boardPrivCheck = Object.assign({ ok: false, busy: true }, base);
+  safeRender();
+  const codeOf = err => String((err && err.code) || '').replace(/^functions\//, '');
+  return db.collection('boardPrivate').doc(jobId).set(priv)
+    .then(() => {
+      const fn = lookupMyCarCallable();
+      if(!fn){ const e = new Error('no functions sdk'); e.code = 'not-found'; e.fromCallable = true; throw e; }
+      return Promise.resolve().then(() => fn({ last4, queueNo }))
+        .catch(err => { const e = err || new Error('callable'); try { e.fromCallable = true; } catch(x){} throw e; });
+    })
+    .then(res => {
+      const data = (res && res.data) || {};
+      const cars = Array.isArray(data.cars) ? data.cars : [];
+      const car = cars.find(c => c && c.id === jobId);
+      if(!car) return done(Object.assign({ ok: false, reason: 'not-found-car' }, base));
+      if(data.v !== 2) return done(Object.assign({ ok: false, reason: 'old-version' }, base));
+      const fnPrice = Number(car.price);
+      const fnParts = Array.isArray(car.parts) ? car.parts.length : 0;
+      if(fnPrice !== appPrice) return done(Object.assign({ ok: false, reason: 'price', fnPrice, fnParts }, base));
+      if(fnParts !== appParts) return done(Object.assign({ ok: false, reason: 'parts', fnPrice, fnParts }, base));
+      return done(Object.assign({ ok: true, reason: '', fnPrice, fnParts, plate: (getVehicle(job.vehicleId) || {}).plate || '' }, base));
+    })
+    .catch(err => {
+      const code = codeOf(err);
+      console.warn('[boardPrivCheck]', code, (err && err.message) || err);
+      let reason = 'error';
+      if(code === 'unavailable') reason = 'offline';
+      else if(err && err.fromCallable){
+        if(code === 'not-found' || code === 'unimplemented') reason = 'not-deployed';
+        else if(code === 'deadline-exceeded') reason = 'timeout';
+        else if(code === 'resource-exhausted') reason = 'rate';
+      }
+      // เขียน boardPrivate ไม่ผ่าน (permission-denied = กฎยังไม่ publish) -> รหัสขึ้นต้น boardPrivate/
+      const shown = (err && err.fromCallable ? '' : 'boardPrivate/') + (code || 'unknown');
+      return done(Object.assign({ ok: false, reason, code: shown }, base));
+    });
+}
+
+function boardPrivCheckPassed(){
+  const r = view.boardPrivCheck;
+  return !!(r && r.ok === true && !r.busy);
+}
+
+/* ---- ขั้น 2: งานหลังกด "ปิดราคาและล้างกระดาน" ในกล่องยืนยัน (ไม่เปิดกล่องเอง) ----
+   ต้องตรวจผ่านใน session ก่อน · เขียน config/boardMode ด้วย .set merge ตรง (ไม่ผ่าน batch ของ flushState)
+   ผ่านแล้วค่อยตั้งสวิตช์ในเครื่องแล้วล้าง · เขียนล้ม = ไม่เริ่มล้าง */
+function boardPrivStrip(){
+  if(!isAdmin()){ flashToast('ต้องให้ผู้ดูแลระบบเป็นคนกด'); return Promise.resolve({ ok: false, reason: 'not-admin' }); }
+  if(!db || !boardPrivCheckPassed()) return Promise.resolve({ ok: false, reason: 'not-checked' });
+  const r = view.boardPrivCheck;
+  const at = nowIso();
+  const doc = { stripPublic: true, confirmedBy: String(currentUser.uid || ''), confirmedAt: at,
+                fnCheckedAt: r.at || at, fnCheckedJobId: String(r.jobId || '') };
+  view.boardModeBusy = 'strip';
+  safeRender();
+  return db.collection('config').doc('boardMode').set(doc, { merge: true })
+    .then(() => {
+      applyBoardModeSnapshot(Object.assign({}, boardModeState.data || {}, doc));
+      view.boardModeBusy = false;
+      return boardPrivPurge();
+    }, err => {
+      console.error('boardPrivStrip', err);
+      view.boardModeBusy = false;
+      flashToast('บันทึกไม่สำเร็จ ลองอีกครั้ง');
+      safeRender();
+      return { ok: false, reason: 'write', code: (err && err.code) || '' };
+    });
+}
+
+/* ---- การล้างครั้งเดียว (dba 2.2) — อ่าน board ทั้งหมด แล้วต่อเอกสาร
+     A ใบในเครื่อง ไม่อยู่ถังขยะ   -> boardPrivate = payload เต็ม · board = allowlist
+     B ใบในเครื่อง อยู่ถังขยะ      -> ลบทั้งคู่
+     C ไม่อยู่ในเครื่อง มีคีย์ลับ   -> boardPrivate = คัดจาก board เดิม (ALLOW+SECRET ตัด thumb) + v:1 · board = pick(เดิม, ALLOW)
+     D ไม่อยู่ในเครื่อง ไม่มีคีย์ลับ -> ข้าม (กดซ้ำ/ล้างต่อได้ ไม่เอาของว่างทับ boardPrivate)
+   คู่ board+boardPrivate ของใบเดียวกันอยู่ batch เดียวกันเสมอ (ต่างจาก flushState โดยตั้งใจ —
+   private เขียนไม่ได้ = board ไม่ถูกตัด ของใบเก่าไม่หาย) · ≤400 op ต่อ batch · commit ทีละก้อน
+   ล้มกลางทาง = หยุด บอกจำนวน · ไม่แตะ state / shadow / marks / drops
+   ความคืบหน้าอยู่ใน view.boardPurge = { state:'running'|'stalled'|'done', done, total, code } */
+const BOARD_PURGE_MAX_BYTES = 4000000;   // เพดาน request 10 MiB — เผื่อ thumb ที่เป็น data URL
+
+function boardPrivPurge(){
+  if(!isAdmin()){ flashToast('ต้องให้ผู้ดูแลระบบเป็นคนกด'); return Promise.resolve({ ok: false, reason: 'not-admin' }); }
+  if(!db) return Promise.resolve({ ok: false, reason: 'no-db' });
+  if(!boardStripOn()) return Promise.resolve({ ok: false, reason: 'strip-off' });
+  if(view.boardPurge && view.boardPurge.state === 'running') return Promise.resolve({ ok: false, reason: 'busy' });
+  view.boardPurge = { state: 'running', done: 0, total: 0 };
+  safeRender();
+  return db.collection('board').get().then(snap => {
+    const localById = {};
+    (state.jobs || []).forEach(j => { if(j && j.id) localById[j.id] = j; });
+    const work = [];   // [{ id, ops: [[col, data|null]], bytes }]
+    snap.forEach(d => {
+      const id = d.id, old = d.data() || {};
+      const local = localById[id];
+      if(local){
+        if(local.deletedAt){ work.push({ id, ops: [['board', null], ['boardPrivate', null]], bytes: 100 }); return; }
+        const full = cleanForFirestore(boardPayloadFull(local));
+        const priv = boardPrivatePayloadFromFull(full), pub = pickBoardPublic(full);
+        work.push({ id, ops: [['boardPrivate', priv], ['board', pub]], bytes: JSON.stringify(priv).length + JSON.stringify(pub).length });
+        return;
+      }
+      if(!BOARD_SECRET_KEYS.some(k => old[k] !== undefined)) return;          // D
+      const priv = {};
+      BOARD_PUBLIC_KEYS.concat(BOARD_SECRET_KEYS).forEach(k => { if(k !== 'thumb' && old[k] !== undefined) priv[k] = old[k]; });
+      priv.v = 1;
+      const pub = pickBoardPublic(old);
+      work.push({ id, ops: [['boardPrivate', priv], ['board', pub]], bytes: JSON.stringify(priv).length + JSON.stringify(pub).length });
+    });
+    const groups = [];
+    let cur = { ops: 0, bytes: 0, items: [] };
+    work.forEach(w => {
+      if(cur.items.length && (cur.ops + w.ops.length > BOARD_PRIV_BATCH_OPS || cur.bytes + w.bytes > BOARD_PURGE_MAX_BYTES)){
+        groups.push(cur); cur = { ops: 0, bytes: 0, items: [] };
+      }
+      cur.items.push(w); cur.ops += w.ops.length; cur.bytes += w.bytes;
+    });
+    if(cur.items.length) groups.push(cur);
+    view.boardPurge = { state: 'running', done: 0, total: work.length };
+    safeRender();
+    const step = gi => {
+      if(gi >= groups.length) return Promise.resolve();
+      const batch = db.batch();
+      groups[gi].items.forEach(w => w.ops.forEach(([col, data]) => {
+        const ref = db.collection(col).doc(w.id);
+        if(data) batch.set(ref, data); else batch.delete(ref);
+      }));
+      return batch.commit().then(() => {
+        view.boardPurge.done += groups[gi].items.length;
+        safeRender();
+        return step(gi + 1);
+      });
+    };
+    return step(0).then(() => {
+      const n = work.length;
+      view.boardPurge = { state: 'done', done: n, total: n, at: nowIso() };
+      flashToast('ปิดราคาบนกระดานแล้ว ล้างครบ ' + n + ' ใบ');
+      safeRender();
+      return db.collection('config').doc('boardMode').set({ purgedAt: nowIso(), purgeCount: n }, { merge: true })
+        .catch(err => console.warn('[boardPurge] purgedAt', err))
+        .then(() => ({ ok: true, done: n, total: n }));
+    }, err => {
+      console.error('boardPrivPurge', err);
+      const p = view.boardPurge || {};
+      view.boardPurge = { state: 'stalled', done: p.done || 0, total: p.total || work.length, code: (err && err.code) || '' };
+      safeRender();
+      return { ok: false, reason: 'stalled', done: view.boardPurge.done, total: view.boardPurge.total };
+    });
+  }, err => {
+    console.error('boardPrivPurge read', err);
+    view.boardPurge = { state: 'stalled', done: 0, total: 0, code: (err && err.code) || '' };
+    safeRender();
+    return { ok: false, reason: 'read', code: (err && err.code) || '' };
+  });
+}
+
+/* ---- "เปิดกลับแบบเดิม" — stripPublic:false แล้ว reconcileBoard เขียนของเต็มกลับ (ใบในหน้าต่าง)
+   ใบนอกหน้าต่างยังเป็น allowlist (client อ่าน boardPrivate ไม่ได้) — ของลับยังอยู่ครบใน boardPrivate */
+function boardPrivUnstrip(){
+  if(!isAdmin()){ flashToast('ต้องให้ผู้ดูแลระบบเป็นคนกด'); return Promise.resolve({ ok: false, reason: 'not-admin' }); }
+  if(!db) return Promise.resolve({ ok: false, reason: 'no-db' });
+  const doc = { stripPublic: false, confirmedBy: String(currentUser.uid || ''), confirmedAt: nowIso() };
+  view.boardModeBusy = 'unstrip';
+  safeRender();
+  return db.collection('config').doc('boardMode').set(doc, { merge: true })
+    .then(() => {
+      applyBoardModeSnapshot(Object.assign({}, boardModeState.data || {}, doc));
+      view.boardPrivCheck = null;      // ปิดอีกครั้งต้องตรวจใหม่ (UX สถานะ A)
+      view.boardPurge = null;
+      return reconcileBoard(false).then(() => {
+        view.boardModeBusy = false;
+        flashToast('เปิดกลับแล้ว กระดานมีราคาเหมือนเดิม');
+        safeRender();
+        return { ok: true };
+      });
+    }, err => {
+      console.error('boardPrivUnstrip', err);
+      view.boardModeBusy = false;
+      flashToast('บันทึกไม่สำเร็จ ลองอีกครั้ง');
+      safeRender();
+      return { ok: false, reason: 'write', code: (err && err.code) || '' };
+    });
+}
+
+function boardPayloadFull(job){
   const v = getVehicle(job.vehicleId) || {};
   const c = getCustomer(job.customerId) || {};
   const st = statusOf(job.status);
@@ -11273,6 +11658,11 @@ function initFirebase(){
   // back to the old base64-in-Firestore path) rather than the whole app failing to boot.
   try { storage = firebase.storage ? firebase.storage() : null; }
   catch(err){ console.error('storage init', err); storage = null; }
+  /* v4.6.9 M4 — SDK ลองอัปโหลดซ้ำเองได้นานถึง 10 นาทีโดยค่าตั้งต้น งานอัปโหลดของรอบเก่าจึงค้าง
+     อยู่เบื้องหลังได้นานกว่า PRINT_UPLOAD_TIMEOUT_MS มาก ตั้งให้เท่ากัน (มีผลกับทุกการอัปโหลด
+     รวมรูปใบงาน ซึ่งล้มแล้วตกไปเก็บแบบ base64 ตามเดิม) */
+  try { if(storage && storage.setMaxUploadRetryTime) storage.setMaxUploadRetryTime(45000); }
+  catch(err){ console.warn('storage retry time', err); }
   // Keep working through short network drops; queued writes flush on reconnect.
   db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
   auth.onAuthStateChanged(handleAuthChange);
@@ -11549,6 +11939,20 @@ function startSync(){
     if(firstCfg){ firstCfg = false; oneReady('config'); }
   });
   listeners.push(unsubCfg);
+
+  /* v4.6.9 S2 — สวิตช์ปิดราคาบนกระดาน: ตัวฟังของตัวเอง ไม่นับใน pending/oneReady (ไม่ทำให้หน้าโหลดรอ)
+     ไม่ผ่าน applyConfigSnapshot / buildConfigPayload / state.settings · ไม่มีเอกสาร = ปิด (4.6.8)
+     อ่านไม่ได้ = คงค่าเดิมที่จำไว้ในเครื่อง แล้วบอกการ์ดตั้งค่าผ่าน boardModeState.error */
+  boardModeState = { loaded: false, error: null, data: null, listening: true };   // listening = การ์ดตั้งค่ารอผลจริง (ยังไม่เริ่มฟัง = ใช้ค่าที่จำในเครื่อง)
+  const unsubBoardMode = db.collection('config').doc('boardMode').onSnapshot(doc => {
+    applyBoardModeSnapshot(doc && doc.exists ? (doc.data() || {}) : null);
+    if(dataReady) safeRender();
+  }, err => {
+    console.warn('sync config/boardMode', err);
+    boardModeState = Object.assign({}, boardModeState, { error: (err && err.code) || 'error' });
+    if(dataReady) safeRender();
+  });
+  listeners.push(unsubBoardMode);
 }
 
 // Only field backfills that touch records already present — nothing that CREATES
@@ -11719,6 +12123,9 @@ function flushState(showToast){
   const commits = [];
   const marks = [];   // [col, id, encoded] รอเขียนลง shadow เมื่อ commit ผ่าน
   const drops = [];   // [col, id] รอลบออกจาก shadow เมื่อ commit ผ่าน
+  // v4.6.9 S2 — [jobId, payload|null] ของ boardPrivate · ไม่อยู่ใน batch นี้ (กฎยังไม่ publish = ห้ามลาก
+  // ทั้งก้อนล้ม) ใส่คิวแล้วส่งแยก batch หลัง commit หลักผ่านเท่านั้น · ไม่เกี่ยวกับ shadow
+  const privs = [];
   const bump = () => {
     ops++;
     if(ops >= 400){ commits.push(batch.commit()); batch = db.batch(); ops = 0; }
@@ -11742,8 +12149,15 @@ function flushState(showToast){
       // Keep the public waiting-room board in step with any job that changed.
       if(col === 'jobs'){
         // Trashed jobs are pulled off the customer board, but the job record itself stays
-        if(row.deletedAt) batch.delete(db.collection('board').doc(row.id));
-        else batch.set(db.collection('board').doc(row.id), cleanForFirestore(boardPayloadFor(row)));
+        if(row.deletedAt){
+          batch.delete(db.collection('board').doc(row.id));
+          privs.push([row.id, null]);
+        } else {
+          // v4.6.9 S2 — payload เต็มคำนวณครั้งเดียว: board = allowlist ถ้าปิดราคาอยู่ · private = เต็มเสมอ
+          const full = cleanForFirestore(boardPayloadFull(row));
+          batch.set(db.collection('board').doc(row.id), boardStripOn() ? pickBoardPublic(full) : full);
+          privs.push([row.id, boardPrivatePayloadFromFull(full)]);
+        }
         bump();
       }
     });
@@ -11754,6 +12168,7 @@ function flushState(showToast){
       bump();
       if(col === 'jobs'){
         batch.delete(db.collection('board').doc(id));
+        privs.push([id, null]);
         bump();
       }
     });
@@ -11824,6 +12239,8 @@ function flushState(showToast){
       drops.forEach(([col, id]) => { if(shadow[col]) delete shadow[col][id]; });
       if(cfgPending !== null) shadowConfig = cfgPending;
       if(showToast) flashToast('บันทึกแล้ว');
+      // v4.6.9 S2 — หลัง shadow แล้วเท่านั้น · ล้มเองเงียบ ๆ ไม่แตะ marks/drops/shadow
+      try { queueBoardPrivate(privs); flushBoardPrivate(); } catch(e){ console.warn('[boardPrivate]', e); }
     })
     .catch(err => {
       console.error('save', err);
@@ -13647,26 +14064,59 @@ function reconcileJobPhotoState(jobId, rows){
   }).catch(err => console.error('reconcileJobPhotoState', err));
 }
 
-function deletePhotosForJob(jobId){
-  if(!db) return;
-  db.collection('jobPhotos').where('jobId', '==', jobId).get()
+/* v4.6.9 M3 — ลบถาวรแล้วรูปปกกับภาพใบพิมพ์ค้างใน Storage
+   เดิม (1) ไม่มีเอกสาร jobPhotos = return ก่อนเก็บ thumbPath (2) ผู้เรียกตัดใบออกจาก state
+   ก่อนเรียก getJob(jobId) จึงได้ null เสมอ -> รูปปกไม่เคยถูกลบ (3) jobPrints/{jobId}/ ไม่มีใครลบ
+   แก้: ผู้เรียกอ่าน thumbPath ก่อนตัดออกจาก state แล้วส่งมา · ไม่มีเอกสารก็ยังลบไฟล์
+   ลำดับคงเดิม: เอกสาร commit ก่อน แล้วค่อยลบไฟล์ · query/commit ล้ม = ไม่ลบไฟล์ใดเลย
+   thumbPath === undefined (ผู้เรียกเก่า) = อ่านจาก state ตามเดิม */
+function deletePhotosForJob(jobId, thumbPath){
+  if(!db) return Promise.resolve();
+  if(thumbPath === undefined){
+    const j = getJob(jobId);
+    thumbPath = (j && j.thumbPath) || '';
+  }
+  return db.collection('jobPhotos').where('jobId', '==', jobId).get()
     .then(snap => {
-      if(snap.empty) return;
-      const batch = db.batch();
       const paths = [];
       // v3.25.0 — ปกเป็นไฟล์ของตัวเองแล้ว ลบตามไม่งั้นค้างเป็นขยะใน Storage
-      const jobForThumb = getJob(jobId);
-      if(jobForThumb && jobForThumb.thumbPath) paths.push(jobForThumb.thumbPath);
-      snap.forEach(d => {
-        const p = (d.data() || {}).path;   // absent on the old base64 rows
-        if(p) paths.push(p);
-        batch.delete(d.ref);
-      });
+      if(thumbPath) paths.push(thumbPath);
+      let docs = Promise.resolve();
+      if(!snap.empty){
+        const batch = db.batch();
+        snap.forEach(d => {
+          const p = (d.data() || {}).path;   // absent on the old base64 rows
+          if(p) paths.push(p);
+          batch.delete(d.ref);
+        });
+        docs = batch.commit();
+      }
       // Documents first: if the Storage deletes fail we are left with orphaned files
       // that cost pennies, rather than documents pointing at images that are gone.
-      return batch.commit().then(() => Promise.all(paths.map(deleteStoragePath)));
+      return docs.then(() => Promise.all(paths.map(deleteStoragePath)))
+        .then(() => deleteJobPrints(jobId));
     })
     .catch(err => console.error('deletePhotosForJob', err));
+}
+
+/* v4.6.9 M3 — ภาพใบพิมพ์ที่ Bot ส่งเข้ากลุ่ม (jobPrints/{jobId}/receipt.jpg, quote-N.jpg)
+   ใช้ listAll ไม่เดาชื่อ (พิมพ์ใหม่หน้าน้อยลง = quote-3.jpg เก่าค้าง) · listAll ล้ม -> ชื่อตายตัว
+   กฎ storage ให้ลบได้เฉพาะแอดมิน — พนักงานไม่เรียกเลย · best effort ไม่ทำให้ผู้เรียกล้ม */
+const JOB_PRINT_FALLBACK_NAMES = ['receipt.jpg'].concat(Array.from({ length: 20 }, (_, i) => 'quote-' + (i + 1) + '.jpg'));
+function deleteJobPrints(jobId){
+  if(!storage || !jobId || !isAdmin()) return Promise.resolve();
+  const dir = 'jobPrints/' + jobId;
+  let listed;
+  try { listed = Promise.resolve(storage.ref().child(dir).listAll()); }
+  catch(e){ listed = Promise.reject(e); }
+  return listed
+    .then(res => ((res && res.items) || []).map(it => it.fullPath || (dir + '/' + it.name)),
+          err => {
+            console.warn('[jobPrints] listAll ไม่ได้ ลบตามชื่อตายตัวแทน', (err && err.code) || err);
+            return JOB_PRINT_FALLBACK_NAMES.map(n => dir + '/' + n);
+          })
+    .then(paths => Promise.all(paths.map(deleteStoragePath)))
+    .catch(err => console.warn('[jobPrints] delete', (err && err.code) || err));
 }
 
 function addPhotosToJob(jobId, input){
@@ -14857,8 +15307,10 @@ function purgeJob(jobId){
   if(!job) return;
   const v = getVehicle(job.vehicleId) || {};
   uiConfirm(`ลบถาวร ${v.plate||job.jobNumber}?\n\nรวมรูปภาพทั้งหมด — กู้คืนไม่ได้อีก`, () => {
+    const cur = getJob(jobId) || job;
+    const thumbPath = cur.thumbPath || '';     // v4.6.9 M3 — อ่านก่อนตัดออกจาก state
     state.jobs = state.jobs.filter(j => j.id !== jobId);
-    deletePhotosForJob(jobId);
+    deletePhotosForJob(jobId, thumbPath);
     saveState(true);
     flashToast('ลบถาวรแล้ว');
     render();
@@ -14938,7 +15390,8 @@ function runEmptyTrash(inWin, remote, skipped){
     const j = getJob(id);
     return j && j.deletedAt;              // กู้คืนระหว่างที่กล่องยืนยันเปิดอยู่ = ไม่ลบ
   });
-  ids.forEach(id => deletePhotosForJob(id));
+  // v4.6.9 M3 — อ่าน thumbPath ก่อนตัดออกจาก state (เดิม getJob ข้างในได้ null เสมอ)
+  ids.forEach(id => deletePhotosForJob(id, (getJob(id) || {}).thumbPath || ''));
   if(ids.length){
     state.jobs = state.jobs.filter(j => ids.indexOf(j.id) === -1);
     saveState(false);
@@ -14985,6 +15438,14 @@ function runEmptyTrash(inWin, remote, skipped){
       if(cur.jobs.length) groups.push(cur);
       let done = 0;
       const paths = [];
+      const doneIds = [];
+      // v4.6.9 M3/S2 — ทำหลัง commit เอกสารของกลุ่มที่ผ่านแล้วเท่านั้น · ไม่ใส่ใน batch ของกลุ่ม
+      // (กฎ boardPrivate ยังไม่ publish = ล้างถังขยะล้มทั้งกลุ่ม) · ไฟล์ใบพิมพ์ลบทีละใบเรียงกัน
+      const afterDocs = () => {
+        queueBoardPrivate(doneIds.map(id => [id, null]));
+        flushBoardPrivate();
+        return doneIds.reduce((p, id) => p.then(() => deleteJobPrints(id)), Promise.resolve());
+      };
       const step = gi => {
         if(gi >= groups.length) return Promise.resolve();
         const batch = db.batch();
@@ -15002,6 +15463,7 @@ function runEmptyTrash(inWin, remote, skipped){
         return batch.commit().then(() => {
           done += groups[gi].jobs.length;
           gPaths.forEach(p => paths.push(p));
+          groups[gi].jobs.forEach(r => doneIds.push(r.id));   // v4.6.9 M3 — jobPrints หลังเอกสารผ่าน
           if(groups.length > 1) flashToast(`กำลังลบ… ${ids.length + done}/${ids.length + remote.length}`);
           return step(gi + 1);
         });
@@ -15010,11 +15472,13 @@ function runEmptyTrash(inWin, remote, skipped){
         .then(() => {
           // เอกสารก่อน แล้วค่อยไฟล์ — ไฟล์ค้างเสียแค่ค่าเก็บ เอกสารชี้ไปที่ไฟล์ที่หายไปแล้วแย่กว่า
           Promise.all(paths.map(p => deleteStoragePath(p))).catch(() => {});
+          afterDocs().catch(() => {});
           finish(done, false);
         })
         .catch(err => {
           console.error('emptyTrash delete', err);
           Promise.all(paths.map(p => deleteStoragePath(p))).catch(() => {});
+          afterDocs().catch(() => {});
           finish(done, true);
         });
     })
@@ -20825,7 +21289,7 @@ function printJobQuote(jobId){
    กดปริ้นซ้ำ = ครั้งหลังชนะ (A9): งานเก่าเช็ก printCaptureSeq ก่อนทุกขั้นแล้วเลิกเอง
    สถานะทั้งหมดอยู่ในหน่วยความจำ (ตัวแปรโมดูล + view.printCaptureFail) หายเมื่อรีโหลดแอพ */
 let PRINT_CAPTURE_DELAY_MS = 2000;       // UX U4: อย่าแย่งเครื่องตอนช่างกำลังจะกดพิมพ์ในพรีวิว
-let PRINT_UPLOAD_TIMEOUT_MS = 60000;     // อัปโหลดค้างนานกว่านี้ (เน็ตแย่) = นับว่าล้ม
+let PRINT_UPLOAD_TIMEOUT_MS = 45000;     // อัปโหลดค้างนานกว่านี้ (เน็ตแย่) = นับว่าล้ม · v4.6.9 M4 60 -> 45 วิ (คู่กับ setMaxUploadRetryTime)
 const printCaptureSeq = Object.create(null);   // jobId|kind -> รอบล่าสุด
 let printCaptureCounter = 0;
 
@@ -20864,18 +21328,50 @@ function renderQuotePageImage(fragment, job){
   });
 }
 
-function putPrintFile(path, blob, meta){
+/* v4.6.9 M4 — รอบเก่าอัปโหลดทับรอบใหม่ได้ (เครื่องเดียวกัน)
+   เดิม live() เช็กแค่ก่อนเริ่มแต่ละไฟล์ และ "ลองใหม่ 1 ครั้ง" ไม่เช็ก live() -> รอบเก่าที่ช้า/หมดเวลา
+   เขียน quote-1.jpg ทีหลังรอบใหม่ Bot ส่งใบเก่าเข้ากลุ่ม · แก้:
+     - printInflight[key] = งานอัปโหลดที่กำลังวิ่งของ jobId|kind · รอบใหม่ cancel ของเก่า "แล้วรอมันจบ"
+       (เพดาน PRINT_UPLOAD_TIMEOUT_MS) ก่อน put ไฟล์แรก — สิ่งที่รอบเก่าเขียนสำเร็จจึงจบก่อนรอบใหม่เสมอ
+       (ไม่พึ่งว่า cancel หยุด byte ที่ส่งไปแล้วได้)
+     - เช็ก live() ก่อนลองซ้ำ · storage/canceled = รอบนี้ถูกแทนแล้ว ไม่ลองซ้ำ ไม่ขึ้นเตือน U4
+     - customMetadata.printedAtMs (สตริงตัวเลข) ให้ storage.rules กันข้ามเครื่อง (ใหม่กว่าเท่านั้นที่ทับได้) */
+const printInflight = Object.create(null);   // jobId|kind -> { seq, task, settled }
+
+function waitPrintInflight(key, seq){
+  const prev = printInflight[key];
+  if(!prev || prev.seq === seq) return Promise.resolve();
+  try { if(prev.task && prev.task.cancel) prev.task.cancel(); } catch(e){}
+  return Promise.race([prev.settled, new Promise(r => setTimeout(r, PRINT_UPLOAD_TIMEOUT_MS))]);
+}
+
+function putPrintFile(path, blob, meta, live, key, seq){
   const md = { contentType: 'image/jpeg', cacheControl: 'private, no-cache', customMetadata: Object.assign({}, meta) };
-  const once = () => new Promise((resolve, reject) => {
+  const stale = () => { const e = new Error('stale print upload'); e.stale = true; return e; };
+  const once = () => (key ? waitPrintInflight(key, seq) : Promise.resolve()).then(() => new Promise((resolve, reject) => {
+    if(live && !live()){ reject(stale()); return; }
     const task = storage.ref().child(path).put(blob, md);
+    let fin;
+    const settled = new Promise(r => { fin = r; });
+    if(key) printInflight[key] = { seq, task, settled };
+    let over = false;
+    const end = () => { if(key && printInflight[key] && printInflight[key].task === task) delete printInflight[key]; fin(); };
     const timer = setTimeout(() => {
+      over = true;
       try { if(task && task.cancel) task.cancel(); } catch(e){}
       const e = new Error('upload timeout'); e.code = 'print/timeout'; reject(e);
     }, PRINT_UPLOAD_TIMEOUT_MS);
-    Promise.resolve(task).then(r => { clearTimeout(timer); resolve(r); }, err => { clearTimeout(timer); reject(err); });
-  });
+    Promise.resolve(task).then(r => { clearTimeout(timer); end(); if(!over) resolve(r); },
+                               err => { clearTimeout(timer); end(); if(!over) reject(err); });
+  }));
   // ลองใหม่ 1 ครั้ง · ถูกปฏิเสธสิทธิ์ไม่ต้องลองซ้ำ (ผลเหมือนเดิมแน่นอน)
-  return once().catch(err => { if(printCaptureQuiet(err)) throw err; return once(); });
+  // รอบนี้ถูกแทนแล้ว (ถูก cancel จากรอบใหม่ หรือ live() เป็นเท็จ) = เลิก ไม่ลองซ้ำทับรอบใหม่
+  return once().catch(err => {
+    if(err && err.stale) throw err;
+    if(String((err && err.code) || '') === 'storage/canceled' || (live && !live())) throw stale();
+    if(printCaptureQuiet(err)) throw err;
+    return once();
+  });
 }
 
 function schedulePrintCapture(job, kind, printedAt){
@@ -20888,6 +21384,9 @@ function schedulePrintCapture(job, kind, printedAt){
     const at = printedAt || nowIso();
     const meta = { printId: makePrintId(), printedAt: at, grandTotal: String(jobGrandTotal(job)),
                    appVersion: APP_VERSION, printedBy: String(currentUser.uid || '') };
+    // v4.6.9 M4 — customMetadata เป็นสตริงเสมอ · กฎ storage ใช้ int() เทียบกับไฟล์เดิม
+    const atMs = Date.parse(at);
+    if(isFinite(atMs)) meta.printedAtMs = String(atMs);
     let render;
     if(kind === 'quote'){
       /* fragment ของทุกหน้าสร้างตอนกด (ข้อมูลและวันที่ชุดเดียวกับพรีวิว) จากสำเนาที่ไม่มีลายเซ็นจริง */
@@ -20913,7 +21412,7 @@ function schedulePrintCapture(job, kind, printedAt){
           const order = files.slice(1).concat(files.slice(0, 1));
           return order.reduce((p, f) => p.then(() => {
             if(!live()) throw { stale: true };
-            return putPrintFile(f.path, f.blob, meta);
+            return putPrintFile(f.path, f.blob, meta, live, key, seq);
           }), Promise.resolve());
         })
         .then(() => { if(live()) setPrintCaptureFail(jobId, kind, false); })
@@ -24207,7 +24706,7 @@ const SETTINGS_SECTIONS = [
   { key:'docs',     icon:'printer',  title:'เอกสารและการพิมพ์',
     desc:'ขนาดและแนวกระดาษของทุกใบที่พิมพ์', cards:['print'] },
   { key:'customer', icon:'chat',     title:'ช่องทางลูกค้า',
-    desc:'กระดานสถานะ ขอคะแนน ผู้ช่วยตอบแชท แจ้งเตือน', cards:['board','feedback','bot','aibook','push'] },
+    desc:'กระดานสถานะ ขอคะแนน ผู้ช่วยตอบแชท แจ้งเตือน', cards:['board','boardPriv','feedback','bot','aibook','push'] },
   { key:'look',     icon:'sun',      title:'หน้าตาแอป',
     desc:'โทนสี และโหมดมืด', cards:['theme','dark'] },
   { key:'data',     icon:'save',     title:'ข้อมูล สำรอง และถังขยะ',
@@ -24802,18 +25301,27 @@ function renderLineGroupsTab(){
     });
   }
   if(approved.length){
-    html += `<h4 class="lg-head">ใช้งานได้ (${approved.length})</h4>`;
+    // v4.6.9 M5-a4 — สมาชิกเปลี่ยนหลังอนุมัติ = แค่ขึ้นเตือน (ไม่พักสิทธิ์ · ข้อตัดสินเจ้าของ)
+    const needCheck = approved.filter(lineGroupMembersChanged).length;
+    html += `<h4 class="lg-head">ใช้งานได้ (${approved.length})${needCheck ? ' · ต้องตรวจ ' + needCheck : ''}</h4>`;
     approved.forEach(g => {
       const ap = lineGroupTime(g.approvedAt);
+      const changed = lineGroupMembersChanged(g);
+      const ct = changed ? lineGroupTime(g.memberChangedAt) : '';
+      const cnt = (typeof g.memberCount === 'number' && isFinite(g.memberCount) && g.memberCount >= 0) ? Math.floor(g.memberCount) : null;
       html += `<div class="card lg-row">
         <div class="lg-info">
           <span class="badge st-approved">ใช้งานได้</span>
+          ${changed ? `<span class="badge lg-badge-pending" style="white-space:normal;">สมาชิกเปลี่ยนหลังอนุมัติ</span>` : ''}
           <div class="lg-name">${escapeHtml(lineGroupName(g))}</div>
           ${labelLine(g)}
+          ${changed ? `<div class="lg-sub">สมาชิกเปลี่ยนเมื่อ ${escapeHtml(ct)}${cnt !== null ? ' · ตอนนี้ ' + escapeHtml(String(cnt)) + ' คน' : ''}</div>
+          <div class="lg-sub">ตรวจว่าทุกคนในกลุ่มเป็นคนของร้าน ถ้ามีคนนอก กด "ยกเลิกสิทธิ์"</div>` : ''}
           ${ap ? `<div class="lg-sub">อนุมัติ ${escapeHtml(ap)} โดย ${escapeHtml(userName(g.approvedBy))}</div>` : ''}
           ${timeLine('ใช้ล่าสุด', g.lastSeenAt)}
         </div>
         <div class="lg-btns">
+          ${changed ? btn(g, 'ack-members', '', 'ตรวจแล้ว ทุกคนเป็นคนของร้าน') : ''}
           ${btn(g, 'label', 'secondary', 'ตั้งชื่อเรียก')}
           ${btn(g, 'revoke', 'secondary lg-danger-text', 'ยกเลิกสิทธิ์')}
         </div>
@@ -24928,6 +25436,13 @@ function lineGroupAction(act, id){
       onOk: () => updateLineGroup(g.id, act, lineGroupApprovePatch(), () => reenableUndoToast(g)) });
     return;
   }
+  if(act === 'ack-members'){
+    // ใช้ patch อนุมัติเดิม (ไม่มีคีย์ใหม่) -> approvedAt ใหม่กว่า memberChangedAt ป้ายหายเอง
+    uiModal({ message: `ยืนยันว่าทุกคนในกลุ่ม "${name}" เป็นคนของร้าน?\n\nทุกคนในกลุ่มนี้พิมพ์ !เลขคิว แล้วเห็นชื่อ เบอร์ และราคาของลูกค้าได้`,
+      danger: false, okLabel: 'ยืนยัน ทุกคนเป็นคนของร้าน', cancelLabel: 'ย้อนกลับ',
+      onOk: () => updateLineGroup(g.id, act, lineGroupApprovePatch(), () => flashToast('บันทึกแล้ว ป้ายเตือนหายแล้ว')) });
+    return;
+  }
   if(act === 'label'){
     uiPrompt('ชื่อเรียกกลุ่มนี้ในร้าน เช่น หน้าร้าน / ช่าง', String(g.label || ''), value => {
       const label = String(value || '').trim().slice(0, LINE_GROUP_LABEL_MAX);
@@ -24943,6 +25458,175 @@ function onLineGroupsClick(e){
 }
 if(typeof document !== 'undefined' && document && typeof document.addEventListener === 'function'){
   document.addEventListener('click', onLineGroupsClick);
+}
+
+/* v4.6.9 M5-a4 — เวลาของกลุ่มเป็นได้ทั้ง ISO string (แอพเขียน) และ Timestamp (functions เขียน) */
+function lineGroupMs(v){
+  if(!v) return NaN;
+  if(typeof v.toDate === 'function'){ const d = v.toDate(); return d && typeof d.getTime === 'function' ? d.getTime() : NaN; }
+  if(typeof v.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  return new Date(v).getTime();
+}
+function lineGroupMembersChanged(g){
+  if(!g || g.status !== 'approved') return false;
+  const m = lineGroupMs(g.memberChangedAt);
+  if(!isFinite(m)) return false;
+  const a = lineGroupMs(g.approvedAt);
+  return !isFinite(a) || m > a;
+}
+// นับจากรายชื่อที่โหลดไว้แล้วเท่านั้น (ไม่โหลดเพิ่มเพื่อป้ายนี้)
+function lineGroupsNeedCheckCount(){
+  if(view.lineGroupsState !== 'ok') return 0;
+  return (view.lineGroups || []).filter(lineGroupMembersChanged).length;
+}
+
+/* v4.6.9 S2-ง — การ์ด "ซ่อนราคาจากกระดานสาธารณะ" (แอดมินเท่านั้น · ## UX/UI U-S2ง)
+   งานจริงอยู่ที่ boardPrivCheck / boardPrivStrip / boardPrivPurge / boardPrivUnstrip
+   ใบที่เลือกตรวจอยู่ใน view.boardPrivJobId (หน่วยความจำเท่านั้น ไม่ sync ไม่เขียน config)
+   ค่าจากข้อมูลทุกตัว (ทะเบียน ชื่อผู้ใช้ ข้อความเหตุผลที่มีรหัส error) ผ่าน escapeHtml · ปุ่มไม่พกข้อมูลใน onclick */
+function boardPrivSelectedJob(){
+  const list = boardPrivCheckCandidates(8);
+  const pickId = view.boardPrivJobId || (view.boardPrivCheck && view.boardPrivCheck.jobId) || '';
+  const hit = pickId && list.find(j => j.id === pickId);
+  return hit || list[0] || null;
+}
+function boardPrivBaht(n){ return Number(n || 0).toLocaleString('en-US'); }
+function boardPrivHm(v){
+  const d = new Date(v || '');
+  if(isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function boardPrivJobSummary(j){
+  const priv = boardPrivatePayload(j);
+  const v = getVehicle(j.vehicleId) || {};
+  return { queueNo: String(j.queueNo || ''), plate: v.plate || '-', car: [v.brand, v.model].filter(Boolean).join(' '),
+           price: priv.price, parts: (priv.parts || []).length };
+}
+function boardPrivBusyNow(){
+  const r = view.boardPrivCheck;
+  return !!(view.boardModeBusy || (r && r.busy) || (view.boardPurge && view.boardPurge.state === 'running'));
+}
+function boardPrivPickJob(){
+  if(!isAdmin() || boardPrivBusyNow()) return;
+  const list = boardPrivCheckCandidates(8);
+  if(!list.length) return;
+  const sel = boardPrivSelectedJob();
+  uiChoice('เลือกใบที่ใช้ตรวจ', list.map(j => {
+    const x = boardPrivJobSummary(j);
+    return { value: j.id, label: 'คิว ' + x.queueNo + ' · ' + x.plate,
+             sub: (x.car ? x.car + ' · ' : '') + boardPrivBaht(x.price) + ' บาท · อะไหล่ ' + x.parts + ' รายการ',
+             current: !!(sel && sel.id === j.id) };
+  }), id => {
+    if(!id || (sel && sel.id === id)) return;
+    view.boardPrivJobId = id;
+    view.boardPrivCheck = null;      // เปลี่ยนใบ = ล้างผลตรวจเดิม (กลับสถานะ A)
+    render();
+  });
+}
+function boardPrivRunCheck(){
+  if(!isAdmin() || boardPrivBusyNow()) return;
+  const job = boardPrivSelectedJob();
+  if(!job) return;
+  view.boardPrivJobId = job.id;
+  boardPrivCheck(job.id);
+}
+function boardPrivConfirmStrip(){
+  if(!isAdmin() || boardPrivBusyNow() || !boardPrivCheckPassed()) return;
+  uiModal({
+    message: 'ปิดราคาบนกระดานสาธารณะ?\n\nระบบจะเอาราคา รายการอะไหล่ อาการ และเลขท้ายเบอร์ลูกค้า ออกจากข้อมูลกระดานที่คนนอกเปิดได้ ทุกใบ\nลูกค้ายังดูใบเสนอราคาของตัวเองได้เหมือนเดิม\n\nใช้เวลาประมาณ 1 นาที ระหว่างนี้อย่าปิดแอป\nย้อนได้ด้วยปุ่ม "เปิดกลับแบบเดิม"',
+    danger: false, okLabel: 'ปิดราคาและล้างกระดาน', cancelLabel: 'ยังไม่ปิด',
+    onOk: () => { boardPrivStrip(); }
+  });
+}
+function boardPrivConfirmUnstrip(){
+  if(!isAdmin() || boardPrivBusyNow()) return;
+  uiModal({
+    message: 'เปิดราคากลับบนกระดานสาธารณะ?\n\nราคา รายการอะไหล่ และเลขท้ายเบอร์ลูกค้า จะกลับไปอยู่ในข้อมูลกระดานที่คนนอกเปิดได้\nใช้เมื่อลูกค้าแจ้งว่าค้นรถไม่เจอหลังปิดราคาเท่านั้น',
+    danger: true, okLabel: 'เปิดกลับแบบเดิม', cancelLabel: 'ย้อนกลับ',
+    onOk: () => { boardPrivUnstrip(); }
+  });
+}
+function boardPrivRepurge(){
+  if(!isAdmin() || boardPrivBusyNow()) return;
+  boardPrivPurge();
+}
+function boardPrivCardHtml(){
+  const ms = boardModeState || {};
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false) || ms.error === 'unavailable';
+  const readErr = !offline && !!ms.error;
+  const loading = !offline && !readErr && !!ms.listening && !ms.loaded;   // ยังไม่เริ่มฟัง (ยังไม่ startSync) = ใช้ค่าที่จำใน localStorage
+  const blocked = offline || readErr || loading;
+  const on = boardStripOn();
+  const mode = view.boardModeBusy || '';
+  const purge = view.boardPurge || null;
+  const dis = c => (c || blocked) ? ' disabled' : '';
+  const step = t => `<div style="margin:14px 0 6px; font-weight:700; color:var(--text);">${t}</div>`;
+  let top = '';
+  if(offline) top = `<div class="lg-offline">ไม่มีอินเทอร์เน็ต ตรวจหรือเปลี่ยนการตั้งค่านี้ไม่ได้ตอนนี้</div>`;
+  let status = '';
+  if(loading) status = `<p class="muted">กำลังอ่านสถานะ...</p>`;
+  else if(readErr) status = `<div class="q-warn">อ่านสถานะไม่ได้ ลองเปิดหน้านี้ใหม่</div>`;
+  const badge = (loading || readErr) ? ''
+    : (on ? `<span class="badge st-approved">ปิดราคาอยู่</span>` : `<span class="badge lg-badge-pending">เปิดราคาอยู่</span>`);
+  let body = '';
+  if(on){
+    if(mode === 'unstrip'){
+      body = `<div class="est-live">กำลังเขียนกระดานกลับแบบเดิม...</div>`;
+    } else if(purge && purge.state === 'running'){
+      body = `<div class="est-live"><span>กำลังล้างกระดาน <b>${escapeHtml(String(purge.done || 0))} / ${escapeHtml(String(purge.total || 0))}</b> ใบ</span><span class="be-sub">อย่าปิดแอปจนกว่าจะเสร็จ</span></div>`;
+    } else if(purge && purge.state === 'stalled'){
+      body = `<div class="q-warn">ล้างค้างที่ ${escapeHtml(String(purge.done || 0))} / ${escapeHtml(String(purge.total || 0))} ใบ (เน็ตหลุดหรือเซิร์ฟเวอร์ไม่ตอบ) กด "ล้างต่อจากที่ค้าง" ได้เลย ใบที่ล้างแล้วไม่ทำซ้ำ</div>
+      <div class="lg-btns" style="margin-top:10px;"><button type="button" class="btn" onclick="boardPrivRepurge()"${dis(!!mode)}>ล้างต่อจากที่ค้าง</button></div>`;
+    } else {
+      const d = ms.data || {};
+      const t = lineGroupTime(d.confirmedAt);
+      const by = (view.usersList || []).find(u => u && u.id === d.confirmedBy);
+      body = `${t ? `<div class="lg-sub">ปิดเมื่อ ${escapeHtml(t)} โดย ${escapeHtml((by && by.name) || 'แอดมิน')}</div>` : ''}
+      <p class="muted" style="margin-top:8px;">ลูกค้ายังดูใบเสนอราคาของตัวเองได้ผ่านหน้าค้นรถ ถ้าลูกค้าแจ้งว่าค้นรถไม่เจอ ให้กด "เปิดกลับแบบเดิม"</p>
+      <div class="lg-btns" style="margin-top:10px;">
+        <button type="button" class="btn secondary" onclick="boardPrivRepurge()"${dis(!!mode)}>ล้างกระดานอีกครั้ง</button>
+        <button type="button" class="btn secondary lg-danger-text" onclick="boardPrivConfirmUnstrip()"${dis(!!mode)}>เปิดกลับแบบเดิม</button>
+      </div>`;
+    }
+  } else {
+    const job = boardPrivSelectedJob();
+    const rr = view.boardPrivCheck;
+    const r = (rr && job && rr.jobId === job.id) ? rr : null;
+    const checking = !!(r && r.busy);
+    const passed = !!(r && r.ok === true && !r.busy && boardPrivCheckPassed());
+    const busyAny = checking || !!mode;
+    const x = job ? boardPrivJobSummary(job) : null;
+    let result = '';
+    if(!job) result = `<div class="q-warn">${escapeHtml(boardPrivCheckReason('no-job'))}</div>`;
+    else if(passed){
+      const at = boardPrivHm(r.at);
+      result = `<div class="est-live done"><b>ตรวจผ่าน</b><span class="be-sub" style="white-space:normal;">คิว ${escapeHtml(String(r.queueNo || x.queueNo))} · ${escapeHtml(r.plate || x.plate)} · ยอด ${escapeHtml(boardPrivBaht(r.appPrice))} บาท ตรงกัน · อะไหล่ ${escapeHtml(String(r.appParts || 0))} รายการ ตรงกัน${at ? ' · ตรวจเมื่อ ' + escapeHtml(at) : ''}</span></div>`;
+    } else if(r && !checking){
+      result = `<div class="q-warn">${escapeHtml(r.message || boardPrivCheckReason(r.reason, r))}</div>`;
+    }
+    const checkLabel = checking ? 'กำลังตรวจ...' : ((r && !r.ok) ? 'ตรวจอีกครั้ง' : 'ตรวจระบบค้นรถลูกค้า');
+    body = `<p class="muted">ข้อมูลกระดานที่คนนอกเปิดได้ ยังมีราคา รายการอะไหล่ อาการ และเลขท้ายเบอร์ลูกค้าของทุกคัน (จอกระดานไม่แสดง แต่คนที่รู้วิธีดึงข้อมูลอ่านได้) ปิดได้โดยลูกค้ายังดูใบเสนอราคาของตัวเองได้เหมือนเดิม</p>
+      ${step('ขั้น 1 ตรวจระบบค้นรถลูกค้า')}
+      ${x ? `<div class="lg-sub">ใบที่ใช้ตรวจ: คิว ${escapeHtml(x.queueNo)} · ${escapeHtml(x.plate)} · ${escapeHtml(boardPrivBaht(x.price))} บาท</div>` : ''}
+      <div class="lg-btns" style="margin-top:8px;">
+        <button type="button" class="btn secondary" onclick="boardPrivPickJob()"${dis(!job || busyAny)}>เปลี่ยนใบที่ใช้ตรวจ</button>
+        <button type="button" class="btn" onclick="boardPrivRunCheck()"${dis(!job || busyAny)}>${checkLabel}</button>
+      </div>
+      ${result}
+      ${step('ขั้น 2 ปิดราคา')}
+      <div class="lg-btns">
+        <button type="button" class="btn hazard" onclick="boardPrivConfirmStrip()"${dis(!passed || busyAny)}>${mode === 'strip' ? 'กำลังบันทึก...' : 'ปิดราคาบนกระดานสาธารณะ'}</button>
+      </div>
+      ${passed ? '' : `<div class="lg-sub" style="margin-top:6px;">ปุ่มนี้กดได้หลังตรวจผ่านเท่านั้น</div>`}`;
+  }
+  return `<div class="card no-print">
+    ${top}
+    <h3>${icon('shield',15)} ซ่อนราคาจากกระดานสาธารณะ</h3>
+    ${badge ? `<div style="margin-bottom:8px;">${badge}</div>` : ''}
+    ${status}
+    ${body}
+  </div>`;
 }
 
 function renderSettingsTab(){
@@ -24964,7 +25648,7 @@ function renderSettingsTab(){
         return `<button class="settings-nav-btn" onclick="goTab('unitfix')">${icon('wrench',18)}<span>ราคาต่อหน่วย</span><small>${mixed ? mixed + ' กลุ่มราคาไม่ตรงกัน' : g.length + ' กลุ่ม'}</small></button>`; })()}
       ${(function(){ const g = findDuplicateModelGroups();
         return g.length ? `<button class="settings-nav-btn" onclick="goTab('dupmerge')">${icon('wrench',18)}<span>รวมรุ่นซ้ำ</span><small>${g.length} กลุ่มรอรวม</small></button>` : ''; })()}
-      ${isAdmin() ? `<button class="settings-nav-btn" onclick="goTab('linegroups')">${icon('chat',18)}<span>กลุ่ม LINE</span><small>อนุมัติกลุ่มให้ Bot ตอบ</small></button>` : ''}
+      ${isAdmin() ? `<button class="settings-nav-btn" onclick="goTab('linegroups')">${icon('chat',18)}<span>กลุ่ม LINE</span><small>${(function(){ const k = lineGroupsNeedCheckCount(); return k ? 'มี ' + k + ' กลุ่มต้องตรวจสมาชิก' : 'อนุมัติกลุ่มให้ Bot ตอบ'; })()}</small></button>` : ''}
     </div>
   </div>`;
 
@@ -25007,6 +25691,9 @@ function renderSettingsTab(){
       </div>
     </div>
   </div>`;
+
+  // v4.6.9 S2-ง — แอดมินเท่านั้น (ค่าว่าง = ถูกกรองทิ้งตอนจัดหมวด)
+  C.boardPriv = isAdmin() ? boardPrivCardHtml() : '';
 
   C.feedback = `<div class="card no-print">
     <h3>${icon('sparkle',15)} ขอคะแนนจากลูกค้า</h3>
@@ -27603,9 +28290,12 @@ let receptionUnsub = null;
    THE CUSTOMER LOOKUP
    Two paths, chosen at runtime:
 
-   • callable  — lookupMyCar() runs on the server, checks BOTH factors, returns
-                 an allow-listed view and issues the chat grant. This is the path
-                 that works once firestore.rules closes `board`.
+   • callable  — lookupMyCar() runs on the server, checks BOTH factors and
+                 returns an allow-listed view. It does NOT issue any chat grant
+                 (v4.6.9: no chatGrants are written yet — chat access is a known gap,
+                 S3-R, planned for a later round). Version 2 reads boardPrivate/ first
+                 and returns { cars, v: 2 }. This is the path that keeps working once
+                 the board is stripped (config/boardMode.stripPublic).
    • direct    — the old client-side query, kept ONLY so this build can be
                  installed BEFORE the backend is deployed without breaking the
                  shop. It is chosen automatically when the function is not there.
@@ -27620,13 +28310,49 @@ let receptionLastQuery = null;   // {last4, queueNo} — for the refresh tick
 
 function receptionCallable(){
   if(receptionFns !== null) return receptionFns;
-  try {
-    if(firebase.app && firebase.app().functions){
-      receptionFns = firebase.app().functions('asia-southeast1').httpsCallable('lookupMyCar');
-    } else receptionFns = false;
-  } catch(e){ receptionFns = false; }
+  // v4.6.9 S2-ฉ — timeout 20 วิ (ค่าตั้งต้นของ SDK 70 วิ ลูกค้ายืนรอหน้าจอค้างนานเกิน · server แย่สุด ~14 วิ)
+  receptionFns = lookupMyCarCallable() || false;
   return receptionFns;
 }
+
+/* v4.6.9 S2-ฉ (network §3) — แยก "ล้มชั่วคราว" ออกจาก "ยังไม่ deploy/ตั้งค่า"
+   เดิมทุก error ที่ไม่ใช่ resource-exhausted/invalid-argument ตั้ง receptionFns = false ทั้ง session
+   เน็ตสะดุดครั้งเดียว = ไม่เรียก function อีกเลย (รีเฟรช 60 วิก็ไม่เรียก) หลังปิดราคาบนกระดาน
+   ทางสำรองค้น board ไม่เจอแล้ว ลูกค้าจะเห็น "ไม่พบรถ" ค้างทั้งที่รถอยู่
+     'rate' / 'arg'  = function ทำงานจริงและปฏิเสธ -> ข้อความเดิม
+     'temporary'     = ลองซ้ำได้ ห้าม latch
+     'not-deployed'  = latch receptionFns = false แล้วใช้ทางสำรอง (พฤติกรรมเดิม)
+   รหัสที่ไม่รู้จัก = ชั่วคราว (ไม่ latch ดีกว่าปิดทั้ง session ผิด ๆ) */
+const LOOKUP_NOT_DEPLOYED_CODES = ['not-found', 'unimplemented', 'permission-denied', 'unauthenticated',
+  'auth/operation-not-allowed', 'auth/admin-restricted-operation'];
+const LOOKUP_RETRY_CODES = ['unavailable', 'deadline-exceeded', 'internal'];
+const LOOKUP_RETRY_DELAY_MS = 2000;
+
+function lookupErrorCode(err){
+  return String((err && err.code) || '').replace(/^functions\//, '');
+}
+function lookupErrorKind(err){
+  const code = lookupErrorCode(err);
+  if(code === 'resource-exhausted') return 'rate';
+  if(code === 'invalid-argument') return 'arg';
+  if(LOOKUP_NOT_DEPLOYED_CODES.indexOf(code) >= 0) return 'not-deployed';
+  return 'temporary';
+}
+
+/* เรียก callable 1 ครั้ง + ลองซ้ำอัตโนมัติ 1 ครั้งหลัง 2 วิ เฉพาะ unavailable / deadline-exceeded / internal
+   signIn = ฟังก์ชันล็อกอินนิรนามของหน้านั้น · stillWanted() = false -> เลิก (ลูกค้ากดค้นใหม่แล้ว) */
+function lookupMyCarCall(callable, payload, signIn, stillWanted){
+  const once = () => Promise.resolve().then(() => signIn ? signIn() : null).then(() => callable(payload));
+  return once().catch(err => {
+    if(LOOKUP_RETRY_CODES.indexOf(lookupErrorCode(err)) < 0) throw err;
+    return new Promise(r => setTimeout(r, LOOKUP_RETRY_DELAY_MS)).then(() => {
+      if(stillWanted && !stillWanted()){ const e = new Error('stale'); e.stale = true; throw e; }
+      return once();
+    });
+  });
+}
+
+let receptionSeq = 0;   // รอบค้นล่าสุด — ผลของรอบเก่า (ที่กำลังลองซ้ำ) ห้ามทับจอ
 
 // The function requires a signed-in uid to attach the chat grant to. Anonymous is
 // enough — nothing about the visitor is collected.
@@ -27667,15 +28393,27 @@ function receptionLookupPhone(){
   receptionLastQuery = { last4, queueNo };
   receptionStatus('กำลังค้นหา...');
 
+  const seq = ++receptionSeq;
+  const live = () => seq === receptionSeq;
   const callable = receptionCallable();
   if(callable){
-    receptionSignIn()
-      .then(() => callable({ last4, queueNo }))
-      .then(res => receptionShow((res.data && res.data.cars) || [], last4, true))
-      .catch(err => receptionCallableFailed(err, last4, queueNo));
+    lookupMyCarCall(callable, { last4, queueNo }, receptionSignIn, live)
+      .then(res => { if(live()) receptionShow((res && res.data && res.data.cars) || [], last4, true); })
+      .catch(err => { if(live() && !(err && err.stale)) receptionCallableFailed(err, last4, queueNo); });
     return;
   }
   receptionDirectLookup(last4, queueNo);
+}
+
+/* v4.6.9 S2-ฉ — ข้อความ "ค้นหาไม่ได้ชั่วคราว" (## UX/UI U-S2ฉ) ไม่ใช่สีแดง ไม่ใช่ความผิดของลูกค้า
+   ปุ่มค้นซ้ำด้วยค่าที่กรอกไว้ · error ชั่วคราวไม่ latch จึงได้ลอง function ใหม่จริง */
+function receptionTempUnavailable(){
+  receptionStopRefresh();
+  try { chatSetCars([]); } catch(e){}
+  const el = document.getElementById('reception-result');
+  if(el) el.innerHTML = `<div class="reception-status-msg"><b>ขออภัย ตอนนี้ค้นหาไม่ได้ชั่วคราว</b><br>
+      กรุณาลองใหม่อีกครั้งในอีกสักครู่ หรือสอบถามพนักงานที่เคาน์เตอร์</div>
+    <button type="button" class="reception-again-btn" onclick="receptionLookupPhone()">ลองค้นหาอีกครั้ง</button>`;
 }
 
 /* What to do when the callable path did not complete.
@@ -27694,21 +28432,25 @@ function receptionLookupPhone(){
 function receptionCallableFailed(err, last4, queueNo){
   const code = String((err && err.code) || '');
   console.warn('[reception] lookupMyCar unavailable →', code, (err && err.message) || err);
+  const kind = lookupErrorKind(err);
 
-  if(code.indexOf('resource-exhausted') >= 0){
+  if(kind === 'rate'){
     receptionStatus('ค้นหาบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่<br>หรือสอบถามพนักงานที่เคาน์เตอร์', 'error');
     return;
   }
-  if(code.indexOf('invalid-argument') >= 0){
+  if(kind === 'arg'){
     receptionStatus('กรุณากรอกทั้งเบอร์โทร 4 หลักท้าย และเลขคิวบนใบรับรถ', 'error');
     return;
   }
-  // Not reachable yet — stop trying it this session and use the direct query.
-  receptionFns = false;
+  // ยังไม่ deploy / ตั้งค่า — เลิกลองทั้ง session (เดิม) · ชั่วคราว — ห้าม latch รอบหน้าลอง function ใหม่
+  if(kind === 'not-deployed') receptionFns = false;
   receptionDirectLookup(last4, queueNo);
 }
 
-/* Legacy path — only until the backend is live. */
+/* Legacy path — only until the backend is live.
+   v4.6.9 S2-ฉ — มาถึงทางนี้ได้เฉพาะเมื่อ function ใช้ไม่ได้ ผล 0 แถว (หรือได้จาก cache ตอนออฟไลน์)
+   จึงแปลว่า "ค้นไม่ได้" ไม่ใช่ "ไม่มีรถ" — หลังปิดราคาบนกระดาน board ไม่มี phoneLast4 แล้ว
+   ทางนี้คืน 0 แถวเสมอ ห้ามบอกลูกค้าว่ารถไม่อยู่ */
 function receptionDirectLookup(last4, queueNo){
   if(!db){
     receptionStatus('ยังเชื่อมต่อระบบไม่ได้ กรุณารีเฟรชหน้าใหม่', 'error');
@@ -27717,6 +28459,8 @@ function receptionDirectLookup(last4, queueNo){
   receptionUnsub = db.collection('board').where('phoneLast4', '==', last4).onSnapshot(snap => {
     const rows = [];
     snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
+    // ผลจาก cache (ออฟไลน์/ยังไม่ถึงเซิร์ฟเวอร์) เชื่อไม่ได้ — ถ้าต่อได้ snapshot จากเซิร์ฟเวอร์จะตามมาทับเอง
+    if(!rows.length || (snap.metadata && snap.metadata.fromCache)){ receptionTempUnavailable(); return; }
     let active = rows.filter(r => r.status !== 'delivered' && r.status !== 'carout');
     console.info('[reception] last4=' + last4 + ' → ' + rows.length + ' doc(s), ' +
       active.length + ' active, queues=' + JSON.stringify(active.map(r => r.queueNo)));
@@ -29437,11 +30181,13 @@ function feedbackLookup(){
      รุ่นแรกตัด delivered/carout ออก ผลว่างจึงถือว่า "ไม่พบ" ได้เฉพาะเมื่อ function บอกเองว่า
      รวมรถที่ส่งมอบแล้ว (includesDelivered === true) — ไม่งั้นลูกค้าที่รับรถกลับบ้านแล้ว
      จะให้คะแนนไม่ได้เลยทันทีที่ deploy function */
+  const seq = ++feedbackSeq;
+  const live = () => seq === feedbackSeq;
   const callable = receptionCallable();
   if(callable){
-    fbEnsureAnon()
-      .then(() => callable({ last4, queueNo, purpose: 'feedback' }))
+    lookupMyCarCall(callable, { last4, queueNo, purpose: 'feedback' }, fbEnsureAnon, live)
       .then(res => {
+        if(!live()) return;
         const data = (res && res.data) || {};
         const cars = Array.isArray(data.cars) ? data.cars : [];
         if(cars.length && feedbackUseRows(cars, queueNo)) return;
@@ -29451,10 +30197,19 @@ function feedbackLookup(){
         }
         feedbackDirectLookup(last4, queueNo);   // function รุ่นนี้ยังไม่คืนรถที่ส่งมอบแล้ว
       })
-      .catch(err => feedbackCallableFailed(err, last4, queueNo));
+      .catch(err => { if(live() && !(err && err.stale)) feedbackCallableFailed(err, last4, queueNo); });
     return;
   }
   feedbackDirectLookup(last4, queueNo);
+}
+let feedbackSeq = 0;
+
+// v4.6.9 S2-ฉ — ข้อความเดียวกับหน้า ?reception แต่ลูกค้ามักอยู่บ้านแล้ว จึงบอกให้โทร (## UX/UI U-S2ฉ)
+function feedbackTempUnavailable(){
+  const el = document.getElementById('fb-result');
+  if(el) el.innerHTML = `<div class="reception-status-msg"><b>ขออภัย ตอนนี้ค้นหาไม่ได้ชั่วคราว</b><br>
+      กรุณาลองใหม่อีกครั้งในอีกสักครู่ หรือโทรแจ้งร้าน</div>
+    <button type="button" class="reception-again-btn" onclick="feedbackLookup()">ลองค้นหาอีกครั้ง</button>`;
 }
 
 function feedbackUseRows(rows, queueNo){
@@ -29479,7 +30234,8 @@ function feedbackCallableFailed(err, last4, queueNo){
     fbMsg('กรุณากรอกทั้งเบอร์โทร 4 หลักท้าย และเลขคิวบนใบรับรถ', 'error');
     return;
   }
-  receptionFns = false;
+  // v4.6.9 S2-ฉ — latch เฉพาะ "ยังไม่ deploy/ตั้งค่า" · ล้มชั่วคราวรอบหน้าลอง function ใหม่
+  if(lookupErrorKind(err) === 'not-deployed') receptionFns = false;
   feedbackDirectLookup(last4, queueNo);
 }
 
@@ -29489,6 +30245,8 @@ function feedbackDirectLookup(last4, queueNo){
     .then(snap => {
       const rows = [];
       snap.forEach(d => rows.push(Object.assign({ id: d.id }, d.data())));
+      // v4.6.9 S2-ฉ — มาทางนี้ได้เฉพาะเมื่อ function ใช้ไม่ได้: 0 แถว (หรือ cache ตอนออฟไลน์) = ค้นไม่ได้ ไม่ใช่ไม่มีรถ
+      if(!rows.length || (snap.metadata && snap.metadata.fromCache)){ feedbackTempUnavailable(); return; }
       // ตรงนี้คือจุดต่างจากหน้ารับรอง: ไม่กรอง delivered ออก
       const matched = rows.filter(r => sameQueueNo(r.queueNo, queueNo));
       if(!matched.length){

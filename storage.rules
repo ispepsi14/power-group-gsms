@@ -24,8 +24,16 @@ rules_version = '2';
 //          (สำหรับ firestore.exists) ให้กด Grant/อนุญาต ไม่งั้นทุกการอัปโหลดจะถูกปฏิเสธ
 //   [ ] 6. ถ้าพัง ให้วางกฎจาก docs/specs/storage-rules-console-2026-10-24.txt กลับแล้ว Publish
 //          (ตรวจก่อนว่ากฎใน Console ยังตรงกับสำเนานั้น ไม่มีใครแก้หลัง 24 ต.ค.)
-//   [ ] 7. ทีม (qa-tester) ต้องรันกับ Storage emulator ด้วย anonymous / พนักงาน / แอดมิน
-//          ก่อน publish (security S7 ข้อ 4) — ยังไม่ได้รัน
+//   [x] 7. รันกับ Storage emulator แล้ว (anonymous / พนักงาน / แอดมิน / bootstrap)
+//          bash tests/rules-emu/run-all.sh storage.rules firestore.rules (26 ต.ค. 2569)
+//          ผล: 36/36 ข้อผ่าน (storage 45/45 · firestore 35/35 assertion) รวม CONTROL M4-2g
+//
+// เปลี่ยนในรอบ bugfix-round2 (4.6.9):
+//   - jobThumbs: contentType ต้องเป็น image/jpeg เท่านั้น (S1)
+//   - jobPrints ลบ: แอดมินเท่านั้น (bootstrap หรือ users/{uid}.role == 'admin') (M3)
+//   - jobPrints เขียน: กันไฟล์ printedAtMs เก่ากว่าทับไฟล์ใหม่ + ห้าม printedAtMs ล้ำเกิน 10 นาที (M4)
+//     request ที่ไม่มี printedAtMs (เครื่อง 4.6.8) ผ่านเหมือนเดิม — ข้อจำกัด: เครื่องเก่ายังทับ
+//     ไฟล์ใหม่ได้จนกว่าจะอัปเดตเป็น 4.6.9
 //
 // การเรียก getDownloadURL() / getMetadata() ผ่าน SDK "ตรวจกฎ read" ข้างล่าง (แอพเรียก
 // getDownloadURL ทันทีหลังพนักงานอัปโหลด จึงผ่าน hasAccess) · สิ่งที่ไม่ตรวจกฎคือการ
@@ -73,13 +81,16 @@ service firebase.storage {
     // แอพเขียน: jobThumbs/{jobId}/{uid}.jpg  (index.html uploadJobThumb)
     match /jobThumbs/{jobId}/{f} {
       allow read: if hasAccess();
-      allow create, update: if hasAccess() && isPhotoUpload();
+      allow create, update: if hasAccess() && isPhotoUpload()
+        && request.resource.contentType == 'image/jpeg';
       allow delete: if hasAccess();
     }
 
     // ---------- ภาพใบรับรถ / ใบเสนอราคา สำหรับ LINE Bot (งาน line-bot-queue-command, S7) ----------
     // แอพเขียน receipt.jpg / quote-<n>.jpg · Bot อ่านผ่าน Admin SDK + signed URL (ไม่ผ่านกฎนี้)
-    // มีชื่อ เบอร์ ทะเบียน ราคา → ห้าม anonymous อ่าน/เขียน · ห้ามลบจาก client
+    // มีชื่อ เบอร์ ทะเบียน ราคา → ห้าม anonymous อ่าน/เขียน · ลบได้เฉพาะแอดมิน (ตอนลบงานถาวร)
+    // printedAtMs = customMetadata (สตริงตัวเลข ms) ที่แอพ 4.6.9 ส่งมา → แปลงด้วย int()
+    // emulator ประเมินการทับไฟล์เป็น create (resource != null) → เงื่อนไขกันทับใส่ทั้ง create, update
     // เงื่อนไขเขียน firestore.exists ไว้ตรง ๆ (ไม่เรียก hasAccess()) ให้ guard ตรวจได้
     match /jobPrints/{jobId}/{file} {
       allow read: if request.auth != null
@@ -90,8 +101,16 @@ service firebase.storage {
             || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)))
         && file.matches('receipt[.]jpg|quote-[0-9]{1,2}[.]jpg')
         && request.resource.contentType == 'image/jpeg'
-        && request.resource.size < 2 * 1024 * 1024;
-      allow delete: if false;
+        && request.resource.size < 2 * 1024 * 1024
+        && (resource == null
+            || !('printedAtMs' in resource.metadata)
+            || !('printedAtMs' in request.resource.metadata)
+            || int(request.resource.metadata.printedAtMs) >= int(resource.metadata.printedAtMs))
+        && (!('printedAtMs' in request.resource.metadata)
+            || int(request.resource.metadata.printedAtMs) <= request.time.toMillis() + 600000);
+      allow delete: if request.auth != null
+        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
+            || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     // ---------- ที่เหลือทั้งหมด: ปิด ----------

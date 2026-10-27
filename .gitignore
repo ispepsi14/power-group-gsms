@@ -101,3 +101,19 @@ functions/.env*
 .runtimeconfig.json
 functions/.runtimeconfig.json
 *service-account*.json
+# 26 ต.ค. 2569 bugfix-round2 M1 (security §8) — key/ใบรับรองที่ดาวน์โหลดจาก Console กันทุกโฟลเดอร์
+power-group-gsms-*.json
+*firebase-adminsdk*.json
+client_secret*.json
+credentials*.json
+*.pem
+*.p12
+*.pfx
+*.key
+
+# ===================================================================
+# 26 ต.ค. 2569 — Firebase Emulator สำหรับเทสต์กฎ (tests/rules-emu/)
+# .tools/ = Java (Temurin 21 JRE) แบบ portable ไม่ติดตั้งระดับระบบ — ห้ามขึ้น git
+# .active/ = สำเนากฎที่ run.sh คัดมาให้ emulator อ่านในแต่ละรอบ
+.tools/
+tests/rules-emu/.active/

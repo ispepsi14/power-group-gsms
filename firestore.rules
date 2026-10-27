@@ -191,6 +191,14 @@ service cloud.firestore {
       allow write: if hasAccess(); // เขียนได้เฉพาะพนักงานที่ล็อกอินแล้ว
     }
 
+    // [bugfix-round2 S2] ราคา/รายละเอียดที่ตัดออกจาก board/ — อ่านผ่าน Cloud Function
+    // lookupMyCar (Admin SDK ข้ามกฎ) เท่านั้น · client ห้ามอ่านทุกกรณี (รวมพนักงาน)
+    // พนักงานเขียน/ลบได้ (แอพเขียนแยก batch หลัง commit หลัก — ไม่อยู่ใน flushState)
+    match /boardPrivate/{docId} {
+      allow get, list: if false;
+      allow create, update, delete: if hasAccess();
+    }
+
     // [ใหม่] กระจกสำเนาของ board/ ที่ไม่มีอะไรเขียนจริงตอนนี้ (โค้ดแอปคอมเมนต์ไว้ว่า
     // จะให้ Cloud Function trigger คอยอัปเดตแทนในอนาคต เพื่อเปิดเผยข้อมูลน้อยกว่า
     // board/ อีกขั้น) เพิ่มไว้ล่วงหน้าเฉย ๆ เผื่อวันที่ trigger นั้นถูกสร้างขึ้นจริง

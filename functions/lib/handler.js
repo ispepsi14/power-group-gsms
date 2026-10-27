@@ -4,7 +4,9 @@
 // กติกาที่ไฟล์นี้ต้องรักษา (ห้ามถอด):
 //  - ตรวจลายเซ็นจาก req.rawBody ก่อนแตะ Firestore / LINE (S1 · C22)
 //  - ตอบข้อมูลลูกค้าเฉพาะ source.type === 'group' ที่ lineGroups/{id} ได้รับอนุมัติแล้ว (S4)
-//  - Admin SDK อ่านอย่างเดียว เขียนได้แค่ lineGroups (create ตอน join / lastSeenAt) และ lineBotState (กันซ้ำ)
+//  - Admin SDK อ่านอย่างเดียว เขียนได้แค่ lineGroups (create ตอน join / lastSeenAt / memberCount + memberChangedAt
+//    ตอน memberJoined/memberLeft ของกลุ่มที่มีเอกสารแล้วเท่านั้น) และ lineBotState (create กันซ้ำ /
+//    delete คืน claim ของ event ตัวเองเมื่อ join ล้มชั่วคราว — bugfix-round2 M5-a / M5-d)
 //    ห้ามเขียนใบงาน: flushState ของเครื่องในร้านใช้ set ทั้งเอกสาร ฟิลด์ที่ function เติมจะหายอยู่ดี (BR-7)
 //  - ไม่มีเส้นไหนเปลี่ยนสถานะกลุ่มเป็นอนุมัติ — มีแต่แอดมินในแอป (S3)
 //  - ใช้ reply เท่านั้น ไม่มีการส่งแบบ push / multicast / broadcast
@@ -14,6 +16,11 @@
 //  - (24 ต.ค. 2569 bugfix-sweep G4-NET-H1/H2) events ใน POST เดียวประมวลผลขนาน ใต้ deadline รวม
 //    EVENTS_DEADLINE_MS · ทุกการเรียก Firestore มี timeout DB_TIMEOUT_MS -> ข้อความ dbDown (ไม่เงียบ)
 //    · งบภาพ IMAGE_BUDGET_MS · timeoutSeconds ใน index.js ต้องเผื่อเกิน deadline นี้เสมอ
+//  - (26 ต.ค. 2569 bugfix-round2 M5-a) memberJoined / memberLeft: get ก่อน ไม่มีเอกสาร = เลิก (ไม่สร้าง)
+//    · นับสมาชิก timeout MEMBER_COUNT_TIMEOUT_MS · นับไม่ได้ก็ยังเขียน memberChangedAt · ไม่ claim ไม่ reply
+//    · ห้ามแตะ/ log ev.joined.members / ev.left.members (userId) · ไม่เปลี่ยน status (ไม่พักสิทธิ์)
+//  - (M5-d) join ล้มชั่วคราว -> reply T.joinFailed + ลบ claim (best effort CLAIM_RELEASE_MS) ให้ redelivery
+//    ทำใหม่ได้ · ก่อนสรุปว่า create ล้ม ต้อง get ซ้ำ (เขียนสำเร็จแต่คำตอบหาย = ตอบรหัสตามปกติ)
 'use strict';
 const { verifySignature } = require('./signature.js');
 const { parseCommand } = require('./command.js');
@@ -36,6 +43,9 @@ const SIGNED_URL_TTL_MS = 24 * 3600 * 1000;   // ข้อ 6.5 (ต้องพ�
 const IMAGE_BUDGET_MS = 9000;                 // ข้อ 6.6 / C23 · เดิม 15000 (H1: สองคำสั่งต้องจบใน ~20 วิ)
 const DB_TIMEOUT_MS = 5000;                   // H2: Firestore ค้าง -> ตัดที่ 5 วิ แล้วตอบ dbDown
 const EVENTS_DEADLINE_MS = 20000;             // H1: เวลารวมของทุก event ใน POST เดียว ก่อนตอบ 200
+const REPLY_RESERVE_MS = 4000;                // M5-d: เผื่อเวลา reply ก่อน deadline รวม
+const MEMBER_COUNT_TIMEOUT_MS = 4000;         // M5-a / join: getGroupMemberCount / getGroupSummary
+const CLAIM_RELEASE_MS = 2000;                // M5-d: ลบ lineBotState/evt_<id> แบบ best effort
 const MAX_PHOTOS = 8;                         // = JOB_SHARE_MAX_PHOTOS ของแอป
 const MAX_PHOTO_ROWS_CHECKED = 40;
 const MAX_URL_LEN = 2000;                     // LINE image URL
@@ -65,7 +75,8 @@ const T = {
   tooOld: 'ดูย้อนหลังได้ไม่เกิน 90 วัน\nใบเก่ากว่านั้นเปิดดูในแอพ',
   dbDown: 'ระบบดึงข้อมูลไม่ได้ตอนนี้ ลองใหม่อีกครั้ง',
   notFound: (q, date, prev) => 'ไม่พบคิว ' + q + ' ของวันที่ ' + date + '\nคิวของวันอื่น พิมพ์แบบ !' + q + ' ' + prev,
-  timeout: typed => '※ ส่งแค่ข้อความ เตรียมรูปไม่ทันเวลา\nลองพิมพ์ ' + typed + ' ใหม่อีกครั้ง'
+  timeout: typed => '※ ส่งแค่ข้อความ เตรียมรูปไม่ทันเวลา\nลองพิมพ์ ' + typed + ' ใหม่อีกครั้ง',
+  joinFailed: 'Bot ลงทะเบียนกลุ่มนี้ไม่สำเร็จ (ระบบขัดข้องชั่วคราว)\nให้นำ Bot ออกจากกลุ่ม แล้วเชิญเข้ามาใหม่อีกครั้ง\n\nถ้ายังไม่ได้ แจ้งแอดมินร้าน'
 };
 
 function errCode(e){
@@ -75,6 +86,13 @@ function errCode(e){
 function isAlreadyExists(e){
   const c = e && e.code;
   return c === 6 || c === '6' || c === 'already-exists' || c === 'ALREADY_EXISTS';
+}
+// error ชั่วคราวของ Firestore (M5-d): timeout ของ withTimeout / UNAVAILABLE / ABORTED / INTERNAL / DEADLINE_EXCEEDED
+const TRANSIENT_CODES = ['deadline-exceeded', 'unavailable', 'aborted', 'internal',
+  'DEADLINE_EXCEEDED', 'UNAVAILABLE', 'ABORTED', 'INTERNAL', '4', '10', '13', '14'];
+function isTransient(e){
+  const c = e && e.code;
+  return (typeof c === 'number' || typeof c === 'string') && TRANSIENT_CODES.indexOf(String(c)) >= 0;
 }
 function headerOf(req, name){
   if(req && typeof req.get === 'function'){ const v = req.get(name); if(v !== undefined) return v; }
@@ -191,17 +209,37 @@ function createHandler(deps){
   const textMsg = t => ({ type: 'text', text: str(t).slice(0, MAX_TEXT_LEN) });
 
   // ---------------------------------------------------------- join (ส่วน B)
-  async function onJoin(ev){
+  // คืน 'ok' | 'skip' (เงียบ) | 'retry' (ล้มชั่วคราว — ผู้เรียกตอบ T.joinFailed + คืน claim)
+  async function onJoin(ev, deadlineAt){
     const src = ev.source || {};
-    if(src.type !== 'group' || !GROUP_ID_RE.test(src.groupId || '')){ log('join-ignored', {}); return; }
+    if(src.type !== 'group' || !GROUP_ID_RE.test(src.groupId || '')){ log('join-ignored', {}); return 'skip'; }
     const gid = src.groupId;
     const ref = db.collection('lineGroups').doc(gid);
+    // network §2: timeout แต่ละขั้นไม่เกินเวลาที่เหลือ (เผื่อ reply REPLY_RESERVE_MS)
+    const left = () => Math.max(1, Math.min(dbTimeoutMs, (deadlineAt || Infinity) - nowMs() - REPLY_RESERVE_MS));
+    const dbj = p => withTimeout(p, left());
+    const fail = (step, e) => {
+      const transient = isTransient(e);
+      log('join-error', { gid, step, code: errCode(e), transient });
+      return transient ? 'retry' : 'skip';
+    };
     let snap;
-    try { snap = await dbq(ref.get()); } catch(e){ log('join-error', { gid, code: errCode(e) }); return; }
-    if(snap.exists){ log('join-existing', { gid }); return; }       // ไม่ทับคำตัดสินของแอดมิน
-    let pend;
-    try { pend = await dbq(db.collection('lineGroups').where('status', '==', 'pending').select('firstSeenAt', 'code').get()); }
-    catch(e){ log('join-error', { gid, code: errCode(e) }); return; }
+    try { snap = await dbj(ref.get()); } catch(e){ return fail('get', e); }
+    if(snap.exists){ log('join-existing', { gid }); return 'skip'; }       // ไม่ทับคำตัดสินของแอดมิน
+    // ชื่อกลุ่ม + จำนวนสมาชิก (S2) ทำพร้อมกับ query pending · เรียกไม่สำเร็จ join ยังต้องสำเร็จ (ไม่ใส่ฟิลด์)
+    const lineTo = Math.min(MEMBER_COUNT_TIMEOUT_MS, left());
+    const [pendR, sum, cnt] = await Promise.all([
+      dbj(db.collection('lineGroups').where('status', '==', 'pending').select('firstSeenAt', 'code').get())
+        .then(v => ({ v }), e => ({ e })),
+      withTimeout(Promise.resolve().then(() => line.getGroupSummary(gid)), lineTo)
+        .catch(e => { log('summary-error', { gid, code: errCode(e) }); return null; }),
+      typeof line.getGroupMemberCount === 'function'
+        ? withTimeout(Promise.resolve().then(() => line.getGroupMemberCount(gid)), lineTo)
+          .catch(e => { log('member-count-error', { gid, code: errCode(e) }); return null; })
+        : null
+    ]);
+    if(pendR.e) return fail('pending', pendR.e);
+    const pend = pendR.v;
     const t = nowMs();
     let fresh = 0; const taken = new Set();
     pend.docs.forEach(d => {
@@ -210,16 +248,9 @@ function createHandler(deps){
       const at = Date.parse(x.firstSeenAt);
       if(!isFinite(at) || t - at < PENDING_FRESH_MS) fresh++;
     });
-    if(fresh >= PENDING_MAX){ log('join-cap', { gid, pending: fresh }); return; }  // B10: ไม่สร้าง ไม่ตอบ
+    if(fresh >= PENDING_MAX){ log('join-cap', { gid, pending: fresh }); return 'skip'; }  // B10: ไม่สร้าง ไม่ตอบ
     const code = randomCode(taken);
-    if(!code){ log('join-nocode', { gid }); return; }
-    // ชื่อกลุ่ม + จำนวนสมาชิก (S2) ถ้าเรียกไม่สำเร็จ join ยังต้องสำเร็จ (memberCount ไม่ใส่ฟิลด์เลย)
-    const [sum, cnt] = await Promise.all([
-      Promise.resolve().then(() => line.getGroupSummary(gid)).catch(e => { log('summary-error', { gid, code: errCode(e) }); return null; }),
-      typeof line.getGroupMemberCount === 'function'
-        ? Promise.resolve().then(() => line.getGroupMemberCount(gid)).catch(e => { log('member-count-error', { gid, code: errCode(e) }); return null; })
-        : null
-    ]);
+    if(!code){ log('join-nocode', { gid }); return 'skip'; }
     const name = str(sum && sum.groupName).replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, MAX_GROUP_NAME);
     const iso = new Date(t).toISOString();
     const doc = { name, code, status: 'pending', firstSeenAt: iso, lastSeenAt: iso };
@@ -227,13 +258,53 @@ function createHandler(deps){
     if(Number.isInteger(count) && count >= 0 && count <= 100000) doc.memberCount = count;
     try {
       // create() เท่านั้น: เอกสารที่มีอยู่แล้ว (revoked / approved) จะไม่ถูกทับ (S3 ข)
-      await dbq(ref.create(doc));
+      await dbj(ref.create(doc));
     } catch(e){
-      log(isAlreadyExists(e) ? 'join-existing' : 'join-error', { gid, code: errCode(e) });
-      return;
+      if(isAlreadyExists(e)){ log('join-existing', { gid }); return 'skip'; }
+      // M5-d: คำตอบอาจหายทั้งที่เขียนสำเร็จ -> get ซ้ำก่อนสรุป (ไม่งั้นเชิญใหม่จะเจอ join-existing เงียบตลอดไป)
+      let again = null;
+      try { again = await dbj(ref.get()); } catch(e2){ log('join-recheck-error', { gid, code: errCode(e2) }); }
+      const x = again && again.exists ? (again.data() || {}) : null;
+      if(!(x && x.code === code && x.firstSeenAt === iso)) return fail('create', e);
+      log('join-recovered', { gid, code: errCode(e) });
     }
     seenWrites.set(gid, t);
     await reply(ev, [textMsg(T.joined(code))], { gid, result: 'joined' });
+    return 'ok';
+  }
+  async function releaseClaim(ev){
+    const id = ev.webhookEventId;
+    if(typeof id !== 'string' || !EVENT_ID_RE.test(id)) return;
+    try { await withTimeout(db.collection('lineBotState').doc('evt_' + id).delete(), CLAIM_RELEASE_MS); log('claim-released', {}); }
+    catch(e){ log('claim-release-error', { code: errCode(e) }); }
+  }
+
+  // ---------------------------------------------------------- สมาชิกเข้า/ออก (bugfix-round2 M5-a)
+  // ไม่ claim (เขียนซ้ำได้ ผลเหมือนเดิม) · ไม่ reply · ห้ามอ่าน ev.joined / ev.left (มี userId)
+  async function onMemberChange(ev, deadlineAt){
+    const src = ev.source || {};
+    const type = ev.type === 'memberJoined' ? 'joined' : 'left';
+    if(src.type !== 'group' || !GROUP_ID_RE.test(src.groupId || '')){ log('member-ignored', { type }); return; }
+    const gid = src.groupId;
+    if(rateLimited('member:' + gid)){ log('member-rate-limited', { gid, type }); return; }
+    const ref = db.collection('lineGroups').doc(gid);
+    let snap;
+    try { snap = await dbq(ref.get()); } catch(e){ log('member-error', { gid, type, step: 'get', code: errCode(e) }); return; }
+    if(!snap.exists){ log('member-unknown', { gid, type }); return; }      // ไม่สร้างเอกสาร (M5-a2)
+    let count = null;
+    if(typeof line.getGroupMemberCount === 'function'){
+      const to = Math.max(1, Math.min(MEMBER_COUNT_TIMEOUT_MS, (deadlineAt || Infinity) - nowMs() - 1000));
+      try {
+        const r = await withTimeout(Promise.resolve().then(() => line.getGroupMemberCount(gid)), to);
+        const n = r && Number(r.count);
+        if(Number.isInteger(n) && n >= 0 && n <= 100000) count = n;
+      } catch(e){ log('member-count-error', { gid, type, code: errCode(e) }); }
+    }
+    const patch = { memberChangedAt: now().toISOString() };     // นับไม่ได้ก็ยังเขียน (สัญญาณหลัก)
+    if(count !== null) patch.memberCount = count;
+    try { await dbq(ref.update(patch)); }
+    catch(e){ log('member-error', { gid, type, step: 'update', code: errCode(e) }); return; }
+    log('member-changed', { gid, type, counted: count !== null });
   }
 
   // ---------------------------------------------------------- ข้อความ (ส่วน C)
@@ -567,7 +638,16 @@ function createHandler(deps){
         if(!isFinite(ts) || t - ts > EVENT_MAX_AGE_MS || ts - t > EVENT_MAX_AGE_MS){ log('stale-event', {}); return; }
         if(ev.type === 'join'){
           if(!(await claimEvent(ev))) return;
-          await onJoin(ev);
+          const r = await onJoin(ev, deadlineAt);
+          if(r === 'retry'){
+            // M5-d: บอกกลุ่มก่อน (reply token อายุสั้น) พร้อมคืน claim ให้ redelivery ทำใหม่ได้
+            await Promise.all([
+              reply(ev, [textMsg(T.joinFailed)], { gid: str((ev.source || {}).groupId), result: 'join-failed' }),
+              releaseClaim(ev)
+            ]);
+          }
+        } else if(ev.type === 'memberJoined' || ev.type === 'memberLeft'){
+          await onMemberChange(ev, deadlineAt);
         } else if(ev.type === 'message'){
           await onMessage(ev, deadlineAt);
         }

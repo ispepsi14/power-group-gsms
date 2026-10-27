@@ -1,9 +1,9 @@
 // lookupMyCar — callable ของหน้า ?reception (bugfix-sweep K3 ขั้นที่ 1 · 24 ต.ค. 2569)
 // spec: docs/specs/bugfix-sweep.decisions.md "คำตอบเจ้าของ K3" · สัญญา: หัวไฟล์ tests/line-bot-sweep.guard.js
 //
-// createLookupMyCar(deps) -> async (request) => { cars: [car] }
+// createLookupMyCar(deps) -> async (request) => { cars: [car], v: 2 }   (+ includesDelivered: true เมื่อ purpose 'feedback')
 //   deps = { db (Admin SDK Firestore), now: () => Date, log?: fn, HttpsError?: class(code, message) }
-//   request = { data: { last4, queueNo }, auth: { uid } | null, rawRequest? }   (รูปของ onCall v2)
+//   request = { data: { last4, queueNo, purpose? }, auth: { uid } | null, rawRequest? }   (รูปของ onCall v2)
 //
 // กติกา:
 //  - ต้องมี auth (หน้าเว็บล็อกอิน anonymous ก่อนเรียก) ไม่มี = 'unauthenticated'
@@ -16,9 +16,17 @@
 //  - คืนเฉพาะฟิลด์ที่ receptionResultHtml / receptionQuoteSheetHtml / chatSetCars ใช้
 //    ห้ามคืนชื่อลูกค้า / เบอร์ (แม้ 4 ตัวท้าย) / notes / ลายเซ็น / customerId / รูป
 //
-// ขั้นที่ 1 อ่านค่าที่แอปคำนวณไว้แล้วใน board/ (ยอดเงิน / ป้ายสถานะ คำนวณด้วยฟังก์ชันเดียวกับใบที่ปริ้น
-// ห้ามคำนวณซ้ำที่นี่ให้เพี้ยน) แล้วยืนยันกับ jobs/ ว่าใบยังอยู่ ไม่ถูกลบ ไม่ส่งมอบแล้ว
-// ขั้นที่ 2 (เวอร์ชันถัดไป) จะตัดราคา/อะไหล่ออกจาก board/ — ตอนนั้นต้องย้ายแหล่งข้อมูลของไฟล์นี้ด้วย
+// รุ่น 2 (bugfix-round2 S2 · 26 ต.ค. 2569 · spec docs/specs/bugfix-round2.backend.md §1.6):
+//  - อ่านค่าที่แอปคำนวณไว้แล้ว (ยอดเงิน / ป้ายสถานะ คำนวณด้วยฟังก์ชันเดียวกับใบที่ปริ้น ห้ามคำนวณซ้ำที่นี่)
+//    จาก boardPrivate/ (สำเนาเต็มที่อ่านได้เฉพาะ Admin SDK) และ board/ (ช่วงเปลี่ยนผ่าน: เครื่อง 4.6.8
+//    ยังเขียนราคาลง board/) ค้นทั้งสองทางพร้อมกัน รวมตาม id ให้ boardPrivate ชนะ — ลูกค้าคนเดียว
+//    อาจมีใบหนึ่งอยู่ใน boardPrivate อีกใบยังอยู่แค่ board/
+//  - ยืนยันกับ jobs/ ว่าใบยังอยู่ ไม่ถูกลบ ไม่ส่งมอบแล้ว (เหมือนรุ่น 1)
+//  - ผลมี v: 2 เสมอ (ปุ่มตรวจในแอปแยก function รุ่น 1 ที่ยังไม่ deploy ใหม่ออกได้)
+//  - purpose === 'feedback' (หน้า ?feedback): ไม่กรองส่งมอบ/เอารถลง (ยังกรอง deletedAt) แต่รถที่ส่งมอบแล้ว
+//    ต้อง updatedAt ไม่เกิน FEEDBACK_MAX_AGE_MS และ car เหลือเฉพาะ FEEDBACK_FIELDS (security ข้อ 4:
+//    ไล่ last4 ได้ ห้ามคืนราคา / อะไหล่ / อาการของรถที่ส่งมอบไปแล้ว) + includesDelivered: true
+//  - ไม่เขียนอะไรเลย (chatGrants เป็นงานรอบหน้า) · ทุก query เป็น equality ฟิลด์เดียว (ไม่ต้องมี composite index)
 'use strict';
 
 const LAST4_RE = /^[0-9]{4}$/;
@@ -29,6 +37,8 @@ const RATE_MAX_PER_UID = 10;          // คนจริงพิมพ์ผิ
 const RATE_MAX_PER_IP = 30;           // uid anonymous สร้างใหม่ได้ฟรี — กันที่ IP อีกชั้น (ร้านใช้ wifi เดียวกันหลายคน)
 const MAX_CANDIDATES = 5;             // เบอร์ 4 ตัวท้าย + คิวเดียวกัน มากกว่านี้ = ผิดปกติ
 const INACTIVE = ['delivered', 'carout'];   // เหมือน receptionDirectLookup ของหน้าเว็บ
+const FEEDBACK_MAX_AGE_MS = 14 * 24 * 3600 * 1000;
+const FEEDBACK_FIELDS = ['id', 'queueNo', 'plate', 'province', 'brand', 'model', 'status', 'createdAt'];
 
 // ฟิลด์ของ board/ ที่หน้า reception ใช้ (ไม่มี phoneLast4 / thumb / bay)
 const BOARD_FIELDS = ['queueNo', 'queueLabel', 'plate', 'province', 'brand', 'model', 'color',
@@ -74,6 +84,12 @@ function toCar(id, b){
   };
 }
 
+function toFeedbackCar(car){
+  const o = {};
+  FEEDBACK_FIELDS.forEach(k => { o[k] = car[k]; });
+  return o;
+}
+
 function createLookupMyCar(deps){
   if(!deps || !deps.db) throw new Error('createLookupMyCar: ต้องมี db');
   const db = deps.db;
@@ -116,18 +132,39 @@ function createLookupMyCar(deps){
     const queueNo = queueRaw.trim();
     if(!queueNo || queueNo.length > QUEUE_MAX_LEN) throw new HttpsError('invalid-argument', 'เลขคิวไม่ถูกต้อง');
 
+    const feedback = d.purpose === 'feedback';
+    const t0 = now().getTime();
+    // รถที่ยังอยู่ในร้าน = ผ่าน · รถส่งมอบ/เอารถลง = ผ่านเฉพาะ feedback ที่ updatedAt ไม่เกิน 14 วัน
+    const statusOk = (status, updatedAt) => {
+      if(INACTIVE.indexOf(status) < 0) return true;
+      if(!feedback) return false;
+      const at = Date.parse(str(updatedAt));
+      return isFinite(at) && t0 - at <= FEEDBACK_MAX_AGE_MS && at - t0 <= FEEDBACK_MAX_AGE_MS;
+    };
+    const done = cars => {
+      const out = { cars, v: 2 };
+      if(feedback) out.includesDelivered = true;
+      return out;
+    };
+
     let rows;
     try {
       // equality ฟิลด์เดียว (single-field index อัตโนมัติ) · ไม่ where queueNo เพราะ "04" ต้องเท่ากับ "4"
-      const s = await dbq(db.collection('board').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get());
-      rows = s.docs.map(x => ({ id: x.id, b: x.data() || {} }))
-        .filter(r => sameQueueNo(r.b.queueNo, queueNo) && INACTIVE.indexOf(r.b.status) < 0)
+      const [sp, sb] = await Promise.all([
+        dbq(db.collection('boardPrivate').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get()),
+        dbq(db.collection('board').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get())
+      ]);
+      const merged = new Map();
+      (sb.docs || []).forEach(x => merged.set(x.id, x.data() || {}));
+      (sp.docs || []).forEach(x => merged.set(x.id, x.data() || {}));   // boardPrivate ชนะ
+      rows = Array.from(merged, ([id, b]) => ({ id, b }))
+        .filter(r => sameQueueNo(r.b.queueNo, queueNo) && statusOk(r.b.status, r.b.updatedAt))
         .slice(0, MAX_CANDIDATES);
     } catch(e){
       log('board-error', { code: str(e && e.code).slice(0, 40) || 'error' });
       throw new HttpsError('unavailable', 'ระบบดึงข้อมูลไม่ได้ตอนนี้');
     }
-    if(!rows.length){ log('done', { found: 0 }); return { cars: [] }; }
+    if(!rows.length){ log('done', { found: 0, feedback }); return done([]); }
 
     // ยืนยันกับใบงานจริง: board/ ของใบที่ลบลงถังขยะ / ส่งมอบแล้วอาจค้างอยู่
     let jobs;
@@ -142,14 +179,15 @@ function createLookupMyCar(deps){
     }
     const byId = {};
     (jobs || []).forEach(s => { if(s && s.exists) byId[s.id] = s.data() || {}; });
-    const cars = rows.filter(r => {
+    let cars = rows.filter(r => {
       const j = byId[r.id];
-      return j && !j.deletedAt && INACTIVE.indexOf(j.status) < 0 && sameQueueNo(j.queueNo, queueNo);
+      return j && !j.deletedAt && statusOk(j.status, r.b.updatedAt) && sameQueueNo(j.queueNo, queueNo);
     }).map(r => toCar(r.id, r.b));
     cars.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    log('done', { found: cars.length });
-    return { cars };
+    if(feedback) cars = cars.map(toFeedbackCar);
+    log('done', { found: cars.length, feedback });
+    return done(cars);
   };
 }
 
-module.exports = { createLookupMyCar };
+module.exports = { createLookupMyCar, FEEDBACK_FIELDS, FEEDBACK_MAX_AGE_MS };
