@@ -336,6 +336,172 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- สต็อกอะไหล่ (parts-stock) ----------
+    // ไม่อยู่ใน SYNC_COLLECTIONS/flushState — แอพเขียนด้วย runTransaction ของตัวเองเท่านั้น
+    // หลัก (S1): qty ของ stockItems เปลี่ยนได้ "คู่กับ" stockMoves ใหม่ 1 ใบในคำขอเดียวกันเท่านั้น
+    //   item.lastMoveId ชี้ move ที่ "ยังไม่มีก่อนคำขอนี้" และ qty ใหม่ = qty เดิม + delta ของ move นั้น
+    //   ใช้กับทุกคนรวมแอดมิน — แอดมินเปลี่ยนยอดได้ทางเดียวคือ move 'adjust' พร้อมเหตุผล
+    function stockItemPath(iid) { return /databases/$(database)/documents/stockItems/$(iid); }
+    function stockMovePath(mid) { return /databases/$(database)/documents/stockMoves/$(mid); }
+    function strMax(v, n) { return v is string && v.size() <= n; }
+
+    function stockItemKeys() {
+      return ['masterPartId','name','nameKey','brand','brandKey','fits','fitsKey',
+              'category','unit','qty','minQty','location','active','lastMoveId',
+              'createdAt','createdBy','createdByUid','updatedAt','updatedBy','updatedByUid'];
+    }
+    function stockMoveKeys() {
+      return ['itemId','type','delta','qtyBefore','qtyAfter','jobId','rowId','seq','jobNumber',
+              'partName','supplier','billNo','reason','token','at','serverAt','by','byUid'];
+    }
+
+    // ช่องข้อความทุกช่องของรายการ (ทั้ง create และ update ทุกทาง)
+    function stockItemTextOk(d) {
+      return strMax(d.name, 120) && strMax(d.get('nameKey', ''), 120)
+        && strMax(d.get('brand', ''), 40) && strMax(d.brandKey, 60)
+        && strMax(d.get('fits', ''), 80) && strMax(d.fitsKey, 60)
+        && strMax(d.get('category', ''), 40) && strMax(d.get('unit', ''), 20)
+        && strMax(d.get('location', ''), 40)
+        && strMax(d.get('updatedAt', ''), 40) && strMax(d.get('updatedBy', ''), 80);
+    }
+
+    // S1 — qty ที่เปลี่ยน ต้องมาพร้อม move ใหม่ที่เพิ่งเกิดในคำขอนี้ ของคนที่ล็อกอินอยู่เอง
+    function qtyByNewMove(itemId, oldQty) {
+      let mid = request.resource.data.lastMoveId;
+      let mv  = getAfter(stockMovePath(mid)).data;
+      return mid is string
+        && !exists(stockMovePath(mid))
+        && mv.itemId == itemId
+        && mv.byUid == request.auth.uid
+        && mv.delta == request.resource.data.qty - oldQty
+        && mv.qtyAfter == request.resource.data.qty;
+    }
+
+    match /stockItems/{itemId} {
+      allow get, list: if hasAccess();
+
+      allow create: if hasAccess()
+        && request.resource.data.keys().hasOnly(stockItemKeys())
+        && itemId == request.resource.data.masterPartId + '|'
+                     + request.resource.data.brandKey + '|' + request.resource.data.fitsKey
+        && request.resource.data.qty is int
+        && request.resource.data.minQty is int && request.resource.data.minQty >= 0
+        && request.resource.data.active is bool
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && strMax(request.resource.data.get('createdBy', ''), 80)
+        && stockItemTextOk(request.resource.data)
+        && exists(/databases/$(database)/documents/masterParts/$(request.resource.data.masterPartId))
+        && (
+             // S2 พนักงาน (และแอดมิน) — สร้างตอนรับของเข้าครั้งแรก: คู่ move 'receive' เท่านั้น
+             (request.resource.data.active == true
+              && request.resource.data.minQty == 0
+              && qtyByNewMove(itemId, 0)
+              && getAfter(stockMovePath(request.resource.data.lastMoveId)).data.type == 'receive')
+             // แอดมินสร้างรายการเปล่าล่วงหน้า — qty 0 ไม่มี move (ไม่ใช่การเปลี่ยนยอด)
+          || (isAdmin()
+              && request.resource.data.qty == 0
+              && !('lastMoveId' in request.resource.data))
+        );
+
+      allow update: if hasAccess()
+        && request.resource.data.keys().hasOnly(stockItemKeys())
+        && request.resource.data.updatedByUid == request.auth.uid
+        && stockItemTextOk(request.resource.data)
+        && (
+             // ก. เปลี่ยนยอด (ทุกคน รวมแอดมิน) — แตะได้แค่ qty + lastMoveId + updated*
+             (request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['qty','lastMoveId','updatedAt','updatedBy','updatedByUid'])
+              && request.resource.data.qty is int
+              && qtyByNewMove(itemId, resource.data.qty)
+              // รายการที่ปิดแล้ว: รับ/เบิกไม่ได้ คืนได้ · แอดมิน adjust ได้
+              && (resource.data.active == true
+                  || getAfter(stockMovePath(request.resource.data.lastMoveId)).data.type in ['return','adjust']))
+             // ข. ตั้งค่ารายการ (แอดมินเท่านั้น) — ห้ามแตะ qty/lastMoveId/ตัวตน/ผู้สร้าง (S3)
+          || (isAdmin()
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                   .hasAny(['qty','lastMoveId','masterPartId','brandKey','fitsKey',
+                            'createdAt','createdBy','createdByUid'])
+              && request.resource.data.minQty is int && request.resource.data.minQty >= 0
+              && request.resource.data.active is bool)
+        );
+
+      allow delete: if false;   // ปิดรายการ = active:false
+    }
+
+    // move ของใบงาน: id = 'j_' + jobId + '|' + rowId + '|' + seq · seq ต่อกันห้ามข้าม · ใบงานต้องมีจริง
+    function stockJobMoveOk(moveId) {
+      let d = request.resource.data;
+      return d.jobId is string && d.jobId.matches('^[A-Za-z0-9_-]{1,40}$')
+        && d.rowId is string && d.rowId.matches('^[A-Za-z0-9_-]{1,40}$')
+        && d.seq is int && d.seq >= 1
+        && moveId == 'j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq)
+        && (d.seq == 1
+            || exists(stockMovePath('j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq - 1))))
+        && exists(/databases/$(database)/documents/jobs/$(d.jobId));
+    }
+
+    // คืน: ต้องต่อจาก move ก่อนหน้า (seq-1) ของบรรทัดเดียวกัน ที่เป็น issue/return ของ itemId เดียวกัน
+    //   ไล่ย้อนตามสายจะเจอ issue ของรายการนี้เสมอ (seq 1 คืนไม่ได้) · ไม่ผูก |1 ตายตัว:
+    //   บรรทัดที่คืนครบแล้วเบิกรายการอื่นต่อได้ (แอพ: stockReturn คืนเข้า itemId ของ move ล่าสุดของบรรทัด)
+    //   ยอดคืน ≤ ยอดเบิกค้าง ตรวจในแอพ (stockRowOut) — กฎรวมผลทั้งสายไม่ได้ในงบ get()
+    function stockReturnBoundOk() {
+      let d = request.resource.data;
+      let prev = get(stockMovePath('j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq - 1))).data;
+      return d.seq >= 2
+        && prev.type in ['issue','return']
+        && prev.itemId == d.itemId;
+    }
+
+    // ช่องข้อความทุกช่องของ move — ใช้กับทุก type
+    function stockMoveTextOk(d) {
+      return strMax(d.by, 80) && strMax(d.at, 40)
+        && strMax(d.get('token', ''), 24)
+        && strMax(d.get('jobNumber', ''), 40) && strMax(d.get('partName', ''), 120)
+        && strMax(d.get('supplier', ''), 80) && strMax(d.get('billNo', ''), 40)
+        && strMax(d.get('reason', ''), 200);
+    }
+
+    match /stockMoves/{moveId} {
+      allow get, list: if hasAccess();
+
+      allow create: if hasAccess()
+        && request.resource.data.keys().hasOnly(stockMoveKeys())
+        && request.resource.data.byUid == request.auth.uid            // S4
+        && stockMoveTextOk(request.resource.data)
+        && request.resource.data.serverAt == request.time             // S5
+        && request.resource.data.itemId is string
+        && request.resource.data.delta is int
+        && request.resource.data.delta != 0
+        && request.resource.data.delta >= -9999 && request.resource.data.delta <= 9999
+        && request.resource.data.qtyAfter is int
+        && request.resource.data.qtyBefore is int
+        && request.resource.data.qtyBefore + request.resource.data.delta == request.resource.data.qtyAfter
+        // move ต้องมาพร้อมการเปลี่ยน qty ของรายการที่อ้าง (move ลอย ๆ ไม่ได้)
+        && getAfter(stockItemPath(request.resource.data.itemId)).data.lastMoveId == moveId
+        && getAfter(stockItemPath(request.resource.data.itemId)).data.qty == request.resource.data.qtyAfter
+        && (
+             (request.resource.data.type == 'receive'
+              && request.resource.data.delta > 0
+              && moveId.matches('^r_[A-Za-z0-9]{6,24}$'))
+          || (request.resource.data.type == 'issue'
+              && request.resource.data.delta < 0
+              && stockJobMoveOk(moveId))
+          || (request.resource.data.type == 'return'
+              && request.resource.data.delta > 0
+              && stockJobMoveOk(moveId)
+              && stockReturnBoundOk())
+          || (request.resource.data.type == 'adjust'
+              && isAdmin()
+              && moveId.matches('^a_[A-Za-z0-9]{6,24}$')
+              && request.resource.data.reason is string
+              && request.resource.data.reason.size() <= 200
+              && request.resource.data.reason.matches('.*[^ ].*'))
+        );
+
+      allow update, delete: if false;   // ประวัติแก้/ลบไม่ได้ แม้แอดมิน
+    }
+
     // ---------- ปิดทุกอย่างที่ไม่ได้ระบุไว้ข้างบน ----------
     match /{document=**} {
       allow read, write: if false;

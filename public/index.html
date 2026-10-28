@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.6.9";
+  const APP_VERSION = "4.7.0";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3225,6 +3225,22 @@
               ฝั่ง functions/ (lookupMyCar รุ่น 2, Bot), firestore.rules, storage.rules เปลี่ยนด้วย — เจ้าของ deploy / publish เอง
 
               เทสต์ใหม่: tests/round2-app.guard.js · tests/round2-files.guard.js · tests/line-bot-round2.guard.js · tests/rules-emu/
+     v4.7.0 — สต็อกอะไหล่ (spec docs/specs/parts-stock.md + .backend.md + .security.md + .decisions.md · คำตอบเจ้าของ 28 ต.ค. 2569)
+              1. ชั้นข้อมูล: stockItems (1 เอกสาร / ชื่อ + แบรนด์ + รุ่นรถ, id = variantId) + stockMoves (ประวัติ เพิ่มอย่างเดียว)
+                 อยู่นอก SYNC_COLLECTIONS / flushState · ทุกการเปลี่ยนยอดเป็น runTransaction ของตัวเอง (item + move ในคำขอเดียว)
+                 · บรรทัดใบงานไม่มีช่องสต็อก ยอดเบิกต่อบรรทัดคิดจาก stockMoves where jobId == · ออฟไลน์ = ไม่เริ่ม tx
+                 · ตัวฟังถูกปฏิเสธ (กฎยังไม่ publish) = ปิดสต็อกทั้ง session ขึ้นแถบ "ยังไม่ได้เปิดสิทธิ์สต็อก"
+              2. หน้า "สต็อก" (เมนูบน + แถบล่างช่องที่ 3, ตัวเลขแดง = จำนวนรายการใกล้หมด/หมด/ติดลบ): ทุกชื่อใน
+                 รายการอะไหล่กลางโผล่ (ยังไม่มีของ = "ยังไม่มีของ") · ค้นหา + ตัวกรอง (จำในเครื่อง gsms.stockFilter)
+                 · รับของเข้า (จำนวน + ร้านที่ซื้อ + เลขบิล · รายการใหม่เกิดตอนรับเข้าครั้งแรก) · ดูประวัติเข้า-ออก
+                 · แอดมิน: แก้ไขรายการ (ขั้นต่ำ ที่วาง หน่วย) ปิด/เปิดรายการ ปรับยอด (ต้องใส่เหตุผล) แสดงที่ปิดแล้ว
+              3. ใบงาน: ปุ่ม "เบิกจากสต็อก" ที่บรรทัด (ต้องแตะเลือกรายการเองทุกครั้ง · ของไม่พอ = ถามก่อนติดลบ
+                 · ใบค้างบันทึก = "รอบันทึกใบงานก่อน") · "คืนสต็อก" · ลบบรรทัด / ล้างทั้งหมด / ลูกค้าไม่ทำ / ลบใบ
+                 ที่เบิกไว้ = ถามเรื่องคืนสต็อก (askStockBackDialog) ไม่คืนเงียบ · เปลี่ยนสถานะแบบกลุ่ม / ปิดใบย้อนหลัง ไม่ถาม
+              4. ใบพิมพ์ / กระดาน / สรุป LINE ไม่เปลี่ยน (แถบสต็อกในใบงานเป็น .no-print)
+              firestore.rules เปลี่ยน (stockItems / stockMoves) — เจ้าของ publish เองใน Firebase Console ก่อนใช้งาน
+
+              เทสต์ใหม่: tests/stock.guard.js · tests/stock-rules.guard.js · tests/rules-emu/ (สต็อก)
               -->
 
 
@@ -5136,6 +5152,10 @@
     cursor:pointer; user-select:none; background:var(--card-bg);
     display:inline-flex; align-items:center; gap:6px;
   }
+  /* v4.7.0 — ชิปที่เป็น <button> (หน้าสต็อก) ไม่สืบสี/ฟอนต์เหมือน <span> → ดำ Arial ในโหมดมืด
+     ใส่แค่ family/weight/line-height (ไม่ใช่ font:inherit กัน font-size ของ .chk-chip โดนทับ)
+     button.chk-chip (0,1,1) แพ้ .chk-chip.checked (0,2,0) → ชิปที่เลือกสีเดิม */
+  button.chk-chip{color:var(--text); font-family:inherit; font-weight:inherit; line-height:inherit;}
   .chk-chip.checked{background:var(--dark); color:#fff; border-color:var(--dark);}
   .chk-chip-del{
     background:none; border:none; padding:1px; margin:0; line-height:0; cursor:pointer;
@@ -7820,6 +7840,99 @@ html[data-mode="dark"] .lf-skip{color:#fbbf24;}
   color:var(--muted,#6b7280);}
 .ai-book-stat b{font-size:15px;color:#1f9d55;}
 html[data-mode="dark"] .ai-book-stat b{color:#8ee5b0;}
+/* v4.7.0 สต็อกอะไหล่ — สีทุกตัวเป็นตัวแปร (สลับโหมดมืดเอง · spec U0/U11) · ไม่มีสีเขียว */
+.topnav-btn .stock-nav-badge{margin-left:6px;}
+.bn-btn{position:relative;}
+.bn-btn .stock-nav-badge{position:absolute; top:5px; left:calc(50% + 6px); margin:0; min-width:18px; height:18px; font-size:10.5px; padding:0 5px;}
+.stock-page .stock-head-top{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.stock-page .stock-head-top h3{margin:0;}
+.stock-summary{margin:6px 0 10px;}
+.stock-search{margin:8px 0;}
+.stock-filters{display:flex; gap:8px; align-items:center; overflow-x:auto; padding-bottom:2px;}
+.stock-filters .chk-chip{flex:0 0 auto; white-space:nowrap;}
+.stock-closed-toggle{display:flex; align-items:center; gap:8px; min-height:44px; margin-top:6px; width:max-content; max-width:100%; font-size:14px; color:var(--text-2); cursor:pointer;}
+.stock-closed-toggle input{width:20px; height:20px; margin:0; flex:0 0 auto;}
+.stock-notice{background:var(--surface-2); color:var(--text); border-left:4px solid var(--hazard); border-radius:8px; padding:10px 12px; margin:0 0 12px; line-height:1.5;}
+.stock-notice.stock-denied{font-weight:700;}
+.stock-cat-label{font-weight:700; font-size:12.5px; color:var(--text); background:var(--surface-2); border-left:4px solid var(--navy); border-radius:6px; padding:7px 10px; margin:14px 0 8px; letter-spacing:.3px;}
+.stock-group{padding:10px 14px; margin-bottom:10px;}
+.stock-name-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+.stock-name{font-weight:700; color:var(--text); white-space:normal; line-height:1.5; flex:1 1 auto;}
+.stock-total{white-space:nowrap;}
+.stock-empty-name{opacity:.8;}
+.stock-empty-name .stock-name{color:var(--text-2); font-weight:600;}
+.stock-item-row{display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; align-items:center; gap:10px;
+  border-top:1px solid var(--border); padding:8px 0; min-height:56px; cursor:pointer;}
+.stock-item-row.closed{color:var(--text-2);}
+.stock-iv{display:flex; flex-direction:column; min-width:0; line-height:1.5;}
+.stock-iv-main{color:var(--text); white-space:normal;}
+.stock-item-row.closed .stock-iv-main{color:var(--text-2);}
+.stock-iv-sub{font-size:12.5px;}
+.stock-qty{font-family:var(--font-mono); font-size:18px; font-weight:700; color:var(--text); text-align:right; white-space:nowrap; min-width:2.5em;}
+.stock-qty.neg{color:var(--red-ink); font-weight:800;}
+.stock-tag{display:inline-block; border-radius:999px; padding:2px 9px; font-size:12px; font-weight:700; white-space:nowrap;}
+.stock-low-tag{background:var(--red-bg); color:var(--red-ink);}
+.stock-low-tag.neg{background:var(--red); color:var(--card-bg);}
+html[data-mode="dark"] .stock-low-tag.neg{background:var(--red-bg); color:var(--red-ink); box-shadow:inset 0 0 0 1px var(--red-ink);}
+.stock-closed-tag{background:var(--surface-2); color:var(--text-2);}
+.stock-row-btns{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;}
+.stock-btn-narrow{display:none;}
+.stock-more-btn{display:block; margin:6px auto 16px;}
+@media (max-width:1100px), (pointer:coarse) and (max-width:1400px){
+  .stock-btn-wide{display:none;}
+  .stock-btn-narrow{display:inline-flex; min-width:44px; min-height:44px;}
+}
+@media (max-width:700px){
+  .stock-qty{font-size:22px;}
+  .stock-item-row{grid-template-columns:minmax(0,1fr) auto auto;}
+  .stock-row-btns{display:none;}
+  .stock-receive-main{width:100%;}
+}
+/* บรรทัดใบงาน */
+.stock-line{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px;}
+.stock-issued-chip{display:inline-flex; align-items:center; gap:5px; background:var(--surface-2); border:1px solid var(--text-2);
+  color:var(--text); border-radius:999px; padding:4px 10px; font-size:12.5px; line-height:1.4; white-space:normal;}
+/* กล่อง */
+.ui-modal.stock-modal{max-width:480px; width:100%; text-align:left;}
+.ui-modal.stock-modal.stock-history{max-width:560px;}
+.stock-modal .stock-lab{display:block; font-weight:600; font-size:13px; color:var(--text-2); margin:12px 0 6px;}
+.stock-modal select, .stock-modal .ui-modal-input{width:100%;}
+.stock-modal .stock-ctx{margin:2px 0 6px; line-height:1.5; color:var(--text);}
+.stock-modal .stock-hint{font-size:12.5px; margin-top:4px;}
+.stock-picked{display:flex; align-items:center; gap:10px; justify-content:space-between; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px;}
+.stock-picked-sub{margin-top:6px; color:var(--text-2);}
+.stock-chip-row{display:flex; gap:6px; flex-wrap:wrap;}
+.stock-pick-short{max-height:240px; overflow-y:auto;}
+.stock-new-note{background:var(--hazard); color:var(--hazard-dark); border-radius:8px; padding:8px 10px; margin-top:12px; font-weight:600; line-height:1.5;}
+.stock-warn{background:var(--surface-2); color:var(--text); border-left:4px solid var(--hazard); border-radius:6px; padding:7px 10px; margin:8px 0; line-height:1.5;}
+.stock-err{color:var(--red-ink); font-weight:600; min-height:1.2em; margin-top:8px;}
+.stock-err:empty{display:none;}
+.stock-stepper{display:inline-flex; align-items:center; gap:6px;}
+.stock-step-btn{min-width:44px; min-height:44px; padding:0; font-size:20px; line-height:1;}
+.stock-step-input{width:84px; text-align:center; font-family:var(--font-mono); font-size:18px; min-height:44px;}
+.stock-qty-line{display:flex; align-items:center; gap:10px;}
+.stock-diff{margin-top:6px; font-family:var(--font-mono); color:var(--text);}
+.stock-diff.neg{color:var(--red-ink);}
+.stock-pick-list{max-height:50vh; overflow-y:auto; margin-top:8px;}
+.stock-pick-row{display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; width:100%; min-height:56px;
+  text-align:left; background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; margin-bottom:6px; font:inherit; cursor:pointer;}
+.stock-pick-row:hover{background:var(--surface);}
+.stock-pick-row .sp-main{white-space:normal; line-height:1.5;}
+.stock-other-toggle{background:none; border:none; color:var(--text-2); font:inherit; font-weight:600; padding:10px 0; min-height:44px; cursor:pointer;}
+.stock-edit-danger{margin-top:16px; padding-top:12px; border-top:1px solid var(--border);}
+.stock-history-list{max-height:60vh; overflow-y:auto;}
+.stock-move-row{border-top:1px solid var(--border); padding:8px 0;}
+.stock-move-row .smr-top{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+.stock-move-row .smr-time{font-size:12.5px; color:var(--text-2);}
+.stock-move-row .smr-delta{font-family:var(--font-mono); font-weight:700; color:var(--text);}
+.stock-move-row .smr-sub{font-size:12.5px; margin-top:3px; line-height:1.5;}
+.stock-move-tag{border-radius:999px; padding:1px 8px; font-size:12px; font-weight:700; background:var(--surface-2); color:var(--text);}
+.stock-move-tag.t-issue{background:var(--red-bg); color:var(--red-ink);}
+.stock-move-tag.t-adjust{background:var(--hazard); color:var(--hazard-dark);}
+.stock-job-link{background:none; border:none; padding:0; font:inherit; color:var(--text); text-decoration:underline; cursor:pointer;}
+@media (max-width:1100px), (pointer:coarse) and (max-width:1400px){
+  .bottom-nav{grid-template-columns:repeat(5,1fr);}
+}
 </style>
 
 <style>
@@ -10436,7 +10549,8 @@ function icon(name, size){
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
     bolt: '<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>',
     checkbox: '<rect x="4" y="4" width="16" height="16" rx="3"/>',
-    book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 0 4 23.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 1 2.5 2.5z"/>'
+    book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 0 4 23.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 1 2.5 2.5z"/>',
+    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/>'   // v4.7.0 สต็อก
   };
   return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;">${paths[name]||''}</svg>`;
 }
@@ -11764,6 +11878,7 @@ function handleAuthChange(user){
     clearJobShare();
     // v4.6.7 — รายชื่อกลุ่ม LINE (ของแอดมิน) และบรรทัดเตือนภาพปริ้น อยู่ในหน่วยความจำเท่านั้น ล้างเมื่อออกจากระบบ
     view.lineGroups = []; view.lineGroupsState = ''; view.lineGroupBusy = null; view.printCaptureFail = {};
+    stockResetState();   // v4.7.0 — ยอด/ประวัติสต็อกอยู่ในหน่วยความจำเท่านั้น ล้างเมื่อออกจากระบบ
     render();   // goes through the hub gate first, then falls through to renderLogin()
     return;
   }
@@ -11953,6 +12068,1715 @@ function startSync(){
     if(dataReady) safeRender();
   });
   listeners.push(unsubBoardMode);
+
+  /* v4.7.0 สต็อกอะไหล่ — ตัวฟังของตัวเอง ไม่นับใน pending (หน้าโหลดไม่รอ) · push เข้า listeners เอง */
+  stockResetState();
+  startStockSync();
+}
+
+/* ================= v4.7.0 สต็อกอะไหล่ — ชั้นข้อมูล (parts-stock · docs/specs/parts-stock.backend.md §2/§4) =================
+   stockItems (1 เอกสาร / ชื่อ+แบรนด์+รุ่นรถ) + stockMoves (ประวัติ เพิ่มอย่างเดียว) — อยู่นอก SYNC_COLLECTIONS / flushState
+   ทุกการเปลี่ยนยอด = db.runTransaction ของตัวเอง เขียน item + move ใหม่ 1 ใบในคำขอเดียว (กฎ S1 ใน firestore.rules)
+   - ไม่แตะ state.jobs / shadow / config/main · ไม่เรียก saveState / flushState · บรรทัดใบงานไม่มีช่องสต็อก
+     ยอดเบิกของบรรทัดคำนวณจาก stockMoves where jobId== (stockRowOut) เท่านั้น
+   - transaction ใช้ตอนออฟไลน์ไม่ได้ (ไม่เข้าคิวแบบ batch) → ออฟไลน์ = ไม่เริ่ม tx เลย
+   - ตัวฟังอ่านถูกปฏิเสธ (กฎยังไม่ publish) → stockState.denied หยุดลองทั้ง session จนล็อกอินใหม่
+     write ถูกปฏิเสธหลังตัวฟังทำงานแล้ว = คำขอนั้นผิดเงื่อนไข ไม่ปิดสต็อกทั้ง session (security §6)
+   - ทุกฟังก์ชันที่เปลี่ยนยอดคืน Promise · ล้ม = reject Error ที่มี .code (ข้อความไทยจาก stockErrorMessage)
+   - ไม่มีช่องราคาซื้อในสต็อก (Q4) */
+const STOCK_RECENT_LIMIT = 200;
+const STOCK_MAX_N = 9999;
+const STOCK_ROW_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const STOCK_TOKEN_RE = /^[A-Za-z0-9]{6,24}$/;
+
+function stockEmptyState(){
+  return {
+    items: {},          // itemId -> ข้อมูลเอกสาร stockItems
+    loaded: false,      // ตัวฟัง stockItems ได้ snapshot สำเร็จอย่างน้อยครั้งหนึ่ง
+    denied: false,      // ตัวฟังอ่านถูกปฏิเสธ = กฎยังไม่ publish
+    error: null,        // รหัส error อื่นของตัวฟัง (ไม่ใช่ permission-denied)
+    job: null,          // { jobId, rows:[move...], loaded } ของใบที่เปิดอยู่ (stockWatchJob)
+    recent: null        // { rows:[move...], loaded } ประวัติรวมล่าสุด (stockWatchRecent)
+  };
+}
+let stockState = stockEmptyState();
+let stockItemsUnsub = null;
+let stockJobWatch = null;      // { jobId, unsub } กันเปิดตัวฟังซ้ำทุก render
+let stockRecentWatch = null;   // { unsub }
+
+/* ล้างทุกอย่างของสต็อกในหน่วยความจำ — เรียกตอนออกจากระบบ / เริ่ม sync ใหม่ */
+function stockResetState(){
+  [stockItemsUnsub, stockJobWatch && stockJobWatch.unsub, stockRecentWatch && stockRecentWatch.unsub]
+    .forEach(fn => { if(typeof fn === 'function'){ try{ fn(); }catch(e){} } });
+  stockItemsUnsub = null; stockJobWatch = null; stockRecentWatch = null;
+  stockState = stockEmptyState();
+}
+
+/* ---------- ฟังก์ชันล้วน (ไม่แตะ Firestore) ---------- */
+function stockKey(s){
+  return String(s || '').toUpperCase().replace(/\s+/g, '').replace(/[\/|]/g, '-').slice(0, 60);
+}
+function variantId(masterPartId, brand, fits){
+  return String(masterPartId || '') + '|' + (stockKey(brand) || '-') + '|' + (stockKey(fits) || '*');
+}
+function stockJobMoveId(jobId, rowId, seq){
+  return 'j_' + jobId + '|' + rowId + '|' + seq;
+}
+function stockRowMoves(moves, rowId){
+  return (moves || []).filter(m => m && m.rowId === rowId);
+}
+/* ยอดที่บรรทัดนี้เบิกค้าง = -(ผลรวม delta ของ issue/return ของบรรทัด) */
+function stockRowOut(moves, rowId){
+  return stockRowMoves(moves, rowId).reduce((s, m) => s - (Number(m.delta) || 0), 0);
+}
+function stockRowSeq(moves, rowId){
+  return stockRowMoves(moves, rowId).reduce((mx, m) => Math.max(mx, Number(m.seq) || 0), 0);
+}
+/* รายการสต็อกของ move ล่าสุด (seq สูงสุด) ของบรรทัด — ไม่มี = '' */
+function stockRowItemId(moves, rowId){
+  let best = null;
+  stockRowMoves(moves, rowId).forEach(m => { if(!best || (Number(m.seq) || 0) > (Number(best.seq) || 0)) best = m; });
+  return best ? String(best.itemId || '') : '';
+}
+/* บรรทัดที่ยังมีของเบิกค้างของใบหนึ่ง: [{ rowId, out, itemId, seq }] (ใช้กับกล่องถามคืนสต็อก) */
+function stockJobOutstanding(moves){
+  const ids = [];
+  (moves || []).forEach(m => { if(m && m.rowId && ids.indexOf(m.rowId) < 0) ids.push(m.rowId); });
+  return ids.map(rowId => ({ rowId, out: stockRowOut(moves, rowId), itemId: stockRowItemId(moves, rowId), seq: stockRowSeq(moves, rowId) }))
+    .filter(r => r.out > 0);
+}
+function stockIsLow(it){
+  if(!it || it.active === false) return false;
+  const q = Number(it.qty) || 0, mn = Number(it.minQty) || 0;
+  return q < 0 || (mn > 0 && q < mn);
+}
+/* จำนวนรายการใกล้หมด/หมด/ติดลบ (ป้ายบนเมนู) · ยังไม่โหลด / ถูกปฏิเสธ = 0 */
+function stockLowCount(){
+  if(!stockState.loaded || stockState.denied) return 0;
+  const items = stockState.items || {};
+  return Object.keys(items).filter(id => stockIsLow(items[id])).length;
+}
+function stockDeniedMessage(){
+  return isAdmin()
+    ? 'ยังไม่ได้เปิดสิทธิ์สต็อก — Publish กฎ Firestore ใน Firebase Console ก่อน'
+    : 'ยังไม่ได้เปิดสิทธิ์สต็อก — แจ้งแอดมิน';
+}
+/* token ของกล่องหนึ่งครั้ง (สร้างตอนเปิดกล่อง เก็บใน view) — uid() ให้ [a-z0-9] ตรงกับกฎ id r_/a_ + [A-Za-z0-9]{6,24} */
+function stockNewToken(){ return uid(); }
+/* ใบนี้มีของค้างบันทึกไหม (สูตรเดียวกับ flushState) — มี = ห้ามเบิก เพราะ id บรรทัดอาจยังไม่นิ่ง (backend §3) */
+function stockJobDirty(job){
+  if(!job) return true;
+  const sj = shadow && shadow.jobs;
+  return !sj || sj[job.id] !== stableJson(job);
+}
+/* masterPart ตัวแทนของชื่อเดียวกัน = id น้อยสุดในกลุ่ม mmNorm(name) (ทุกเครื่องได้ผลเดียวกัน · backend §2.2) */
+function stockCanonicalMasterPartId(id){
+  const mp = (state.masterParts || []).find(p => p && p.id === id);
+  if(!mp) return id;
+  const key = mmNorm(mp.name);
+  return (state.masterParts || []).filter(p => p && mmNorm(p.name) === key).map(p => p.id).sort()[0] || id;
+}
+function stockItemsList(){
+  const items = stockState.items || {};
+  return Object.keys(items).map(id => Object.assign({}, items[id], { id }));
+}
+/* move ของใบที่ฟังอยู่ (เรียงตาม seq) · ยังไม่ได้ฟัง/ยังไม่มา snapshot แรก = null (ปุ่มเบิก/คืนต้องรอ) */
+function stockJobMoves(jobId){
+  const j = stockState.job;
+  return (j && j.jobId === jobId && j.loaded) ? j.rows : null;
+}
+
+/* ---------- ตัวฟัง ---------- */
+function stockSortMoves(rows){
+  return rows.sort((a, b) => (Number(a.seq) || 0) - (Number(b.seq) || 0) || String(a.at || '').localeCompare(String(b.at || '')));
+}
+function stockListenErr(where, err){
+  const code = (err && err.code) || 'error';
+  console.warn('sync ' + where, err);
+  if(code === 'permission-denied') stockState.denied = true;   // ไม่ toast · ไม่ฟังใหม่จนล็อกอินใหม่
+  else stockState.error = code;
+  if(dataReady) safeRender();
+}
+/* ตัวฟัง stockItems ทั้งคอลเลกชัน */
+function startStockSync(){
+  if(!db) return;
+  if(stockItemsUnsub){ try{ stockItemsUnsub(); }catch(e){} stockItemsUnsub = null; }
+  stockState.items = {}; stockState.loaded = false; stockState.denied = false; stockState.error = null;
+  const unsub = db.collection('stockItems').onSnapshot(snap => {
+    const items = {};
+    snap.forEach(doc => { items[doc.id] = doc.data() || {}; });
+    stockState.items = items;
+    stockState.loaded = true;
+    stockState.error = null;
+    if(dataReady) safeRender();
+  }, err => stockListenErr('stockItems', err));
+  stockItemsUnsub = unsub;
+  listeners.push(unsub);
+}
+/* ตัวฟัง move ของใบที่เปิดอยู่ — เรียกซ้ำด้วยใบเดิมได้ (ไม่เปิดซ้ำ) · เปลี่ยนใบ = ปิดตัวเก่า */
+function stockWatchJob(jobId){
+  if(!db || !jobId || stockState.denied) return;
+  if(stockJobWatch && stockJobWatch.jobId === jobId) return;
+  stockUnwatchJob();
+  const watch = { jobId, unsub: null };
+  stockJobWatch = watch;
+  stockState.job = { jobId, rows: [], loaded: false };
+  watch.unsub = db.collection('stockMoves').where('jobId', '==', jobId).onSnapshot(snap => {
+    if(stockJobWatch !== watch) return;
+    const rows = [];
+    snap.forEach(doc => rows.push(Object.assign({}, doc.data(), { id: doc.id })));
+    stockState.job = { jobId, rows: stockSortMoves(rows), loaded: true };
+    if(dataReady) safeRender();
+  }, err => { if(stockJobWatch === watch) stockListenErr('stockMoves(job)', err); });
+  listeners.push(watch.unsub);
+}
+function stockUnwatchJob(){
+  if(stockJobWatch && typeof stockJobWatch.unsub === 'function'){ try{ stockJobWatch.unsub(); }catch(e){} }
+  stockJobWatch = null;
+  stockState.job = null;
+}
+/* ประวัติรวมล่าสุด 200 รายการ (หน้าสต็อก) — เปิดครั้งเดียวต่อการล็อกอิน */
+function stockWatchRecent(){
+  if(!db || stockRecentWatch || stockState.denied) return;
+  const watch = { unsub: null };
+  stockRecentWatch = watch;
+  stockState.recent = { rows: [], loaded: false };
+  watch.unsub = db.collection('stockMoves').orderBy('at', 'desc').limit(STOCK_RECENT_LIMIT).onSnapshot(snap => {
+    if(stockRecentWatch !== watch) return;
+    const rows = [];
+    snap.forEach(doc => rows.push(Object.assign({}, doc.data(), { id: doc.id })));
+    stockState.recent = { rows, loaded: true };
+    if(dataReady) safeRender();
+  }, err => { if(stockRecentWatch === watch) stockListenErr('stockMoves(recent)', err); });
+  listeners.push(watch.unsub);
+}
+/* ประวัติของรายการเดียว — อ่านครั้งเดียวตอนกดดู (where เดียว ไม่ต้องสร้าง index) เรียงใหม่สุดก่อนฝั่งเครื่อง */
+function stockItemHistory(itemId){
+  if(!db) return Promise.reject(stockErr('no-db'));
+  if(stockState.denied) return Promise.reject(stockErr('denied'));
+  return db.collection('stockMoves').where('itemId', '==', String(itemId || '')).get().then(snap => {
+    const rows = [];
+    snap.forEach(doc => rows.push(Object.assign({}, doc.data(), { id: doc.id })));
+    return rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  }, err => { stockNoteTxError(err); throw err; });
+}
+
+/* ---------- error ---------- */
+function stockErr(code, msg){ const e = new Error(msg || code); e.code = code; return e; }
+/* เขียน/อ่านครั้งเดียวถูกปฏิเสธ = แค่คำขอนี้ไม่ผ่าน (ขึ้นข้อความของมันเอง) · ไม่ตั้ง stockState.denied
+   denied ตั้งได้ทางเดียวคือตัวฟังอ่าน (stockListenErr) ได้ permission-denied — กันเขียนพลาดครั้งเดียวแล้วสต็อกปิดทั้ง session */
+function stockNoteTxError(err){
+  if(err && err.code === 'permission-denied') console.warn('stock write denied', err);
+}
+/* ข้อความไทยของ error สต็อก (ส่งเข้า flashToast / uiModal ได้ตรง ๆ — ไม่มี HTML) */
+function stockErrorMessage(err){
+  const code = String((err && (err.code || err.message)) || err || '');
+  if(code === 'denied') return stockDeniedMessage();
+  if(code === 'offline' || code === 'unavailable' || code === 'failed-precondition' || code === 'deadline-exceeded') return 'ต้องต่อเน็ตก่อนทำรายการสต็อก';
+  if(code === 'permission-denied') return stockState.denied ? stockDeniedMessage() : 'ทำรายการนี้ไม่ได้';
+  const M = {
+    'stale': 'มีคนเพิ่งทำรายการบรรทัดนี้ ดูยอดใหม่แล้วลองอีกครั้ง',
+    'insufficient': 'ของในสต็อกไม่พอ',
+    'closed': 'รายการนี้ปิดแล้ว',
+    'missing': 'ไม่พบรายการสต็อกนี้',
+    'job-dirty': 'รอบันทึกใบงานก่อน',
+    'not-ready': 'กำลังโหลดยอดสต็อกของใบนี้ ลองอีกครั้ง',
+    'other-item': 'บรรทัดนี้เบิกรายการอื่นค้างอยู่ — คืนของเดิมก่อน',
+    'over-return': 'คืนเกินจำนวนที่เบิก',
+    'admin-only': 'ต้องเป็นผู้ดูแลระบบ',
+    'reason': 'ต้องใส่เหตุผล (ไม่เกิน 200 ตัวอักษร)',
+    'bad-qty': 'จำนวนไม่ถูกต้อง',
+    'bad-row': 'บรรทัดนี้ยังเบิกจากสต็อกไม่ได้',
+    'bad-token': 'ปิดกล่องแล้วเปิดใหม่อีกครั้ง',
+    'no-job': 'ไม่พบใบงาน',
+    'mp-unsaved': 'ชื่ออะไหล่นี้ยังไม่ได้บันทึกขึ้นระบบ รอสักครู่แล้วลองใหม่',
+    'no-db': 'ยังไม่ได้เชื่อมต่อระบบ'
+  };
+  return M[code] || 'ทำรายการสต็อกไม่สำเร็จ';
+}
+/* ด่านก่อนเริ่ม tx ทุกตัว: ไม่มี db / ถูกปฏิเสธ / ออฟไลน์ = ไม่เริ่ม (คืน Error หรือ null) */
+function stockPreflight(){
+  if(!db || !currentUser) return stockErr('no-db');
+  if(stockState.denied) return stockErr('denied');
+  if(!isOnline || (typeof navigator !== 'undefined' && navigator.onLine === false)) return stockErr('offline');
+  return null;
+}
+function stockMeta(){
+  return {
+    at: nowIso(),
+    serverAt: firebase.firestore.FieldValue.serverTimestamp(),   // กฎ: serverAt == request.time (บังคับ ไม่มี = ปฏิเสธ)
+    by: String(currentUser.name || '').slice(0, 80),
+    byUid: currentUser.uid
+  };
+}
+function stockStamp(){
+  return { updatedAt: nowIso(), updatedBy: String(currentUser.name || '').slice(0, 80), updatedByUid: currentUser.uid };
+}
+function stockItemRef(itemId){ return db.collection('stockItems').doc(itemId); }
+function stockMoveRef(moveId){ return db.collection('stockMoves').doc(moveId); }
+function stockIntN(n){
+  const v = Number(n);
+  return (Number.isInteger(v) && v >= 1 && v <= STOCK_MAX_N) ? v : 0;
+}
+function stockRun(fn){
+  return db.runTransaction(fn).catch(err => { stockNoteTxError(err); throw err; });
+}
+
+/* ---------- รับของเข้า (พนักงาน + แอดมิน) — รายการเกิดตอนรับเข้าครั้งแรก (Q1=ค) ----------
+   o = { masterPartId, brand, fits, n, supplier, billNo, token, unit?, location? } · token เดิมซ้ำ = { dup:true } */
+function stockReceive(o){
+  o = o || {};
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  const n = stockIntN(o.n);
+  if(!n) return Promise.reject(stockErr('bad-qty'));
+  const token = String(o.token || '');
+  if(!STOCK_TOKEN_RE.test(token)) return Promise.reject(stockErr('bad-token'));
+  const masterPartId = String(o.masterPartId || '');
+  const mp = (state.masterParts || []).find(p => p && p.id === masterPartId);
+  if(!mp || !STOCK_ROW_ID_RE.test(masterPartId)) return Promise.reject(stockErr('missing'));
+  // กฎตรวจ exists(masterParts/id) — ชื่อที่ยังไม่ขึ้นเซิร์ฟเวอร์จะทำให้ tx ถูกปฏิเสธ
+  if(!shadow.masterParts || shadow.masterParts[masterPartId] === undefined) return Promise.reject(stockErr('mp-unsaved'));
+  const brand = String(o.brand || '').trim().slice(0, 40);
+  const fits = String(o.fits || '').trim().slice(0, 80);
+  const itemId = variantId(masterPartId, brand, fits);
+  const moveId = 'r_' + token;
+  const supplier = String(o.supplier || '').trim().slice(0, 80);
+  const billNo = String(o.billNo || '').trim().slice(0, 40);
+  const name = String(mp.name || '').trim().slice(0, 120);
+  return stockRun(tx => {
+    const itemRef = stockItemRef(itemId), moveRef = stockMoveRef(moveId);
+    return tx.get(moveRef).then(ms => {
+      if(ms.exists) return { dup: true, itemId, moveId };
+      return tx.get(itemRef).then(is => {
+        const stamp = stockStamp();
+        let before = 0;
+        if(!is.exists){
+          // พนักงานสร้างได้: active true + minQty 0 เท่านั้น (กฎ S2) — ค่าอื่นแอดมินตั้งทีหลัง
+          tx.set(itemRef, Object.assign({
+            masterPartId, name, nameKey: partNameKey(name).slice(0, 120),
+            brand, brandKey: stockKey(brand) || '-', fits, fitsKey: stockKey(fits) || '*',
+            category: String(mp.category || '').trim().slice(0, 40),
+            unit: String(o.unit || '').trim().slice(0, 20),
+            qty: n, minQty: 0, location: String(o.location || '').trim().slice(0, 40), active: true,
+            lastMoveId: moveId,
+            createdAt: stamp.updatedAt, createdBy: stamp.updatedBy, createdByUid: stamp.updatedByUid
+          }, stamp));
+        } else {
+          const it = is.data() || {};
+          if(it.active === false) throw stockErr('closed');
+          before = Number(it.qty) || 0;
+          tx.update(itemRef, Object.assign({ qty: before + n, lastMoveId: moveId }, stamp));
+        }
+        const mv = Object.assign({ itemId, type: 'receive', delta: n, qtyBefore: before, qtyAfter: before + n, token }, stockMeta());
+        if(supplier) mv.supplier = supplier;
+        if(billNo) mv.billNo = billNo;
+        tx.set(moveRef, mv);
+        return { ok: true, itemId, moveId, qtyAfter: before + n };
+      });
+    });
+  });
+}
+
+/* ---------- เบิกเข้าบรรทัดใบงาน ----------
+   o = { jobId, rowId, itemId, n, token, allowNegative } · ต้องฟัง move ของใบนี้อยู่ (stockWatchJob) และใบไม่ค้างบันทึก
+   ยอดในเครื่องไม่พอและไม่ได้ยืนยัน = reject 'insufficient' ก่อนเริ่ม tx (หน้าจอถาม แล้วเรียกใหม่ด้วย allowNegative:true)
+   seq = seq สูงสุดของบรรทัด + 1 → id เดียวกันถ้าสองเครื่องชิงกัน: token ตรง = กดซ้ำของฉัน { dup:true } · ไม่ตรง = 'stale' */
+function stockIssue(o){
+  o = o || {};
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  const jobId = String(o.jobId || ''), rowId = String(o.rowId || ''), itemId = String(o.itemId || '');
+  const n = stockIntN(o.n);
+  if(!n) return Promise.reject(stockErr('bad-qty'));
+  const token = String(o.token || '');
+  if(!STOCK_TOKEN_RE.test(token)) return Promise.reject(stockErr('bad-token'));
+  if(!STOCK_ROW_ID_RE.test(jobId) || !STOCK_ROW_ID_RE.test(rowId) || !itemId) return Promise.reject(stockErr('bad-row'));
+  const job = getJob(jobId);
+  if(!job || job.deletedAt) return Promise.reject(stockErr('no-job'));
+  const row = (job.partsNeeded || []).find(p => p && p.id === rowId);
+  if(!row) return Promise.reject(stockErr('bad-row'));
+  if(stockJobDirty(job)) return Promise.reject(stockErr('job-dirty'));
+  const moves = stockJobMoves(jobId);
+  if(!moves) return Promise.reject(stockErr('not-ready'));
+  if(stockRowOut(moves, rowId) > 0 && stockRowItemId(moves, rowId) !== itemId) return Promise.reject(stockErr('other-item'));
+  const local = stockState.items[itemId];
+  if(local && local.active === false) return Promise.reject(stockErr('closed'));
+  if(local && (Number(local.qty) || 0) - n < 0 && !o.allowNegative) return Promise.reject(stockErr('insufficient'));
+  const seq = stockRowSeq(moves, rowId) + 1;
+  const moveId = stockJobMoveId(jobId, rowId, seq);
+  const jobNumber = String(job.jobNumber || '').slice(0, 40);
+  const partName = String(row.partName || '').trim().slice(0, 120);
+  return stockRun(tx => {
+    const itemRef = stockItemRef(itemId), moveRef = stockMoveRef(moveId);
+    return tx.get(moveRef).then(ms => {
+      if(ms.exists){
+        if((ms.data() || {}).token === token) return { dup: true, itemId, moveId };
+        throw stockErr('stale');
+      }
+      return tx.get(itemRef).then(is => {
+        if(!is.exists) throw stockErr('missing');
+        const it = is.data() || {};
+        if(it.active === false) throw stockErr('closed');
+        const before = Number(it.qty) || 0, after = before - n;
+        if(after < 0 && !o.allowNegative) throw stockErr('insufficient');   // ยอดจริงน้อยกว่าที่จอเห็น → กลับไปถาม
+        tx.update(itemRef, Object.assign({ qty: after, lastMoveId: moveId }, stockStamp()));
+        const mv = Object.assign({ itemId, type: 'issue', delta: -n, qtyBefore: before, qtyAfter: after, jobId, rowId, seq, token }, stockMeta());
+        if(jobNumber) mv.jobNumber = jobNumber;
+        if(partName) mv.partName = partName;
+        tx.set(moveRef, mv);
+        return { ok: true, itemId, moveId, qtyAfter: after };
+      });
+    });
+  });
+}
+
+/* ---------- คืนจากบรรทัดใบงาน ----------
+   o = { jobId, rowId, n, token } · คืนเข้ารายการของ move ล่าสุดของบรรทัด · n ≤ ยอดเบิกค้าง
+   ไม่บังคับ "ใบไม่ค้างบันทึก": คืนผูกกับ rowId ใน move ที่มีอยู่แล้ว และกล่องถามคืนมาหลังเปลี่ยนสถานะ/ลบใบ
+   (ใบค้างบันทึกเสมอ ณ ตอนนั้น) · ใช้ move ของใบที่ฟังอยู่ ถ้าไม่ได้ฟังใบนี้ อ่านครั้งเดียว */
+function stockReturn(o){
+  o = o || {};
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  const jobId = String(o.jobId || ''), rowId = String(o.rowId || '');
+  const n = stockIntN(o.n);
+  if(!n) return Promise.reject(stockErr('bad-qty'));
+  const token = String(o.token || '');
+  if(!STOCK_TOKEN_RE.test(token)) return Promise.reject(stockErr('bad-token'));
+  if(!STOCK_ROW_ID_RE.test(jobId) || !STOCK_ROW_ID_RE.test(rowId)) return Promise.reject(stockErr('bad-row'));
+  const watched = stockJobMoves(jobId);
+  const getMoves = watched ? Promise.resolve(watched)
+    : db.collection('stockMoves').where('jobId', '==', jobId).get().then(snap => {
+        const rows = []; snap.forEach(doc => rows.push(Object.assign({}, doc.data(), { id: doc.id }))); return rows;
+      }, err => { stockNoteTxError(err); throw err; });
+  return getMoves.then(moves => {
+    const out = stockRowOut(moves, rowId);
+    if(out <= 0 || n > out) throw stockErr('over-return');
+    const itemId = stockRowItemId(moves, rowId);
+    if(!itemId) throw stockErr('missing');
+    const seq = stockRowSeq(moves, rowId) + 1;
+    const moveId = stockJobMoveId(jobId, rowId, seq);
+    const last = stockRowMoves(moves, rowId).find(m => Number(m.seq) === seq - 1) || {};
+    const job = getJob(jobId);
+    const row = job && (job.partsNeeded || []).find(p => p && p.id === rowId);
+    const jobNumber = String((job && job.jobNumber) || last.jobNumber || '').slice(0, 40);
+    const partName = String((row && row.partName) || last.partName || '').trim().slice(0, 120);
+    return stockRun(tx => {
+      const itemRef = stockItemRef(itemId), moveRef = stockMoveRef(moveId);
+      return tx.get(moveRef).then(ms => {
+        if(ms.exists){
+          if((ms.data() || {}).token === token) return { dup: true, itemId, moveId };
+          throw stockErr('stale');
+        }
+        return tx.get(itemRef).then(is => {
+          if(!is.exists) throw stockErr('missing');
+          const before = Number((is.data() || {}).qty) || 0, after = before + n;   // คืนเข้ารายการที่ปิดแล้วได้
+          tx.update(itemRef, Object.assign({ qty: after, lastMoveId: moveId }, stockStamp()));
+          const mv = Object.assign({ itemId, type: 'return', delta: n, qtyBefore: before, qtyAfter: after, jobId, rowId, seq, token }, stockMeta());
+          if(jobNumber) mv.jobNumber = jobNumber;
+          if(partName) mv.partName = partName;
+          tx.set(moveRef, mv);
+          return { ok: true, itemId, moveId, qtyAfter: after };
+        });
+      });
+    });
+  });
+}
+
+/* ---------- แอดมินปรับยอด = ยอดที่นับได้จริง + เหตุผล (delta คิดใน tx) · เท่าเดิม = ไม่เขียน { noop:true } ---------- */
+function stockAdjust(o){
+  o = o || {};
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  if(!isAdmin()) return Promise.reject(stockErr('admin-only'));
+  const reason = String(o.reason || '').trim();
+  if(!reason || reason.length > 200) return Promise.reject(stockErr('reason'));
+  const newQty = Number(o.newQty);
+  if(!Number.isInteger(newQty) || Math.abs(newQty) > 999999) return Promise.reject(stockErr('bad-qty'));
+  const token = String(o.token || '');
+  if(!STOCK_TOKEN_RE.test(token)) return Promise.reject(stockErr('bad-token'));
+  const itemId = String(o.itemId || '');
+  if(!itemId) return Promise.reject(stockErr('missing'));
+  const moveId = 'a_' + token;
+  return stockRun(tx => {
+    const itemRef = stockItemRef(itemId), moveRef = stockMoveRef(moveId);
+    return tx.get(moveRef).then(ms => {
+      if(ms.exists) return { dup: true, itemId, moveId };
+      return tx.get(itemRef).then(is => {
+        if(!is.exists) throw stockErr('missing');
+        const before = Number((is.data() || {}).qty) || 0;
+        const delta = newQty - before;
+        if(delta === 0) return { noop: true, itemId };
+        if(Math.abs(delta) > STOCK_MAX_N) throw stockErr('bad-qty');
+        tx.update(itemRef, Object.assign({ qty: newQty, lastMoveId: moveId }, stockStamp()));
+        tx.set(moveRef, Object.assign({ itemId, type: 'adjust', delta, qtyBefore: before, qtyAfter: newQty, reason, token }, stockMeta()));
+        return { ok: true, itemId, moveId, qtyAfter: newQty };
+      });
+    });
+  });
+}
+
+/* ---------- แอดมินตั้งค่ารายการ (ไม่แตะยอด) ----------
+   แก้ได้: minQty / location / unit / category / name / brand / fits (ข้อความแสดงเท่านั้น key คงเดิม) / active (ปิด-เปิดรายการ)
+   ห้ามมี qty / lastMoveId / masterPartId / brandKey / fitsKey / created* (กฎทาง ข.) */
+const STOCK_ITEM_SETTING_KEYS = ['minQty', 'location', 'unit', 'category', 'name', 'brand', 'fits', 'active'];
+function stockUpdateItem(itemId, patch){
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  if(!isAdmin()) return Promise.reject(stockErr('admin-only'));
+  if(!itemId || !stockState.items[itemId]) return Promise.reject(stockErr('missing'));
+  const LIM = { location: 40, unit: 20, category: 40, name: 120, brand: 40, fits: 80 };
+  const p = {};
+  for(const k of STOCK_ITEM_SETTING_KEYS){
+    if(!patch || !(k in patch)) continue;
+    const v = patch[k];
+    if(k === 'minQty'){
+      const m = Number(v);
+      if(!Number.isInteger(m) || m < 0 || m > 999999) return Promise.reject(stockErr('bad-qty'));
+      p.minQty = m;
+    } else if(k === 'active') p.active = !!v;
+    else p[k] = String(v == null ? '' : v).trim().slice(0, LIM[k]);
+  }
+  if(p.name === '') delete p.name;
+  if(p.name) p.nameKey = partNameKey(p.name).slice(0, 120);
+  return stockItemRef(itemId).update(Object.assign(p, stockStamp())).catch(err => { stockNoteTxError(err); throw err; });
+}
+/* แอดมินสร้างรายการเปล่าล่วงหน้า qty 0 ไม่มี move (decisions: PM) · มีอยู่แล้ว = ไม่ทับ { exists:true } */
+function stockCreateEmptyItem(o){
+  o = o || {};
+  const pre = stockPreflight(); if(pre) return Promise.reject(pre);
+  if(!isAdmin()) return Promise.reject(stockErr('admin-only'));
+  const masterPartId = String(o.masterPartId || '');
+  const mp = (state.masterParts || []).find(p => p && p.id === masterPartId);
+  if(!mp || !STOCK_ROW_ID_RE.test(masterPartId)) return Promise.reject(stockErr('missing'));
+  if(!shadow.masterParts || shadow.masterParts[masterPartId] === undefined) return Promise.reject(stockErr('mp-unsaved'));
+  const minQty = Number(o.minQty) || 0;
+  if(!Number.isInteger(minQty) || minQty < 0) return Promise.reject(stockErr('bad-qty'));
+  const brand = String(o.brand || '').trim().slice(0, 40), fits = String(o.fits || '').trim().slice(0, 80);
+  const itemId = variantId(masterPartId, brand, fits);
+  const name = String(mp.name || '').trim().slice(0, 120);
+  const stamp = stockStamp();
+  const data = Object.assign({
+    masterPartId, name, nameKey: partNameKey(name).slice(0, 120),
+    brand, brandKey: stockKey(brand) || '-', fits, fitsKey: stockKey(fits) || '*',
+    category: String(mp.category || '').trim().slice(0, 40), unit: String(o.unit || '').trim().slice(0, 20),
+    qty: 0, minQty, location: String(o.location || '').trim().slice(0, 40), active: true,
+    createdAt: stamp.updatedAt, createdBy: stamp.updatedBy, createdByUid: stamp.updatedByUid
+  }, stamp);
+  return stockRun(tx => tx.get(stockItemRef(itemId)).then(s => {
+    if(s.exists) return { exists: true, itemId };
+    tx.set(stockItemRef(itemId), data);
+    return { ok: true, itemId };
+  }));
+}
+
+/* ================= v4.7.0 สต็อกอะไหล่ — หน้าจอ (docs/specs/parts-stock.md ## UX/UI U1–U12) =================
+   - ข้อความทุกช่องที่ผู้ใช้พิมพ์ผ่าน escapeHtml / escapeAttr · ค่าเข้า handler ใช้ data-* + this.dataset (security §4)
+   - uiConfirm / uiChoice / flashToast / showUndoToast รับข้อความดิบ (escape เอง / ใช้ textContent)
+   - หน้าจอไม่แตะ state.jobs / shadow / config/main และไม่เรียก saveState เพื่อสต็อก — ยอดเปลี่ยนผ่านชั้นข้อมูลด้านบนเท่านั้น
+   - ค่าที่จำในเครื่อง (ตัวกรอง / แสดงที่ปิดแล้ว) อยู่ใน localStorage ไม่ลง state.settings
+   - token ของแต่ละกล่องสร้างตอนเปิดกล่อง (stockNewToken) เก็บใน view · กดซ้ำ / ลองใหม่ใช้ token เดิม */
+const STOCK_PAGE_STEP = 60;
+const STOCK_FILTERS = ['all', 'low', 'has', 'none'];
+const STOCK_NOT_APPROVED = ['received', 'inspecting', 'quoted'];
+const STOCK_ADJUST_REASONS = ['นับสต็อก', 'ของเสีย/ชำรุด', 'ของหาย', 'คีย์ผิด'];
+
+function stockLsGet(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : v; } catch(e){ return d; } }
+function stockLsSet(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+function stockFilterNow(){ const f = stockLsGet('gsms.stockFilter', 'all'); return STOCK_FILTERS.indexOf(f) >= 0 ? f : 'all'; }
+function stockShowClosedNow(){ return isAdmin() && stockLsGet('gsms.stockShowClosed', '') === '1'; }
+function stockUiOffline(){ return !isOnline || (typeof navigator !== 'undefined' && navigator.onLine === false); }
+function stockFmtQty(q){ q = Number(q) || 0; return q < 0 ? '−' + Math.abs(q) : String(q); }
+function stockFmtDelta(d){ d = Number(d) || 0; return d > 0 ? '+' + d : (d < 0 ? '−' + Math.abs(d) : '0'); }
+function stockBrandLabel(b){ return String(b || '').trim() || 'ไม่ระบุแบรนด์'; }
+function stockFitsLabel(f){ return String(f || '').trim() || 'ทุกรุ่น'; }
+function stockVariantLabel(it){ return stockBrandLabel(it && it.brand) + ' · ' + stockFitsLabel(it && it.fits); }
+function stockItemLabel(it){ return String((it && it.name) || '') + ' · ' + stockVariantLabel(it); }
+function stockUnitOf(it, fallback){ return String((it && it.unit) || fallback || 'ชิ้น'); }
+/* ค่าจากช่องในกล่องที่เปิดอยู่จริง (element จริงมี tagName) · ไม่มีช่อง = ใช้ค่าที่จำไว้ */
+function stockVal(id, fallback){
+  const el = document.getElementById(id);
+  return (el && el.tagName) ? String(el.value == null ? '' : el.value) : fallback;
+}
+function stockSetText(id, text){
+  const el = document.getElementById(id);
+  if(el && el.tagName) el.textContent = text;
+}
+/* ด่านก่อนเปิดกล่องที่ต้องเขียนสต็อก: ไม่มีสิทธิ์ / ออฟไลน์ = toast ไม่เปิดกล่อง */
+function stockUiBlocked(offlineMsg){
+  if(stockState.denied){ flashToast(stockDeniedMessage()); return true; }
+  if(stockUiOffline()){ flashToast(offlineMsg || 'ออฟไลน์อยู่ — ต่อเน็ตก่อนแล้วลองอีกครั้ง'); return true; }
+  return false;
+}
+/* ข้อความผิดพลาดในกล่อง: รหัสที่รู้จัก = ข้อความเฉพาะ · ไม่รู้จัก = ข้อความกลางของกล่องนั้น */
+function stockUiErrText(e, fallback){
+  const m = stockErrorMessage(e);
+  return m === 'ทำรายการสต็อกไม่สำเร็จ' ? fallback : m;
+}
+
+/* ---------- ป้าย / ตัวเลข ---------- */
+function stockTagHtml(it){
+  if(it.active === false) return '<span class="stock-tag stock-closed-tag">ปิดแล้ว</span>';
+  const q = Number(it.qty) || 0, mn = Number(it.minQty) || 0;
+  if(q < 0) return '<span class="stock-tag stock-low-tag neg">ติดลบ</span>';
+  if(mn > 0 && q === 0) return '<span class="stock-tag stock-low-tag">หมด</span>';
+  if(mn > 0 && q < mn) return '<span class="stock-tag stock-low-tag">ใกล้หมด</span>';
+  return '';
+}
+function stockNavBadgeHtml(id){
+  const n = stockLowCount();
+  if(!n) return '';
+  return ` <span class="um-count stock-nav-badge" id="${id}">${n > 99 ? '99+' : n}</span>`;
+}
+/* ลำดับในชื่อเดียวกัน: ติดลบ → หมด → ใกล้หมด → ปกติ แล้วแบรนด์ ก-ฮ แล้วรุ่นรถ (ทุกรุ่นไว้ท้าย) */
+function stockItemRank(it){
+  const q = Number(it.qty) || 0, mn = Number(it.minQty) || 0;
+  if(it.active === false) return 9;
+  if(q < 0) return 0;
+  if(mn > 0 && q === 0) return 1;
+  if(mn > 0 && q < mn) return 2;
+  return 5;
+}
+function stockSortItems(list){
+  return list.sort((a, b) => (stockItemRank(a) - stockItemRank(b))
+    || String(a.brand || '').localeCompare(String(b.brand || ''), 'th')
+    || ((a.fits ? 0 : 1) - (b.fits ? 0 : 1))
+    || String(a.fits || '').localeCompare(String(b.fits || ''), 'th'));
+}
+
+/* ---------- กลุ่มตามชื่อ (Q1=ค: ทุกชื่อใน masterParts โผล่ แม้ยังไม่มีรายการ) ---------- */
+function stockNameGroups(showClosed){
+  const byName = {}, groups = {}, order = [];
+  (state.masterParts || []).forEach(mp => {
+    if(!mp || !mp.id || !String(mp.name || '').trim()) return;
+    const k = mmNorm(mp.name);
+    if(!byName[k] || String(mp.id) < String(byName[k].id)) byName[k] = mp;
+  });
+  const canonOf = {};
+  (state.masterParts || []).forEach(mp => {
+    if(!mp || !mp.id || !String(mp.name || '').trim()) return;
+    canonOf[mp.id] = byName[mmNorm(mp.name)].id;
+  });
+  Object.keys(byName).forEach(k => {
+    const mp = byName[k];
+    groups[mp.id] = { key: mp.id, mpId: mp.id, name: mp.name, category: mp.category, items: [] };
+    order.push(mp.id);
+  });
+  stockItemsList().forEach(it => {
+    if(it.active === false && !showClosed) return;
+    let key = canonOf[it.masterPartId];
+    if(!key){
+      key = 'x:' + partNameKey(it.name || '');
+      if(!groups[key]){ groups[key] = { key, mpId: '', name: it.name || '', category: it.category, items: [] }; order.push(key); }
+    }
+    groups[key].items.push(it);
+  });
+  return order.map(k => {
+    const g = groups[k];
+    stockSortItems(g.items);
+    g.hasStock = g.items.some(it => it.active !== false && (Number(it.qty) || 0) > 0);
+    g.low = g.items.some(stockIsLow);
+    g.search = [g.name].concat(g.items.map(it => [it.brand, it.fits, it.location].join(' '))).join(' ').toLowerCase();
+    return g;
+  });
+}
+function stockGroupPassesFilter(g, f){
+  if(f === 'low') return g.low;
+  if(f === 'has') return g.hasStock;
+  if(f === 'none') return !g.hasStock;
+  return true;
+}
+
+/* ---------- หน้าสต็อก ---------- */
+function renderStockPage(){
+  stockWatchRecent();
+  const admin = isAdmin();
+  const filter = stockFilterNow();
+  const showClosed = stockShowClosedNow();
+  const qRaw = String(view.st_search || '');
+  const q = qRaw.trim().toLowerCase();
+  const limit = view.st_limit || STOCK_PAGE_STEP;
+  const ready = stockState.loaded && !stockState.denied;
+  const lowN = stockLowCount();
+
+  let html = `<div id="stockPage" class="stock-page">`;
+  html += `<div class="card stock-head">
+    <div class="stock-head-top">
+      <h3>${icon('box', 18)} สต็อกอะไหล่</h3>
+      <button type="button" class="btn stock-receive-main" onclick="openStockReceive()" ${ready ? '' : 'disabled'}>+ รับของเข้า</button>
+    </div>`;
+  let groups = [];
+  if(ready){
+    groups = stockNameGroups(showClosed);
+    const hasItems = stockItemsList().filter(it => it.active !== false && (Number(it.qty) || 0) > 0).length;
+    const nNames = groups.filter(g => g.mpId).length;
+    html += `<div class="stock-summary muted">${nNames} ชื่อ · มีของ ${hasItems} รายการ · ใกล้หมด ${lowN}</div>`;
+  }
+  html += `<div class="search-wrap stock-search">${icon('search')}<input type="text" id="stockSearch" inputmode="search" autocomplete="off"
+      placeholder="ค้นหาชื่ออะไหล่ แบรนด์ รุ่นรถ หรือที่วาง" value="${escapeAttr(qRaw)}" oninput="filterStockList()"></div>
+    <div class="stock-filters">
+      <button type="button" class="chk-chip ${filter === 'all' ? 'checked' : ''}" data-stock-filter="all" onclick="setStockFilter(this.dataset.stockFilter)">ทั้งหมด</button>
+      <button type="button" class="chk-chip ${filter === 'low' ? 'checked' : ''}" data-stock-filter="low" onclick="setStockFilter(this.dataset.stockFilter)">ใกล้หมด ${lowN}</button>
+      <button type="button" class="chk-chip ${filter === 'has' ? 'checked' : ''}" data-stock-filter="has" onclick="setStockFilter(this.dataset.stockFilter)">มีของ</button>
+      <button type="button" class="chk-chip ${filter === 'none' ? 'checked' : ''}" data-stock-filter="none" onclick="setStockFilter(this.dataset.stockFilter)">ยังไม่มีของ</button>
+    </div>
+    ${admin ? `<label class="stock-closed-toggle"><input type="checkbox" id="stockShowClosed" ${showClosed ? 'checked' : ''} onchange="setStockShowClosed(this.checked)"> แสดงที่ปิดแล้ว</label>` : ''}
+  </div>`;
+
+  if(stockState.denied){
+    html += `<div class="card stock-notice stock-denied" id="stockDeniedNotice">${escapeHtml(stockDeniedMessage())}</div></div>`;
+    return html;
+  }
+  if(stockUiOffline()){
+    html += `<div class="stock-notice" id="stockOfflineNotice">ออฟไลน์ — ยอดที่เห็นอาจไม่ใช่ล่าสุด · รับเข้า เบิก คืน ต้องต่อเน็ต</div>`;
+  }
+  if(!stockState.loaded){
+    html += stockState.error
+      ? `<div class="empty-state" id="stockLoading">โหลดสต็อกไม่สำเร็จ — ลองเปิดหน้านี้ใหม่อีกครั้ง</div></div>`
+      : `<div class="empty-state" id="stockLoading">กำลังโหลดสต็อก…</div></div>`;
+    return html;
+  }
+  if(!groups.length){
+    html += `<div class="empty-state">${admin ? 'ยังไม่มีรายชื่ออะไหล่ — เพิ่มได้ที่ ตั้งค่า › สินค้า' : 'ยังไม่มีรายชื่ออะไหล่ — แจ้งแอดมินเพิ่มที่ ตั้งค่า › สินค้า'}</div></div>`;
+    return html;
+  }
+  const passing = groups.filter(g => stockGroupPassesFilter(g, filter));
+  if(!passing.length){
+    const EMPTY = { low: 'ไม่มีของใกล้หมด', has: 'ยังไม่มีของในสต็อก — กด "+ รับของเข้า" เพื่อเริ่ม', none: 'ทุกชื่อมีของในสต็อกแล้ว' };
+    html += `<div class="empty-state">${escapeHtml(EMPTY[filter] || '')}</div></div>`;
+    return html;
+  }
+
+  let idx = 0, shown = 0, hiddenByLimit = 0;
+  html += `<div id="stockList">`;
+  groupByCategory(passing).forEach(cat => {
+    const list = cat.items.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'th'));
+    let block = '', any = false;
+    list.forEach(g => {
+      const hit = !q || g.search.indexOf(q) >= 0;
+      let vis = hit;
+      if(hit && !q){ vis = idx < limit; if(!vis) hiddenByLimit++; idx++; }
+      if(vis){ any = true; shown++; }
+      block += stockGroupHtml(g, admin, vis);
+    });
+    html += `<div class="stock-cat-block" ${any ? '' : 'style="display:none"'}>
+      <div class="stock-cat-label">${escapeHtml(cat.category)}</div>${block}</div>`;
+  });
+  html += `</div>
+    <div class="empty-state" id="stockSearchEmpty" ${q && !shown ? '' : 'style="display:none"'}>${escapeHtml('ไม่พบ "' + qRaw.trim() + '" — ลองพิมพ์ให้สั้นลง')}</div>
+    <button type="button" class="btn secondary stock-more-btn" id="stockMoreBtn" onclick="stockShowMore()" ${hiddenByLimit ? '' : 'style="display:none"'}>แสดงเพิ่มอีก ${STOCK_PAGE_STEP} ชื่อ</button>
+  </div>`;
+  return html;
+}
+
+function stockGroupHtml(g, admin, visible){
+  const hide = visible ? '' : 'style="display:none"';
+  const recvBtn = g.mpId
+    ? `<button type="button" class="btn secondary small" data-mp-id="${escapeAttr(g.mpId)}" onclick="openStockReceive({ masterPartId: this.dataset.mpId })">รับเข้า</button>`
+    : '';
+  if(!g.items.length){
+    return `<div class="card stock-group stock-empty-name" data-search="${escapeAttr(g.search)}" ${hide}>
+      <div class="stock-name-row"><span class="stock-name">${escapeHtml(g.name)}</span>
+        <span class="muted stock-total">ยังไม่มีของ</span>${recvBtn}</div>
+    </div>`;
+  }
+  const units = g.items.map(it => stockUnitOf(it));
+  const sameUnit = units.every(u => u === units[0]);
+  const total = g.items.filter(it => it.active !== false).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  let html = `<div class="card stock-group" data-search="${escapeAttr(g.search)}" ${hide}>
+    <div class="stock-name-row"><span class="stock-name">${escapeHtml(g.name)}</span>
+      <span class="muted stock-total">${escapeHtml('รวม ' + stockFmtQty(total) + (sameUnit ? ' ' + units[0] : ''))}</span>${recvBtn}</div>`;
+  g.items.forEach(it => {
+    const q = Number(it.qty) || 0;
+    const id = escapeAttr(it.id);
+    html += `<div class="stock-item-row${it.active === false ? ' closed' : ''}" data-item-id="${id}" onclick="openStockItemActions(this.dataset.itemId)">
+      <div class="stock-iv">
+        <span class="stock-iv-main">${escapeHtml(stockVariantLabel(it))}</span>
+        <span class="stock-iv-sub muted">${escapeHtml(String(it.location || '').trim() || '—')}${Number(it.minQty) > 0 ? ' · ขั้นต่ำ ' + Number(it.minQty) : ''}</span>
+      </div>
+      <div class="stock-iv-tags">${stockTagHtml(it)}</div>
+      <div class="stock-qty${q < 0 ? ' neg' : ''}">${stockFmtQty(q)}</div>
+      <div class="stock-row-btns">
+        <button type="button" class="btn secondary small stock-btn-wide" data-item-id="${id}" onclick="event.stopPropagation(); openStockHistory(this.dataset.itemId)">ประวัติ</button>
+        <button type="button" class="btn secondary small stock-btn-wide" data-item-id="${id}" onclick="event.stopPropagation(); openStockReceive({ itemId: this.dataset.itemId })">รับเข้า</button>
+        ${admin ? `<button type="button" class="btn secondary small stock-btn-wide" data-item-id="${id}" onclick="event.stopPropagation(); openStockItemEdit(this.dataset.itemId)">แก้ไข</button>
+        <button type="button" class="btn secondary small stock-btn-wide" data-item-id="${id}" onclick="event.stopPropagation(); openStockAdjust(this.dataset.itemId)">ปรับยอด</button>` : ''}
+        <button type="button" class="btn secondary small stock-btn-narrow" data-item-id="${id}" onclick="event.stopPropagation(); openStockItemActions(this.dataset.itemId)">จัดการ</button>
+      </div>
+    </div>`;
+  });
+  return html + `</div>`;
+}
+
+/* ค้นหาในหน้า: กรองใน DOM ไม่เรียก render() ระหว่างพิมพ์ (กันคีย์บอร์ด iOS เด้ง) */
+function filterStockList(){
+  const inp = document.getElementById('stockSearch');
+  view.st_search = (inp && inp.tagName) ? String(inp.value || '') : String(view.st_search || '');
+  const q = view.st_search.trim().toLowerCase();
+  const limit = view.st_limit || STOCK_PAGE_STEP;
+  const list = document.getElementById('stockList');
+  if(!list || !list.tagName) return;
+  let idx = 0, shown = 0, hiddenByLimit = 0;
+  Array.prototype.forEach.call(list.querySelectorAll('.stock-cat-block'), block => {
+    let any = false;
+    Array.prototype.forEach.call(block.querySelectorAll('.stock-group'), g => {
+      const hit = !q || String(g.getAttribute('data-search') || '').indexOf(q) >= 0;
+      let vis = hit;
+      if(hit && !q){ vis = idx < limit; if(!vis) hiddenByLimit++; idx++; }
+      g.style.display = vis ? '' : 'none';
+      if(vis){ any = true; shown++; }
+    });
+    block.style.display = any ? '' : 'none';
+  });
+  const more = document.getElementById('stockMoreBtn');
+  if(more && more.tagName) more.style.display = hiddenByLimit ? '' : 'none';
+  const empty = document.getElementById('stockSearchEmpty');
+  if(empty && empty.tagName){
+    empty.style.display = (q && !shown) ? '' : 'none';
+    empty.textContent = 'ไม่พบ "' + view.st_search.trim() + '" — ลองพิมพ์ให้สั้นลง';
+  }
+}
+function setStockFilter(f){
+  if(STOCK_FILTERS.indexOf(f) < 0) f = 'all';
+  stockLsSet('gsms.stockFilter', f);   // ค่าของเครื่องนี้ ไม่ลง config/main
+  view.st_limit = STOCK_PAGE_STEP;
+  render();
+}
+function setStockShowClosed(on){
+  if(!isAdmin()) return;
+  stockLsSet('gsms.stockShowClosed', on ? '1' : '');
+  render();
+}
+function stockShowMore(){
+  view.st_limit = (view.st_limit || STOCK_PAGE_STEP) + STOCK_PAGE_STEP;
+  render();
+}
+
+/* ---------- แผ่นคำสั่งต่อรายการ (U2.1) ---------- */
+function openStockItemActions(itemId){
+  const it = stockState.items[itemId];
+  if(!it) return;
+  const opts = [
+    { value: 'receive', label: 'รับของเข้า', sub: 'เพิ่มจำนวนของรายการนี้', icon: 'plus' },
+    { value: 'history', label: 'ดูประวัติเข้า-ออก', sub: 'ใคร เมื่อไร ใบงานไหน', icon: 'history' }
+  ];
+  if(isAdmin()){
+    opts.push({ value: 'edit', label: 'แก้ไขรายการ', sub: 'ขั้นต่ำ ที่วาง ปิดรายการ', icon: 'edit' });
+    opts.push({ value: 'adjust', label: 'ปรับยอด', sub: 'นับจริงไม่ตรง ต้องใส่เหตุผล', icon: 'gauge' });
+  }
+  uiChoice(stockItemLabel(it) + ' — เหลือ ' + stockFmtQty(it.qty) + ' ' + stockUnitOf(it), opts, v => {
+    if(v === 'receive') openStockReceive({ itemId });
+    else if(v === 'history') openStockHistory(itemId);
+    else if(v === 'edit') openStockItemEdit(itemId);
+    else if(v === 'adjust') openStockAdjust(itemId);
+  });
+}
+
+/* ---------- กล่อง (ใช้ root #ui-modal-root เดิม — เปิดกล่องใหม่ = กล่องเก่าปิด) ---------- */
+function stockModalOpen(html, onOutside){
+  closeUiModal();
+  const root = document.createElement('div');
+  root.id = 'ui-modal-root';
+  root.className = 'ui-modal-overlay';
+  root.innerHTML = html;
+  document.body.appendChild(root);
+  /* กฎ v4.6.1: แตะนอกกล่องขณะมีของค้าง = ไม่ปิด (onOutside คืน false) */
+  root.onclick = function(e){
+    if(e.target !== root) return;
+    if(onOutside && onOutside() === false) return;
+    closeUiModal();
+  };
+  return root;
+}
+/* วาดกล่องเดิมใหม่ — ถ้ากล่องนั้นถูกปิด/ถูกแทนไปแล้ว ไม่ทำอะไร */
+function stockModalSet(modalId, html){
+  if(!document.getElementById(modalId)) return;
+  const root = document.getElementById('ui-modal-root');
+  if(!root) return;
+  /* วาดใหม่ = scrollTop กลับเป็น 0 → คืนตำแหน่งเดิม แล้วถ้ามีข้อความผิดใหม่ เลื่อนให้เห็น (มือถือ ปุ่มอยู่ล่าง ข้อความหลุดจอ) */
+  const oldBox = root.querySelector('.ui-modal');
+  const top = oldBox ? oldBox.scrollTop : 0;
+  const oldErr = root.querySelector('.stock-err');
+  const oldMsg = oldErr ? String(oldErr.textContent || '').trim() : '';
+  root.innerHTML = html;
+  const box = root.querySelector('.ui-modal');
+  if(box && top) box.scrollTop = top;
+  const err = root.querySelector('.stock-err');
+  const msg = err ? String(err.textContent || '').trim() : '';
+  if(msg && msg !== oldMsg && typeof err.scrollIntoView === 'function'){
+    try{ err.scrollIntoView({ block: 'center' }); }catch(e){}
+  }
+}
+function stockModalClose(modalId){
+  if(document.getElementById(modalId)) closeUiModal();
+}
+function stockStepperHtml(id, value, min, max){
+  return `<div class="stock-stepper">
+    <button type="button" class="btn secondary stock-step-btn" data-target="${id}" data-d="-1" onclick="stockStep(this.dataset.target, -1)" aria-label="ลด">−</button>
+    <input type="number" id="${id}" class="stock-step-input" inputmode="numeric" step="1" value="${Number(value) || 0}"
+      ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} oninput="stockQtyLabels()">
+    <button type="button" class="btn secondary stock-step-btn" data-target="${id}" data-d="1" onclick="stockStep(this.dataset.target, 1)" aria-label="เพิ่ม">+</button>
+  </div>`;
+}
+function stockStep(id, d){
+  const el = document.getElementById(id);
+  if(!el || !el.tagName) return;
+  let v = (parseInt(el.value, 10) || 0) + (Number(d) || 0);
+  const mn = el.getAttribute('min'), mx = el.getAttribute('max');
+  if(mn !== null && mn !== '' && v < Number(mn)) v = Number(mn);
+  if(mx !== null && mx !== '' && v > Number(mx)) v = Number(mx);
+  el.value = String(v);
+  stockQtyLabels();
+}
+/* ข้อความบนปุ่มยืนยันเปลี่ยนตามจำนวน (เฉพาะกล่องที่เปิดอยู่) */
+function stockQtyLabels(){
+  const num = id => parseInt(stockVal(id, ''), 10) || 0;
+  if(view.stockPick && document.getElementById('spQty')){
+    const it = stockState.items[view.stockPick.itemId] || {};
+    stockSetText('spSubmit', 'เบิก ' + num('spQty') + ' ' + stockUnitOf(it));
+  }
+  if(view.stockRcv && document.getElementById('srQty')) stockSetText('srSubmit', 'รับเข้า ' + num('srQty') + ' ' + stockRcvUnit());
+  if(view.stockRet && document.getElementById('srtQty')) stockSetText('srtSubmit', 'คืน ' + num('srtQty') + ' ' + view.stockRet.unit + 'เข้าสต็อก');
+  if(view.stockAdj && document.getElementById('saCount')){
+    const it = stockState.items[view.stockAdj.itemId] || {};
+    const d = num('saCount') - (Number(it.qty) || 0);
+    stockSetText('saSubmit', 'บันทึกยอดใหม่ ' + num('saCount') + ' ' + stockUnitOf(it));
+    stockSetText('saDiff', 'ต่างจากระบบ ' + stockFmtDelta(d));
+    const el = document.getElementById('saDiff');
+    if(el && el.classList) el.classList.toggle('neg', d < 0);
+  }
+}
+
+/* ---------- รับของเข้า (U3) — พนักงาน + แอดมิน ---------- */
+function stockModelTags(){
+  const seen = {}, out = [];
+  (state.models || []).forEach(m => {
+    if(!m) return;
+    const tag = [mmNorm(m.brand), mmNorm(m.name)].filter(Boolean).join(' ');
+    if(tag && !seen[tag]){ seen[tag] = 1; out.push(tag); }
+  });
+  return out.sort();
+}
+function stockPartChoices(){
+  const byName = {};
+  (state.masterParts || []).forEach(mp => {
+    if(!mp || !mp.id || !String(mp.name || '').trim()) return;
+    const k = mmNorm(mp.name);
+    if(!byName[k] || String(mp.id) < String(byName[k].id)) byName[k] = mp;
+  });
+  return Object.keys(byName).map(k => byName[k]).sort((a, b) => String(a.name).localeCompare(String(b.name), 'th'));
+}
+function openStockReceive(prefill){
+  if(stockUiBlocked()) return;
+  prefill = prefill || {};
+  const r = { token: stockNewToken(), mpId: '', itemId: '', locked: false, brand: '', brandSet: false, fits: '', fitsSet: false,
+    q: '', mq: '', unit: 'ชิ้น', location: '', n: 1, supplier: '', bill: '', busy: false, err: '' };
+  if(prefill.itemId && stockState.items[prefill.itemId]){
+    const it = stockState.items[prefill.itemId];
+    r.mpId = String(it.masterPartId || ''); r.itemId = prefill.itemId; r.locked = true;
+    r.brand = String(it.brand || ''); r.brandSet = true; r.fits = String(it.fits || ''); r.fitsSet = true;
+  } else if(prefill.masterPartId){
+    r.mpId = stockCanonicalMasterPartId(prefill.masterPartId);
+  } else if(prefill.partName){
+    const key = partNameKey(prefill.partName);
+    const mp = stockPartChoices().find(p => partNameKey(p.name) === key);
+    if(mp) r.mpId = mp.id; else r.q = String(prefill.partName);
+  }
+  if(prefill.modelTag && !r.locked){ r.fits = String(prefill.modelTag); r.fitsSet = true; }
+  view.stockRcv = r;
+  stockModalOpen(stockRcvHtml(), () => {
+    stockRcvCapture();
+    const cur = view.stockRcv;
+    if(cur && (cur.mpId || cur.supplier || cur.bill || cur.q)){
+      flashToast('พิมพ์ไว้แล้ว — กด "รับเข้า" เพื่อบันทึก หรือ "ยกเลิก" ถ้าจะทิ้ง');
+      return false;
+    }
+    view.stockRcv = null;
+    return true;
+  });
+}
+function stockRcvMp(){
+  const r = view.stockRcv;
+  return r && r.mpId ? (state.masterParts || []).find(p => p && p.id === r.mpId) : null;
+}
+function stockRcvTargetId(){
+  const r = view.stockRcv;
+  if(!r || !r.mpId) return '';
+  if(r.locked) return r.itemId;
+  if(!r.brandSet || !r.fitsSet) return '';
+  return variantId(r.mpId, r.brand, r.fits);
+}
+function stockRcvUnit(){
+  const r = view.stockRcv;
+  const it = stockState.items[stockRcvTargetId()];
+  return it ? stockUnitOf(it) : String((r && r.unit) || 'ชิ้น');
+}
+/* เก็บค่าที่พิมพ์ไว้ก่อนวาดกล่องใหม่ */
+function stockRcvCapture(){
+  const r = view.stockRcv;
+  if(!r) return;
+  r.n = parseInt(stockVal('srQty', String(r.n)), 10) || 0;
+  r.supplier = stockVal('srSupplier', r.supplier);
+  r.bill = stockVal('srBill', r.bill);
+  r.location = stockVal('srLocation', r.location);
+  r.unit = stockVal('srUnit', r.unit) || r.unit;
+  r.q = stockVal('srPartSearch', r.q);
+}
+function stockRcvRedraw(){
+  stockRcvCapture();
+  stockModalSet('stockReceiveModal', stockRcvHtml());
+}
+function stockRcvPartListHtml(q){
+  const needle = String(q || '').trim().toLowerCase();
+  const all = stockPartChoices();
+  const hits = needle ? all.filter(p => String(p.name).toLowerCase().indexOf(needle) >= 0) : all;
+  let html = hits.slice(0, 8).map(p => `<button type="button" class="ui-pick-row" data-mp-id="${escapeAttr(p.id)}" onclick="stockRcvPickPart(this.dataset.mpId)">
+      <span class="up-main">${escapeHtml(p.name)}</span></button>`).join('');
+  if(needle && !hits.length){
+    html += `<div class="ui-pick-empty">${escapeHtml('ไม่พบ "' + String(q).trim() + '" ในรายการอะไหล่กลาง')}</div>`;
+    html += isAdmin()
+      ? `<button type="button" class="btn secondary small" onclick="stockRcvAddName()">${escapeHtml('+ เพิ่มชื่อใหม่ "' + String(q).trim() + '"')}</button>`
+      : `<div class="muted">ให้แอดมินเพิ่มชื่อที่ ตั้งค่า › สินค้า</div>`;
+  }
+  return html;
+}
+function stockRcvModelListHtml(q){
+  const needle = mmNorm(q);
+  if(!needle) return '';
+  return stockModelTags().filter(t => t.indexOf(needle) >= 0).slice(0, 8)
+    .map(t => `<button type="button" class="ui-pick-row" data-v="${escapeAttr(t)}" onclick="stockRcvFits(this.dataset.v)"><span class="up-main">${escapeHtml(t)}</span></button>`).join('');
+}
+function stockRcvHtml(){
+  const r = view.stockRcv;
+  const mp = stockRcvMp();
+  const busy = r.busy ? 'disabled' : '';
+  let html = `<div class="ui-modal stock-modal" id="stockReceiveModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">รับของเข้าสต็อก</div>
+    <label class="stock-lab">อะไหล่ *</label>`;
+  if(!mp){
+    html += `<div class="search-wrap">${icon('search')}<input type="text" id="srPartSearch" class="ui-modal-input" autocomplete="off"
+        placeholder="พิมพ์ชื่ออะไหล่" value="${escapeAttr(r.q)}" oninput="stockRcvPartSearch(this.value)"></div>
+      <div class="ui-pick-list stock-pick-short" id="srPartList">${stockRcvPartListHtml(r.q)}</div>`;
+  } else {
+    html += `<div class="stock-picked" id="srPart"><b>${escapeHtml(mp.name)}</b>
+      ${r.locked ? '' : `<button type="button" class="btn secondary small" onclick="stockRcvChangePart()" ${busy}>เปลี่ยน</button>`}</div>`;
+    if(r.locked){
+      const it = stockState.items[r.itemId] || {};
+      html += `<div class="stock-picked-sub">${escapeHtml(stockVariantLabel(it))} · ในสต็อก ${escapeHtml(stockFmtQty(it.qty) + ' ' + stockUnitOf(it))}</div>`;
+    } else {
+      const existing = stockItemsList().filter(it => it.active !== false && stockCanonicalMasterPartId(it.masterPartId) === r.mpId);
+      if(existing.length){
+        html += `<label class="stock-lab">มีอยู่แล้วในสต็อก (แตะเพื่อเลือก)</label><div class="stock-chip-row">
+          ${existing.map(it => `<button type="button" class="chk-chip" data-item-id="${escapeAttr(it.id)}" onclick="stockRcvPickItem(this.dataset.itemId)">${escapeHtml(stockVariantLabel(it) + ' · ' + stockFmtQty(it.qty))}</button>`).join('')}
+        </div>`;
+      }
+      const brands = (state.partBrandOptions || []).map(o => String(o.name || '')).filter(Boolean);
+      if(r.brandSet && r.brand && brands.indexOf(r.brand) < 0) brands.unshift(r.brand);
+      html += `<label class="stock-lab" for="srBrand">แบรนด์ *</label>
+        <select id="srBrand" onchange="stockRcvBrand(this.value)" ${busy}>
+          <option value="" ${!r.brandSet ? 'selected' : ''}>— เลือกแบรนด์ —</option>
+          <option value="__none__" ${r.brandSet && !r.brand ? 'selected' : ''}>ไม่ระบุแบรนด์</option>
+          ${brands.map(b => `<option value="${escapeAttr(b)}" ${r.brandSet && r.brand === b ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('')}
+        </select>
+        <label class="stock-lab">รุ่นรถที่ใส่ได้ *</label>
+        <div class="stock-chip-row">
+          <button type="button" class="chk-chip ${r.fitsSet && !r.fits ? 'checked' : ''}" id="srModelAll" onclick="stockRcvFits('')">ทุกรุ่น</button>
+          ${r.fitsSet && r.fits ? `<button type="button" class="chk-chip checked" onclick="stockRcvFitsClear()">${escapeHtml(r.fits)} ${icon('x', 12)}</button>` : ''}
+        </div>
+        <div class="search-wrap">${icon('search')}<input type="text" id="srModelSearch" class="ui-modal-input" autocomplete="off"
+          placeholder="พิมพ์ยี่ห้อหรือรุ่นรถ" value="${escapeAttr(r.mq)}" oninput="stockRcvModelSearch(this.value)"></div>
+        <div class="ui-pick-list stock-pick-short" id="srModelList">${stockRcvModelListHtml(r.mq)}</div>`;
+      const target = stockRcvTargetId();
+      if(target && !stockState.items[target]){
+        html += `<div class="stock-new-note" id="srNewNote">${escapeHtml('รายการใหม่ — จะสร้าง "' + mp.name + ' · ' + stockBrandLabel(r.brand) + ' · ' + stockFitsLabel(r.fits) + '" ในสต็อก')}</div>
+          <label class="stock-lab" for="srUnit">หน่วย</label>
+          <select id="srUnit" onchange="stockQtyLabels()">${unitSelectOptions(r.unit || 'ชิ้น', false)}</select>
+          <label class="stock-lab" for="srLocation">ที่วาง</label>
+          <input type="text" id="srLocation" class="ui-modal-input" maxlength="40" placeholder="เช่น ชั้น A2" value="${escapeAttr(r.location)}">`;
+      }
+    }
+    html += `<label class="stock-lab">จำนวนที่รับเข้า *</label>
+      ${stockStepperHtml('srQty', r.n || 1, 1, STOCK_MAX_N)}
+      <label class="stock-lab" for="srSupplier">ซื้อจากร้าน</label>
+      <input type="text" id="srSupplier" class="ui-modal-input" maxlength="80" value="${escapeAttr(r.supplier)}">
+      <label class="stock-lab" for="srBill">เลขที่บิล</label>
+      <input type="text" id="srBill" class="ui-modal-input" maxlength="40" value="${escapeAttr(r.bill)}">`;
+  }
+  html += `<div class="stock-err" id="srErr">${escapeHtml(r.err || '')}</div>
+    <div class="ui-modal-btns">
+      <button type="button" class="btn secondary" onclick="view.stockRcv = null; closeUiModal()" ${busy}>ยกเลิก</button>
+      <button type="button" class="btn" id="srSubmit" onclick="submitStockReceive()" ${busy || (mp ? '' : 'disabled')}>${r.busy ? 'กำลังบันทึก…' : escapeHtml('รับเข้า ' + (r.n || 1) + ' ' + stockRcvUnit())}</button>
+    </div>
+  </div>`;
+  return html;
+}
+function stockRcvPartSearch(v){
+  const r = view.stockRcv; if(!r) return;
+  r.q = String(v || '');
+  const el = document.getElementById('srPartList');
+  if(el) el.innerHTML = stockRcvPartListHtml(r.q);
+}
+function stockRcvModelSearch(v){
+  const r = view.stockRcv; if(!r) return;
+  r.mq = String(v || '');
+  const el = document.getElementById('srModelList');
+  if(el) el.innerHTML = stockRcvModelListHtml(r.mq);
+}
+function stockRcvPickPart(mpId){
+  const r = view.stockRcv; if(!r) return;
+  stockRcvCapture();
+  r.mpId = stockCanonicalMasterPartId(mpId); r.err = '';
+  stockModalSet('stockReceiveModal', stockRcvHtml());
+}
+function stockRcvChangePart(){
+  const r = view.stockRcv; if(!r || r.locked) return;
+  stockRcvCapture();
+  r.mpId = ''; r.itemId = ''; r.err = '';
+  stockModalSet('stockReceiveModal', stockRcvHtml());
+}
+function stockRcvPickItem(itemId){
+  const r = view.stockRcv; const it = stockState.items[itemId];
+  if(!r || !it) return;
+  stockRcvCapture();
+  r.brand = String(it.brand || ''); r.brandSet = true; r.fits = String(it.fits || ''); r.fitsSet = true; r.err = '';
+  stockModalSet('stockReceiveModal', stockRcvHtml());
+}
+function stockRcvBrand(v){
+  const r = view.stockRcv; if(!r) return;
+  if(v === '') { r.brandSet = false; r.brand = ''; }
+  else { r.brandSet = true; r.brand = v === '__none__' ? '' : String(v); }
+  r.err = '';
+  stockRcvRedraw();
+}
+function stockRcvFits(tag){
+  const r = view.stockRcv; if(!r) return;
+  r.fits = String(tag || ''); r.fitsSet = true; r.mq = ''; r.err = '';
+  stockRcvRedraw();
+}
+function stockRcvFitsClear(){
+  const r = view.stockRcv; if(!r) return;
+  r.fits = ''; r.fitsSet = false;
+  stockRcvRedraw();
+}
+/* แอดมิน: ชื่อไม่อยู่ในรายการกลาง → เพิ่มผ่านด่านชื่อคล้ายเดิม แล้วเปิดกล่องรับเข้าต่อด้วยชื่อนั้น */
+function stockRcvAddName(){
+  if(!isAdmin()) return;
+  const r = view.stockRcv;
+  const name = String((r && r.q) || '').trim();
+  if(!name) return;
+  view.stockRcv = null;
+  closeUiModal();
+  const canon = canonicalPartName(name, null);
+  if(canon.from === 'master'){
+    const mp = stockPartChoices().find(p => partNameKey(p.name) === partNameKey(canon.name));
+    if(mp){ openStockReceive({ masterPartId: mp.id }); return; }
+  }
+  confirmIfSimilarPartName(name, partNamePool(null), 'รายการกลาง', () => {
+    promptCategory('หมวดหมู่ของ "' + name + '"', category => {
+      const id = uid();
+      state.masterParts.push({ id, name, category });
+      saveState(true);
+      render();
+      openStockReceive({ masterPartId: id });
+    });
+  });
+}
+function submitStockReceive(){
+  const r = view.stockRcv;
+  if(!r || r.busy) return;
+  stockRcvCapture();
+  const fail = msg => { r.err = msg; stockModalSet('stockReceiveModal', stockRcvHtml()); };
+  if(!r.mpId) return fail('เลือกอะไหล่ก่อน');
+  if(!r.brandSet) return fail('เลือกแบรนด์ (หรือ "ไม่ระบุแบรนด์")');
+  if(!r.fitsSet) return fail('เลือกรุ่นรถ หรือแตะ "ทุกรุ่น"');
+  const n = stockIntN(r.n);
+  if(!n) return fail('จำนวนต้องมากกว่า 0');
+  if(stockUiOffline()){ flashToast('ออฟไลน์อยู่ — ต่อเน็ตก่อนแล้วลองอีกครั้ง'); return; }
+  const lockedItem = r.locked ? stockState.items[r.itemId] : null;
+  const masterPartId = lockedItem ? String(lockedItem.masterPartId || r.mpId) : r.mpId;
+  const unit = stockRcvUnit();
+  const mp = stockRcvMp() || {};
+  r.busy = true; r.err = '';
+  stockModalSet('stockReceiveModal', stockRcvHtml());
+  stockReceive({ masterPartId, brand: r.brand, fits: r.fits, n, supplier: r.supplier, billNo: r.bill, token: r.token,
+                 unit: r.unit, location: r.location }).then(res => {
+    if(view.stockRcv === r) view.stockRcv = null;
+    stockModalClose('stockReceiveModal');
+    const it = stockState.items[res && res.itemId] || {};
+    const left = (res && res.qtyAfter !== undefined) ? res.qtyAfter : it.qty;
+    flashToast('รับเข้าแล้ว ' + n + ' ' + unit + ' · ' + (mp.name || it.name || '') + ' ' + stockBrandLabel(r.brand)
+      + (left !== undefined ? ' · มีทั้งหมด ' + stockFmtQty(left) : ''));
+  }, e => {
+    r.busy = false;
+    if(stockState.denied){ view.stockRcv = null; stockModalClose('stockReceiveModal'); flashToast(stockDeniedMessage()); return; }
+    fail(stockUiErrText(e, 'บันทึกไม่สำเร็จ — ลองอีกครั้ง'));
+  });
+}
+
+/* ---------- บรรทัดใบงาน (U4) — อยู่ในตัวแก้ไขบนจอเท่านั้น (.no-print) ไม่อยู่ในใบพิมพ์ ---------- */
+function jobLineStockHtml(job, p){
+  if(!job || !p || p.promoId || isDeductRow(p) || !String(p.partName || '').trim()) return '';
+  const moves = stockJobMoves(job.id);
+  const out = moves ? stockRowOut(moves, p.id) : 0;
+  const rejected = job.status === 'rejected';
+  const dirty = stockJobDirty(job);
+  const attrs = `data-job-id="${escapeAttr(job.id)}" data-row-id="${escapeAttr(p.id)}"`;
+  const waitBtn = `<button type="button" class="btn secondary small stock-wait-btn" disabled>รอบันทึกใบงานก่อน</button>`;
+  let inner = '';
+  if(out > 0){
+    const it = stockState.items[stockRowItemId(moves, p.id)];
+    const unit = stockUnitOf(it, p.unit);
+    inner += `<span class="stock-issued-chip">${icon('check', 13)} ${escapeHtml('เบิกแล้ว ' + out + ' ' + unit + (it ? ' · ' + stockVariantLabel(it) : ''))}</span>`;
+    inner += `<button type="button" class="btn secondary small stock-return-btn" ${attrs} onclick="stockReturnFromJobLine(this.dataset.jobId, this.dataset.rowId)">คืนสต็อก</button>`;
+    if(!rejected && out < parseQty(p.qty)){
+      inner += dirty ? waitBtn
+        : `<button type="button" class="btn secondary small stock-withdraw-btn" ${attrs} onclick="stockWithdrawFromJobLine(this.dataset.jobId, this.dataset.rowId)">เบิกเพิ่ม</button>`;
+    }
+  } else if(!rejected){
+    inner += dirty ? waitBtn
+      : `<button type="button" class="btn secondary small stock-withdraw-btn" ${attrs} onclick="stockWithdrawFromJobLine(this.dataset.jobId, this.dataset.rowId)">${icon('box', 13)} เบิกจากสต็อก</button>`;
+  }
+  return inner ? `<div class="stock-line no-print">${inner}</div>` : '';
+}
+
+/* ---------- กล่องเบิก #stockPickModal ---------- */
+function stockWithdrawFromJobLine(jobId, rowId){
+  const job = getJob(jobId);
+  const row = job && (job.partsNeeded || []).find(p => p && p.id === rowId);
+  if(!job || !row) return;
+  if(stockUiBlocked('ออฟไลน์อยู่ — ต่อเน็ตก่อนแล้วค่อยเบิก')) return;
+  if(stockJobDirty(job)){ flashToast('รอบันทึกใบงานก่อน'); return; }
+  stockWatchJob(jobId);
+  const moves = stockJobMoves(jobId);
+  const out = moves ? stockRowOut(moves, rowId) : 0;
+  const prev = out > 0 ? stockRowItemId(moves, rowId) : '';
+  const left = Math.max(1, Math.round(parseQty(row.qty) - out));
+  view.stockPick = { jobId, rowId, token: stockNewToken(), step: prev ? 2 : 1, itemId: prev, locked: !!prev,
+                     q: '', n: left, busy: false, err: '' };
+  stockModalOpen(stockPickHtml(), () => { const sp = view.stockPick; if(sp && sp.busy) return false; view.stockPick = null; return true; });
+}
+function stockPickCtx(){
+  const sp = view.stockPick;
+  const job = sp && getJob(sp.jobId);
+  const row = job && (job.partsNeeded || []).find(p => p && p.id === sp.rowId);
+  return { sp, job, row };
+}
+function stockPickRowHtml(it){
+  const q = Number(it.qty) || 0;
+  return `<button type="button" class="stock-pick-row" data-item-id="${escapeAttr(it.id)}" onclick="stockPickChoose(this.dataset.itemId)">
+    <span class="sp-main">${escapeHtml(stockVariantLabel(it))}</span>
+    <span class="sp-loc muted">${escapeHtml(String(it.location || '').trim() || '—')}</span>
+    <span class="stock-qty${q <= 0 ? ' neg' : ''}">${stockFmtQty(q)}</span>
+  </button>`;
+}
+function stockPickListHtml(){
+  const { sp, job, row } = stockPickCtx();
+  if(!sp || !job || !row) return '';
+  if(!stockState.loaded) return `<div class="empty-state">กำลังโหลดสต็อก…</div>`;
+  const active = stockItemsList().filter(it => it.active !== false);
+  const q = String(sp.q || '').trim().toLowerCase();
+  if(q){
+    const hits = active.filter(it => [it.name, it.brand, it.fits, it.location].join(' ').toLowerCase().indexOf(q) >= 0);
+    if(!hits.length) return `<div class="empty-state">${escapeHtml('ไม่พบ "' + String(sp.q).trim() + '" ในสต็อก')}</div>`;
+    return stockSortItems(hits).slice(0, 80).map(stockPickRowHtml).join('');
+  }
+  const key = partNameKey(row.partName);
+  const mine = active.filter(it => partNameKey(it.name || '') === key);
+  if(!mine.length){
+    return `<div class="empty-state">${escapeHtml('ไม่พบ "' + String(row.partName || '') + '" ในสต็อก — ค้นหาชื่ออื่นด้านบน หรือรับของเข้าก่อน')}
+      <div style="margin-top:10px;"><button type="button" class="btn secondary small" onclick="stockPickToReceive()">+ รับของเข้า</button></div></div>`;
+  }
+  const brandFirst = list => list.sort((a, b) => ((a.brand === row.brand ? 0 : 1) - (b.brand === row.brand ? 0 : 1))
+    || String(a.brand || '').localeCompare(String(b.brand || ''), 'th'));
+  const tag = jobVehicleTag(job);
+  if(!tag) return brandFirst(mine).map(stockPickRowHtml).join('');
+  const tk = stockKey(tag);
+  const same = brandFirst(mine.filter(it => it.fits && stockKey(it.fits) === tk));
+  const all = brandFirst(mine.filter(it => !it.fits));
+  const other = brandFirst(mine.filter(it => it.fits && stockKey(it.fits) !== tk));
+  let html = '';
+  if(same.length) html += `<div class="stock-lab">ตรงรุ่นรถนี้</div>` + same.map(stockPickRowHtml).join('');
+  if(all.length) html += `<div class="stock-lab">ใส่ได้ทุกรุ่น</div>` + all.map(stockPickRowHtml).join('');
+  if(other.length){
+    const open = !same.length && !all.length;
+    html += `<button type="button" class="stock-other-toggle" id="spOtherToggle" onclick="stockPickToggleOther()">${open ? '▾' : '▸'} รุ่นอื่น (${other.length})</button>
+      <div id="spOther" ${open ? '' : 'style="display:none"'}>${other.map(stockPickRowHtml).join('')}</div>`;
+  }
+  return html;
+}
+function stockPickHtml(){
+  const { sp, job, row } = stockPickCtx();
+  if(!sp || !job || !row) return '';
+  const head = `<div class="ui-modal stock-modal" id="stockPickModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">เบิกจากสต็อก</div>`;
+  const warn = STOCK_NOT_APPROVED.indexOf(job.status) >= 0 ? `<div class="stock-warn">${icon('bell', 14)} ลูกค้ายังไม่อนุมัติใบนี้</div>` : '';
+  if(sp.step === 1){
+    const tag = jobVehicleTag(job);
+    return head + `<div class="muted stock-ctx">${escapeHtml(String(row.partName || '') + ' · ในใบ ' + (row.qty || 1) + ' ' + (row.unit || 'ชิ้น') + (tag ? ' · ' + tag : ''))}</div>
+      ${warn}
+      <div class="search-wrap">${icon('search')}<input type="text" id="spSearch" class="ui-modal-input" autocomplete="off"
+        placeholder="ค้นหาของในสต็อก" value="${escapeAttr(sp.q)}" oninput="stockPickSearch(this.value)"></div>
+      <div class="stock-pick-list" id="spList">${stockPickListHtml()}</div>
+      <div class="ui-modal-btns"><button type="button" class="btn secondary" onclick="view.stockPick = null; closeUiModal()">ปิด</button></div>
+    </div>`;
+  }
+  const it = stockState.items[sp.itemId] || {};
+  const unit = stockUnitOf(it);
+  const busy = sp.busy ? 'disabled' : '';
+  const unitWarn = row.unit && it.unit && row.unit !== it.unit
+    ? `<div class="stock-warn">${escapeHtml('ในใบเขียนไว้ ' + (row.qty || 1) + ' ' + row.unit + ' — เช็กหน่วยให้ตรงก่อนเบิก')}</div>` : '';
+  return head + `<div class="stock-ctx"><b>${escapeHtml(stockItemLabel(it))}</b></div>
+    ${warn}
+    <div class="muted">${escapeHtml('ในสต็อกเหลือ ' + stockFmtQty(it.qty) + ' ' + unit)}</div>
+    <label class="stock-lab">จำนวนที่เบิก</label>
+    <div class="stock-qty-line">${stockStepperHtml('spQty', sp.n, 1, STOCK_MAX_N)}<span>${escapeHtml(unit)}</span></div>
+    ${unitWarn}
+    <div class="stock-err" id="spErr">${escapeHtml(sp.err || '')}</div>
+    <div class="ui-modal-btns">
+      <button type="button" class="btn secondary" id="spBack" onclick="stockPickBack()" ${busy}>${sp.locked ? 'ปิด' : 'ย้อนกลับ'}</button>
+      <button type="button" class="btn" id="spSubmit" onclick="stockPickSubmit(false)" ${busy}>${sp.busy ? 'กำลังเบิก…' : escapeHtml('เบิก ' + sp.n + ' ' + unit)}</button>
+    </div>
+  </div>`;
+}
+function stockPickSearch(v){
+  const sp = view.stockPick; if(!sp) return;
+  sp.q = String(v || '');
+  const el = document.getElementById('spList');
+  if(el) el.innerHTML = stockPickListHtml();
+}
+function stockPickToggleOther(){
+  const box = document.getElementById('spOther'), btn = document.getElementById('spOtherToggle');
+  if(!box || !box.style) return;
+  const open = box.style.display === 'none';
+  box.style.display = open ? '' : 'none';
+  if(btn && btn.tagName) btn.textContent = btn.textContent.replace(/^[▸▾]/, open ? '▾' : '▸');
+}
+function stockPickChoose(itemId){
+  const sp = view.stockPick;
+  if(!sp || !stockState.items[itemId]) return;
+  sp.itemId = itemId; sp.step = 2; sp.err = '';
+  stockModalSet('stockPickModal', stockPickHtml());
+}
+function stockPickBack(){
+  const sp = view.stockPick; if(!sp || sp.busy) return;
+  if(sp.locked){ view.stockPick = null; closeUiModal(); return; }
+  sp.n = parseInt(stockVal('spQty', String(sp.n)), 10) || sp.n;
+  sp.step = 1; sp.err = '';
+  stockModalSet('stockPickModal', stockPickHtml());
+}
+function stockPickToReceive(){
+  const { sp, job, row } = stockPickCtx();
+  if(!sp || !job || !row) return;
+  view.stockPick = null;
+  openStockReceive({ partName: row.partName, modelTag: jobVehicleTag(job) });
+}
+/* เบิกเกินยอด → ถามก่อน (AC-13) · ตกลง = เรียกใหม่ด้วย allowNegative และ token เดิม */
+function stockAskNegative(sp, have, n, unit){
+  uiConfirm('ของในสต็อกไม่พอ\nมี ' + stockFmtQty(have) + ' ' + unit + ' จะเบิก ' + n + ' ' + unit
+    + '\nยอดจะติดลบเป็น ' + stockFmtQty(have - n) + '\n\nช่างหยิบของไปแล้วจริงใช่ไหม?',
+    () => { view.stockPick = sp; stockPickSubmit(true); }, 'เบิกทั้งที่ไม่พอ', 'ไม่เบิก');
+}
+function stockPickSubmit(allowNegative){
+  const { sp, job, row } = stockPickCtx();
+  if(!sp || sp.busy || !job || !row) return;
+  const it = stockState.items[sp.itemId];
+  const unit = stockUnitOf(it);
+  const n = stockIntN(stockVal('spQty', String(sp.n)) || sp.n);
+  if(!n){ sp.err = 'จำนวนต้องมากกว่า 0'; stockModalSet('stockPickModal', stockPickHtml()); return; }
+  sp.n = n;
+  const have = it ? (Number(it.qty) || 0) : 0;
+  if(!allowNegative && it && have - n < 0){ stockAskNegative(sp, have, n, unit); return; }
+  sp.busy = true; sp.err = '';
+  stockModalSet('stockPickModal', stockPickHtml());
+  const { jobId, rowId, itemId } = sp;
+  const name = String(row.partName || (it && it.name) || '');
+  stockIssue({ jobId, rowId, itemId, n, token: sp.token, allowNegative: !!allowNegative }).then(res => {
+    if(view.stockPick === sp) view.stockPick = null;
+    stockModalClose('stockPickModal');
+    const cur = stockState.items[itemId] || {};
+    const left = (res && res.qtyAfter !== undefined) ? res.qtyAfter : cur.qty;
+    view.jpFlashId = rowId;
+    render();
+    setTimeout(() => { if(view.jpFlashId === rowId){ view.jpFlashId = null; render(); } }, 2600);
+    showUndoToast('เบิก ' + name + ' ' + n + ' ' + unit + 'แล้ว' + (left !== undefined ? ' · เหลือ ' + stockFmtQty(left) : ''),
+      () => stockUndoIssue(jobId, rowId, n));
+  }, e => {
+    sp.busy = false;
+    const code = e && e.code;
+    if(code === 'insufficient' && !allowNegative){
+      const cur = stockState.items[itemId];
+      stockAskNegative(sp, cur ? (Number(cur.qty) || 0) : have, n, unit);
+      return;
+    }
+    if(stockState.denied || code === 'denied'){ view.stockPick = null; stockModalClose('stockPickModal'); flashToast(stockDeniedMessage()); return; }
+    const msg = stockUiErrText(e, 'เบิกไม่สำเร็จ — ลองอีกครั้ง');
+    if(document.getElementById('stockPickModal')){ sp.err = msg; view.stockPick = sp; stockModalSet('stockPickModal', stockPickHtml()); }
+    else flashToast(msg);
+  });
+}
+/* เลิกทำการเบิก = คืนเท่าที่เพิ่งเบิก (move return ใหม่ ไม่ลบประวัติ) */
+function stockUndoIssue(jobId, rowId, n){
+  stockReturn({ jobId, rowId, n, token: stockNewToken() }).then(res => {
+    flashToast('ยกเลิกการเบิกแล้ว' + (res && res.qtyAfter !== undefined ? ' · เหลือ ' + stockFmtQty(res.qtyAfter) : ''));
+  }, e => {
+    const code = String((e && e.code) || '');
+    /* ตัวฟังใบยังไม่ส่ง move ที่เพิ่งเบิก → ข้อมูลในเครื่องยังไม่ทัน ไม่ใช่คืนเกินจริง */
+    if(code === 'over-return' || code === 'stale') flashToast('กำลังอัปเดตรายการ ลองกดอีกครั้งในอีกสักครู่');
+    else flashToast(stockErrorMessage(e));
+  });
+}
+
+/* ---------- กล่องคืน #stockReturnModal ---------- */
+function stockReturnFromJobLine(jobId, rowId){
+  const job = getJob(jobId);
+  if(!job) return;
+  if(stockUiBlocked()) return;
+  const moves = stockJobMoves(jobId);
+  if(!moves){ flashToast(stockErrorMessage(stockErr('not-ready'))); return; }
+  const out = stockRowOut(moves, rowId);
+  if(out <= 0) return;
+  const itemId = stockRowItemId(moves, rowId);
+  const it = stockState.items[itemId] || {};
+  const row = (job.partsNeeded || []).find(p => p && p.id === rowId) || {};
+  view.stockRet = { jobId, rowId, token: stockNewToken(), out, itemId, n: out, unit: stockUnitOf(it, row.unit), busy: false, err: '' };
+  stockModalOpen(stockRetHtml(), () => { const r = view.stockRet; if(r && r.busy) return false; view.stockRet = null; return true; });
+}
+function stockRetHtml(){
+  const r = view.stockRet;
+  const it = stockState.items[r.itemId] || {};
+  const busy = r.busy ? 'disabled' : '';
+  return `<div class="ui-modal stock-modal" id="stockReturnModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">คืนเข้าสต็อก</div>
+    <div class="stock-ctx"><b>${escapeHtml(stockItemLabel(it))}</b></div>
+    <div class="muted">${escapeHtml('เบิกไว้ ' + r.out + ' ' + r.unit + ' · คืนกี่ชิ้น?')}</div>
+    <div class="stock-qty-line">${stockStepperHtml('srtQty', r.n, 1, r.out)}<span>${escapeHtml(r.unit)}</span></div>
+    <div class="stock-err" id="srtErr">${escapeHtml(r.err || '')}</div>
+    <div class="ui-modal-btns">
+      <button type="button" class="btn secondary" onclick="view.stockRet = null; closeUiModal()" ${busy}>ไม่คืน</button>
+      <button type="button" class="btn" id="srtSubmit" onclick="submitStockReturn()" ${busy}>${r.busy ? 'กำลังบันทึก…' : escapeHtml('คืน ' + r.n + ' ' + r.unit + 'เข้าสต็อก')}</button>
+    </div>
+  </div>`;
+}
+function submitStockReturn(){
+  const r = view.stockRet;
+  if(!r || r.busy) return;
+  const n = Math.min(r.out, stockIntN(stockVal('srtQty', String(r.n)) || r.n));
+  if(!n){ r.err = 'จำนวนต้องมากกว่า 0'; stockModalSet('stockReturnModal', stockRetHtml()); return; }
+  r.n = n; r.busy = true; r.err = '';
+  stockModalSet('stockReturnModal', stockRetHtml());
+  stockReturn({ jobId: r.jobId, rowId: r.rowId, n, token: r.token }).then(res => {
+    if(view.stockRet === r) view.stockRet = null;
+    stockModalClose('stockReturnModal');
+    flashToast('คืนเข้าสต็อกแล้ว ' + n + ' ' + r.unit + (res && res.qtyAfter !== undefined ? ' · เหลือ ' + stockFmtQty(res.qtyAfter) : ''));
+  }, e => {
+    r.busy = false;
+    if(stockState.denied){ view.stockRet = null; stockModalClose('stockReturnModal'); flashToast(stockDeniedMessage()); return; }
+    r.err = stockUiErrText(e, 'บันทึกไม่สำเร็จ — ลองอีกครั้ง');
+    stockModalSet('stockReturnModal', stockRetHtml());
+  });
+}
+
+/* ---------- ถามเรื่องคืนสต็อก (U5) — เปิดกล่องอย่างเดียว ยอดไม่เปลี่ยนจนกว่าจะแตะตัวเลือก ----------
+   reason: 'removeLine' (ถามก่อนเอาบรรทัดออก) · 'rejected' / 'deleted' (ถามหลังเปลี่ยนแล้ว)
+   onDone(result): 'none' (ไม่มีของเบิกค้าง) · 'returned' · 'keep' (เอาออกไม่คืน) · 'later' · ยกเลิก = ไม่เรียก */
+function askStockBackDialog(jobId, reason, rowIds, onDone){
+  const done = r => { if(typeof onDone === 'function') onDone(r); };
+  const go = moves => {
+    let rows = stockJobOutstanding(moves || []);
+    if(Array.isArray(rowIds)) rows = rows.filter(r => rowIds.indexOf(r.rowId) >= 0);
+    if(!rows.length){ done('none'); return; }
+    const job = getJob(jobId);
+    const lineOf = r => ((job && job.partsNeeded) || []).find(p => p && p.id === r.rowId);
+    const nameOf = r => {
+      const ln = lineOf(r); if(ln && ln.partName) return String(ln.partName);
+      const mv = (moves || []).find(m => m && m.rowId === r.rowId && m.partName);
+      return mv ? String(mv.partName) : String((stockState.items[r.itemId] || {}).name || 'รายการ');
+    };
+    const units = rows.map(r => stockUnitOf(stockState.items[r.itemId], (lineOf(r) || {}).unit));
+    const unit = units.every(u => u === units[0]) ? units[0] : 'ชิ้น';
+    const total = rows.reduce((s, r) => s + r.out, 0);
+    let title, options;
+    if(reason === 'removeLine'){
+      title = rows.length === 1 ? 'บรรทัดนี้เบิกของจากสต็อกไว้ ' + total + ' ' + unit
+                                : 'มี ' + rows.length + ' บรรทัดที่เบิกของจากสต็อกไว้ (' + total + ' ' + unit + ')';
+      options = [
+        { value: 'return', label: 'คืนเข้าสต็อก แล้วเอาบรรทัดออก', sub: 'ของยังไม่ได้ใช้ วางกลับชั้นแล้ว', icon: 'undo' },
+        { value: 'keep', label: 'เอาบรรทัดออก ไม่คืนสต็อก', sub: 'ของถูกใช้ไปแล้ว หรือเสีย', icon: 'trash', tone: 'danger' }
+      ];
+    } else {
+      title = (reason === 'deleted' ? 'ใบที่ลบมีของเบิกจากสต็อกไว้ ' : 'ลูกค้าไม่ทำ — มีของที่เบิกจากสต็อกไว้ ') + total + ' ' + unit;
+      options = [
+        { value: 'return', label: 'คืนเข้าสต็อกทั้งหมด', sub: rows.map(r => nameOf(r) + ' ' + r.out).join(' · '), icon: 'undo' },
+        { value: 'later', label: 'ยังไม่คืนตอนนี้', sub: 'คืนทีละบรรทัดได้ที่ใบงานภายหลัง', icon: 'clock' }
+      ];
+    }
+    uiChoice(title, options, v => {
+      if(v !== 'return'){ done(v); return; }
+      stockReturnRows(jobId, rows).then(() => {
+        flashToast('คืนเข้าสต็อกแล้ว ' + total + ' ' + unit);
+        done('returned');
+      }, e => {
+        flashToast(reason === 'removeLine' ? 'คืนสต็อกไม่สำเร็จ — บรรทัดยังอยู่ ลองอีกครั้ง' : stockErrorMessage(e));
+      });
+    });
+  };
+  const watched = stockJobMoves(jobId);
+  if(watched){ go(watched); return; }
+  // ไม่ได้ฟังใบนี้: อ่านครั้งเดียว · ไม่มีสิทธิ์ / ออฟไลน์ = ถือว่าไม่มีของเบิก (ไม่ให้งานลบบรรทัดค้างรอเน็ต)
+  if(!db || stockState.denied || stockUiOffline()){ done('none'); return; }
+  db.collection('stockMoves').where('jobId', '==', String(jobId || '')).get().then(snap => {
+    const rows = [];
+    snap.forEach(doc => rows.push(Object.assign({}, doc.data(), { id: doc.id })));
+    go(rows);
+  }, () => done('none'));
+}
+/* บรรทัดนี้มีของเบิกค้างไหม (จาก move ของใบที่ฟังอยู่เท่านั้น) */
+function stockRowHasOut(jobId, rowId){
+  const m = stockJobMoves(jobId);
+  return !!m && stockRowOut(m, rowId) > 0;
+}
+/* คืนทุกบรรทัดที่ค้าง ทีละบรรทัด (แต่ละบรรทัดมี seq ของตัวเอง) */
+function stockReturnRows(jobId, rows){
+  return rows.reduce((p, r) => p.then(() => stockReturn({ jobId, rowId: r.rowId, n: r.out, token: stockNewToken() })), Promise.resolve());
+}
+
+/* ---------- แอดมิน: แก้ไขรายการ #stockEditModal (U6) ---------- */
+function openStockItemEdit(itemId){
+  if(!isAdmin()) return;
+  const it = stockState.items[itemId];
+  if(!it) return;
+  if(stockUiBlocked()) return;
+  view.stockEdit = { itemId, unit: stockUnitOf(it), minQty: Number(it.minQty) || 0, location: String(it.location || ''), busy: false, err: '' };
+  stockModalOpen(stockEditHtml(), () => {
+    const e = view.stockEdit; if(!e) return true;
+    stockEditCapture();
+    const cur = stockState.items[e.itemId] || {};
+    if(e.busy || e.unit !== stockUnitOf(cur) || e.minQty !== (Number(cur.minQty) || 0) || e.location !== String(cur.location || '')){
+      flashToast('พิมพ์ไว้แล้ว — กด "บันทึกการแก้ไข" เพื่อบันทึก หรือ "ยกเลิก" ถ้าจะทิ้ง');
+      return false;
+    }
+    view.stockEdit = null;
+    return true;
+  });
+}
+function stockEditCapture(){
+  const e = view.stockEdit; if(!e) return;
+  e.unit = stockVal('seUnit', e.unit) || e.unit;
+  e.minQty = parseInt(stockVal('seMin', String(e.minQty)), 10) || 0;
+  e.location = stockVal('seLocation', e.location);
+}
+function stockEditHtml(){
+  const e = view.stockEdit;
+  const it = stockState.items[e.itemId] || {};
+  const busy = e.busy ? 'disabled' : '';
+  return `<div class="ui-modal stock-modal" id="stockEditModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">แก้ไขรายการสต็อก</div>
+    <div class="stock-ctx"><b>${escapeHtml(it.name || '')}</b></div>
+    <div class="muted">${escapeHtml('แบรนด์ ' + stockBrandLabel(it.brand) + ' · รุ่นรถ ' + stockFitsLabel(it.fits))}</div>
+    <div class="muted stock-hint">แบรนด์/รุ่นรถเป็นตัวตนของรายการ เปลี่ยนไม่ได้ — ถ้าผิด ให้รับเข้าเป็นรายการใหม่ แล้วปรับยอดรายการนี้</div>
+    <label class="stock-lab" for="seUnit">หน่วย</label>
+    <select id="seUnit" ${busy}>${unitSelectOptions(e.unit, false)}</select>
+    <label class="stock-lab">ขั้นต่ำ (เตือนใกล้หมด) — 0 = ไม่เตือน</label>
+    ${stockStepperHtml('seMin', e.minQty, 0, 999999)}
+    <label class="stock-lab" for="seLocation">ที่วาง</label>
+    <input type="text" id="seLocation" class="ui-modal-input" maxlength="40" placeholder="เช่น ชั้น A2" value="${escapeAttr(e.location)}" ${busy}>
+    <div class="stock-edit-danger">
+      ${it.active === false
+        ? `<button type="button" class="btn secondary small" id="seReopen" data-item-id="${escapeAttr(e.itemId)}" onclick="reopenStockItem(this.dataset.itemId)" ${busy}>เปิดรายการอีกครั้ง</button>`
+        : `<button type="button" class="btn danger-solid small" id="seClose" data-item-id="${escapeAttr(e.itemId)}" onclick="closeStockItem(this.dataset.itemId)" ${busy}>ปิดรายการนี้</button>`}
+    </div>
+    <div class="stock-err" id="seErr">${escapeHtml(e.err || '')}</div>
+    <div class="ui-modal-btns">
+      <button type="button" class="btn secondary" onclick="view.stockEdit = null; closeUiModal()" ${busy}>ยกเลิก</button>
+      <button type="button" class="btn" id="seSave" onclick="submitStockItemEdit()" ${busy}>${e.busy ? 'กำลังบันทึก…' : 'บันทึกการแก้ไข'}</button>
+    </div>
+  </div>`;
+}
+function submitStockItemEdit(){
+  const e = view.stockEdit;
+  if(!e || e.busy) return;
+  stockEditCapture();
+  if(!Number.isInteger(e.minQty) || e.minQty < 0){ e.err = 'ขั้นต่ำต้องเป็น 0 ขึ้นไป'; stockModalSet('stockEditModal', stockEditHtml()); return; }
+  e.busy = true; e.err = '';
+  stockModalSet('stockEditModal', stockEditHtml());
+  stockUpdateItem(e.itemId, { unit: e.unit, minQty: e.minQty, location: e.location }).then(() => {
+    if(view.stockEdit === e) view.stockEdit = null;
+    stockModalClose('stockEditModal');
+    flashToast('บันทึกแล้ว');
+  }, err => {
+    e.busy = false;
+    e.err = stockUiErrText(err, 'บันทึกไม่สำเร็จ — ลองอีกครั้ง');
+    stockModalSet('stockEditModal', stockEditHtml());
+  });
+}
+function closeStockItem(itemId){
+  if(!isAdmin()) return;
+  const it = stockState.items[itemId];
+  if(!it) return;
+  const q = Number(it.qty) || 0;
+  view.stockEdit = null;
+  uiConfirm('ปิดรายการ "' + stockItemLabel(it) + '"?'
+    + (q !== 0 ? '\nยังเหลือในสต็อก ' + stockFmtQty(q) + ' ' + stockUnitOf(it) : '')
+    + '\n\nรายการจะไม่ขึ้นในหน้าสต็อกและตอนเบิก ประวัติยังอยู่ เปิดคืนได้', () => {
+    stockUpdateItem(itemId, { active: false }).then(() => flashToast('ปิดรายการแล้ว'), e => flashToast(stockErrorMessage(e)));
+  }, 'ปิดรายการ', 'ไม่ปิด');
+}
+function reopenStockItem(itemId){
+  if(!isAdmin()) return;
+  if(!stockState.items[itemId]) return;
+  stockUpdateItem(itemId, { active: true }).then(() => {
+    view.stockEdit = null;
+    stockModalClose('stockEditModal');
+    flashToast('เปิดรายการแล้ว');
+  }, e => flashToast(stockErrorMessage(e)));
+}
+
+/* ---------- แอดมิน: ปรับยอด #stockAdjustModal ---------- */
+function openStockAdjust(itemId){
+  if(!isAdmin()) return;
+  const it = stockState.items[itemId];
+  if(!it) return;
+  if(stockUiBlocked()) return;
+  view.stockAdj = { itemId, token: stockNewToken(), count: Math.max(0, Number(it.qty) || 0), reason: '', busy: false, err: '' };
+  stockModalOpen(stockAdjHtml(), () => {
+    const a = view.stockAdj; if(!a) return true;
+    stockAdjCapture();
+    if(a.busy || String(a.reason || '').trim()){
+      flashToast('พิมพ์ไว้แล้ว — กด "บันทึกยอดใหม่" เพื่อบันทึก หรือ "ยกเลิก" ถ้าจะทิ้ง');
+      return false;
+    }
+    view.stockAdj = null;
+    return true;
+  });
+}
+function stockAdjCapture(){
+  const a = view.stockAdj; if(!a) return;
+  const v = stockVal('saCount', null);
+  if(v !== null) a.count = parseInt(v, 10);
+  a.reason = stockVal('saReason', a.reason);
+}
+function stockAdjHtml(){
+  const a = view.stockAdj;
+  const it = stockState.items[a.itemId] || {};
+  const unit = stockUnitOf(it);
+  const d = (Number(a.count) || 0) - (Number(it.qty) || 0);
+  const busy = a.busy ? 'disabled' : '';
+  return `<div class="ui-modal stock-modal" id="stockAdjustModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">ปรับยอด</div>
+    <div class="stock-ctx"><b>${escapeHtml(stockItemLabel(it))}</b></div>
+    <div class="muted">${escapeHtml('ยอดในระบบ ' + stockFmtQty(it.qty) + ' ' + unit)}</div>
+    <label class="stock-lab">นับได้จริง</label>
+    <div class="stock-qty-line">${stockStepperHtml('saCount', a.count, 0, 999999)}<span>${escapeHtml(unit)}</span></div>
+    <div class="stock-diff${d < 0 ? ' neg' : ''}" id="saDiff">${escapeHtml('ต่างจากระบบ ' + stockFmtDelta(d))}</div>
+    <label class="stock-lab" for="saReason">เหตุผล *</label>
+    <div class="stock-chip-row">${STOCK_ADJUST_REASONS.map(x => `<button type="button" class="chk-chip" data-reason="${escapeAttr(x)}" onclick="stockAdjReason(this.dataset.reason)">${escapeHtml(x)}</button>`).join('')}</div>
+    <input type="text" id="saReason" class="ui-modal-input" maxlength="200" placeholder="เหตุผลเพิ่มเติม" value="${escapeAttr(a.reason)}" ${busy}>
+    <div class="stock-err" id="saErr">${escapeHtml(a.err || '')}</div>
+    <div class="ui-modal-btns">
+      <button type="button" class="btn secondary" onclick="view.stockAdj = null; closeUiModal()" ${busy}>ยกเลิก</button>
+      <button type="button" class="btn" id="saSubmit" onclick="submitStockAdjust()" ${busy}>${a.busy ? 'กำลังบันทึก…' : escapeHtml('บันทึกยอดใหม่ ' + (Number(a.count) || 0) + ' ' + unit)}</button>
+    </div>
+  </div>`;
+}
+function stockAdjReason(text){
+  const el = document.getElementById('saReason');
+  if(!el || !el.tagName) return;
+  const cur = String(el.value || '').trim();
+  el.value = cur ? (cur.indexOf(text) >= 0 ? cur : cur + ' · ' + text) : text;
+}
+function submitStockAdjust(){
+  const a = view.stockAdj;
+  if(!a || a.busy) return;
+  stockAdjCapture();
+  const it = stockState.items[a.itemId] || {};
+  const fail = msg => { a.err = msg; stockModalSet('stockAdjustModal', stockAdjHtml()); };
+  if(!Number.isInteger(a.count) || a.count < 0) return fail('จำนวนไม่ถูกต้อง');
+  if(!String(a.reason || '').trim()) return fail('ใส่เหตุผลก่อนบันทึก');
+  if(a.count === (Number(it.qty) || 0)) return fail('ยอดเท่าเดิม ไม่ต้องปรับ');
+  a.busy = true; a.err = '';
+  stockModalSet('stockAdjustModal', stockAdjHtml());
+  stockAdjust({ itemId: a.itemId, newQty: a.count, reason: String(a.reason).trim(), token: a.token }).then(res => {
+    a.busy = false;
+    if(res && res.noop){ fail('ยอดเท่าเดิม ไม่ต้องปรับ'); return; }
+    if(view.stockAdj === a) view.stockAdj = null;
+    stockModalClose('stockAdjustModal');
+    flashToast('ปรับยอดแล้ว · เหลือ ' + stockFmtQty(res && res.qtyAfter !== undefined ? res.qtyAfter : a.count));
+  }, e => {
+    a.busy = false;
+    fail(stockUiErrText(e, 'บันทึกไม่สำเร็จ — ลองอีกครั้ง'));
+  });
+}
+
+/* ---------- ประวัติ #stockHistoryModal (ทุกคนดูได้ · อ่านอย่างเดียว ไม่มีปุ่มแก้/ลบ) ---------- */
+const STOCK_HISTORY_STEP = 50;
+const STOCK_MOVE_LABEL = { receive: 'รับเข้า', issue: 'เบิก', 'return': 'คืน', adjust: 'ปรับยอด' };
+function openStockHistory(itemId){
+  const it = stockState.items[itemId];
+  if(!it) return;
+  view.stockHist = { itemId, state: 'loading', rows: [], shown: STOCK_HISTORY_STEP };
+  stockModalOpen(stockHistHtml());
+  stockHistLoad();
+}
+function stockHistLoad(){
+  const h = view.stockHist;
+  if(!h) return;
+  h.state = 'loading';
+  stockModalSet('stockHistoryModal', stockHistHtml());
+  stockItemHistory(h.itemId).then(rows => {
+    if(view.stockHist !== h) return;
+    h.rows = rows || []; h.state = 'ok';
+    stockModalSet('stockHistoryModal', stockHistHtml());
+  }, () => {
+    if(view.stockHist !== h) return;
+    h.state = 'error';
+    stockModalSet('stockHistoryModal', stockHistHtml());
+  });
+}
+function stockHistMore(){
+  const h = view.stockHist; if(!h) return;
+  h.shown += STOCK_HISTORY_STEP;
+  stockModalSet('stockHistoryModal', stockHistHtml());
+}
+function stockMoveRowHtml(m){
+  const type = String(m.type || '');
+  const bits = [String(m.by || '')];
+  if(type === 'receive'){
+    if(m.supplier) bits.push(String(m.supplier));
+    if(m.billNo) bits.push('บิล ' + m.billNo);
+  } else if(type === 'adjust'){
+    if(m.reason) bits.push(String(m.reason));
+  }
+  const job = (type === 'issue' || type === 'return') && m.jobId ? getJob(m.jobId) : null;
+  let jobHtml = '';
+  if(type === 'issue' || type === 'return'){
+    const label = 'ใบงาน ' + String(m.jobNumber || '-');
+    jobHtml = (job && !job.deletedAt)
+      ? ` · <button type="button" class="stock-job-link" data-job-id="${escapeAttr(job.id)}" onclick="closeUiModal(); openJob(this.dataset.jobId)">${escapeHtml(label)} ›</button>`
+      : ` · ${escapeHtml(label)}`;
+  }
+  return `<div class="stock-move-row">
+    <div class="smr-top">
+      <span class="smr-time">${escapeHtml(fmtDT(m.at))}</span>
+      <span class="stock-move-tag t-${escapeAttr(type)}">${escapeHtml(STOCK_MOVE_LABEL[type] || type)}</span>
+      <span class="smr-delta">${escapeHtml(stockFmtDelta(m.delta))}</span>
+      <span class="muted">${escapeHtml('เหลือ ' + stockFmtQty(m.qtyAfter))}</span>
+    </div>
+    <div class="smr-sub muted">${escapeHtml(bits.filter(Boolean).join(' · '))}${jobHtml}</div>
+  </div>`;
+}
+function stockHistHtml(){
+  const h = view.stockHist;
+  const it = stockState.items[h.itemId] || {};
+  let body;
+  if(h.state === 'loading') body = `<div class="empty-state">กำลังโหลดประวัติ…</div>`;
+  else if(h.state === 'error') body = `<div class="empty-state">โหลดประวัติไม่สำเร็จ
+      <div style="margin-top:10px;"><button type="button" class="btn secondary small" onclick="stockHistLoad()">ลองอีกครั้ง</button></div></div>`;
+  else if(!h.rows.length) body = `<div class="empty-state">ยังไม่มีประวัติ</div>`;
+  else {
+    body = h.rows.slice(0, h.shown).map(stockMoveRowHtml).join('');
+    if(h.rows.length > h.shown) body += `<button type="button" class="btn secondary small" id="stockHistoryMore" onclick="stockHistMore()">ดูเพิ่ม</button>`;
+  }
+  return `<div class="ui-modal stock-modal stock-history" id="stockHistoryModal" role="dialog" aria-modal="true">
+    <div class="ui-modal-title">${escapeHtml('ประวัติ · ' + stockItemLabel(it))}</div>
+    <div class="stock-history-list">${body}</div>
+    <div class="ui-modal-btns"><button type="button" class="btn secondary" onclick="view.stockHist = null; closeUiModal()">ปิด</button></div>
+  </div>`;
 }
 
 // Only field backfills that touch records already present — nothing that CREATES
@@ -14361,6 +16185,9 @@ function setJobStatus(jobId, statusKey){
   freeBayIfLeaving(job, statusKey);
   saveState(true);
   render();
+  /* v4.7.0 — ลูกค้าไม่ทำ: ถามเรื่องคืนสต็อก "หลัง" เปลี่ยนสถานะแล้ว (เปิดกล่องเท่านั้น ยอดไม่เปลี่ยนจนกว่าจะเลือก)
+     ทางเปลี่ยนแบบกลุ่ม (bulkSetStatus) และปิดใบย้อนหลังไม่ผ่านตรงนี้ จึงไม่ถาม */
+  if(statusKey === 'rejected') askStockBackDialog(jobId, 'rejected');
 
   /* v4.0.0 — กด "กำลังซ่อม" ตอนนี้ถามช่างก่อน แล้วค่อยต่อด้วยเลือกช่อง (เดิมถาม
      แค่ช่องอย่างเดียว) เหตุผลเดียวกับ v3.32.0: จังหวะที่เพิ่งกดคือจังหวะเดียวที่
@@ -15052,7 +16879,11 @@ function deleteJobConfirm(jobId){
   if(!job) return;
   const v = getVehicle(job.vehicleId) || {};
   const c = getCustomer(job.customerId) || {};
-  uiConfirm(`ลบรายการรับรถนี้?\n${v.plate||'-'} · ${c.name||'-'}\n\nย้ายไปถังขยะ กู้คืนได้จากหน้าตั้งค่า`, () => {
+  /* v4.7.0 — ใบที่เบิกของจากสต็อกไว้: บอกในข้อความยืนยัน แล้วถามเรื่องคืน "หลัง" ย้ายลงถังขยะ */
+  const stockMv = stockJobMoves(jobId);
+  const stockOut = stockMv ? stockJobOutstanding(stockMv).reduce((s, r) => s + r.out, 0) : 0;
+  uiConfirm(`ลบรายการรับรถนี้?\n${v.plate||'-'} · ${c.name||'-'}\n\nย้ายไปถังขยะ กู้คืนได้จากหน้าตั้งค่า`
+    + (stockOut ? `\nมีของเบิกจากสต็อก ${stockOut} ชิ้น — จะถามเรื่องคืนต่อ` : ''), () => {
     /* Soft delete — the record and its photos stay, only marked. A hard delete used to
        destroy the photos too, which made "undo" impossible. */
     job.deletedAt = nowIso();
@@ -15063,6 +16894,7 @@ function deleteJobConfirm(jobId){
     view.tab = 'joblist'; view.jobId = null;
     showUndoToast('ย้ายไปถังขยะแล้ว', () => restoreJobsBulk([job.id]));
     render();
+    askStockBackDialog(job.id, 'deleted');
   }, 'ลบรายการ');
 }
 
@@ -17019,6 +18851,7 @@ function render(){
       <div class="topnav main-nav">
         <button class="topnav-btn ${view.tab==='joblist'?'active':''}" onclick="goTab('joblist')">รายการงาน</button>
         <button class="topnav-btn ${view.tab==='checkin'?'active':''}" onclick="goTab('checkin')">+ รับรถ</button>
+        <button class="topnav-btn ${view.tab==='stock'?'active':''}" id="stockNavBtn" onclick="goTab('stock')">${icon('box')} สต็อก${stockNavBadgeHtml('stockNavBadge')}</button>
         <span class="topnav-divider"></span>
         <button class="topnav-btn ${view.tab==='ai'?'active':''}" onclick="goTab('ai')">${icon('sparkle')} AI</button>
         ${canManageCatalog() ? `<button class="topnav-btn ${settingsActive?'active':''}" onclick="goTab('shop')">${icon('settings')} ตั้งค่า</button>` : ''}
@@ -17079,6 +18912,7 @@ function render(){
   html += `<nav class="bottom-nav no-print">
     <button class="bn-btn ${view.tab==='joblist'?'active':''}" onclick="goTab('joblist')">${icon('list',21)}<span>รายการงาน</span></button>
     <button class="bn-btn ${view.tab==='checkin'?'active':''}" onclick="goTab('checkin')">${icon('plus',21)}<span>รับรถ</span></button>
+    <button class="bn-btn ${view.tab==='stock'?'active':''}" id="stockNavBtnBn" onclick="goTab('stock')">${icon('box',21)}<span>สต็อก</span>${stockNavBadgeHtml('stockNavBadgeBn')}</button>
     <button class="bn-btn ${view.tab==='ai'?'active':''}" onclick="goTab('ai')">${icon('sparkle',21)}<span>AI</span></button>
     ${canManageCatalog()
       ? `<button class="bn-btn ${settingsActive || view.tab==='blankform'?'active':''}" onclick="goTab('shop')">${icon('settings',21)}<span>ตั้งค่า</span></button>`
@@ -17131,6 +18965,8 @@ function render(){
     html += renderReviewsTab();
   } else if(view.tab === 'unitfix'){
     html += settingsBackLink('ตรวจราคาต่อหน่วย') + renderUnitPriceFixTab();
+  } else if(view.tab === 'stock'){
+    html += renderStockPage();   // v4.7.0 — พนักงานเข้าได้ (ไม่อยู่ในรายการแท็บแอดมินข้างบน)
   } else if(view.tab === 'ai'){
     html += renderAiTab();
   } else {
@@ -18425,6 +20261,8 @@ function toggleJobPartFromModel(jobId, modelPartId){
   }
 
   if(plain){
+    /* v4.7.0 — บรรทัดที่เบิกของจากสต็อกไว้: ไปทางเดียวกับถังขยะ (ถามเรื่องคืนก่อนเอาออก) */
+    if(stockRowHasOut(jobId, plain.id)){ removeJobPart(jobId, plain.id); return; }
     /* v4.6.1 — ของเดิมเอาออกเงียบ ๆ ช่างที่กดโดนซ้ำจึงไม่รู้ว่าเกิดอะไรขึ้น
        v4.6.3 — H3: เปลี่ยน flashToast 1.6 วิ เป็น undo-toast 6 วิ มีปุ่ม "เลิกทำ"
        คืนแถวเดิม (id เดิม แบรนด์/ราคาที่แก้ไว้ครบ) ที่ลำดับเดิม */
@@ -18709,7 +20547,9 @@ function onJobDiscountChange(jobId, field, value){
   render();
 }
 
-function removeJobPart(jobId, partRowId){
+/* v4.7.0 — stockNote: undefined = ยังไม่ได้ถามเรื่องสต็อก (บรรทัดที่เบิกของไว้ต้องถามก่อนเอาออก)
+   · สตริง = ถามแล้ว/ไม่มีของเบิก (ต่อท้ายข้อความเลิกทำ) */
+function removeJobPart(jobId, partRowId, stockNote){
   const job = getJob(jobId);
   if(!job) return;
   const row = (job.partsNeeded || []).find(p => p.id === partRowId);
@@ -18720,6 +20560,14 @@ function removeJobPart(jobId, partRowId){
   if(row && row.promoParent
      && job.partsNeeded.some(p => p.promoId === row.promoParent)){
     flashToast(`"${row.partName}" รวมอยู่ในชุดโปรแล้ว ถ้าจะเอาออกให้ลบที่บรรทัดชุดโปร`);
+    return;
+  }
+  /* ถามเฉพาะเมื่อรู้แน่ว่ามีของเบิกค้าง (move ของใบที่เปิดอยู่) — ไม่รอเน็ต ไม่ทำให้การลบช้า */
+  if(row && typeof stockNote !== 'string' && stockRowHasOut(jobId, partRowId)){
+    askStockBackDialog(jobId, 'removeLine', [partRowId], r => {
+      if(r === 'none' || r === 'keep') removeJobPart(jobId, partRowId, '');
+      else if(r === 'returned') removeJobPart(jobId, partRowId, ' · คืนสต็อกแล้ว');
+    });
     return;
   }
   // ลบหัวชุดโปร = รายการในชุดต้องหายตามไปด้วย ไม่งั้นจะเหลือรายการลอย ๆ
@@ -18736,7 +20584,7 @@ function removeJobPart(jobId, partRowId){
   }
   saveState(true);
   render();
-  if(cap) showUndoToast('ลบ "' + jobPartLabel(row) + '" ออกจากใบแล้ว',
+  if(cap) showUndoToast('ลบ "' + jobPartLabel(row) + '" ออกจากใบแล้ว' + (stockNote || ''),
     jobPartUndo(jobId, row, cap.index, cap.preIds));
 }
 
@@ -18778,9 +20626,23 @@ function jobPartUndo(jobId, row, index, preIds){
   };
 }
 
-function clearJobParts(jobId){
+function clearJobParts(jobId, stockChecked){
   const job = getJob(jobId);
   if(!job || job.partsNeeded.length === 0) return;
+  /* v4.7.0 — มีบรรทัดที่เบิกของจากสต็อกไว้: ถามเรื่องคืนก่อน (กล่องนี้แทนคำยืนยันล้าง) · ไม่มี = ยืนยันแบบเดิม */
+  if(!stockChecked && job.partsNeeded.some(p => p && stockRowHasOut(jobId, p.id))){
+    askStockBackDialog(jobId, 'removeLine', job.partsNeeded.map(p => p.id), r => {
+      if(r === 'none'){ clearJobParts(jobId, true); return; }
+      if(r !== 'returned' && r !== 'keep') return;
+      const j2 = getJob(jobId);
+      if(!j2) return;
+      j2.partsNeeded = [];
+      saveState(true);
+      flashToast('ล้างรายการแล้ว');
+      render();
+    });
+    return;
+  }
   uiConfirm(`ล้างรายการอะไหล่ทั้งหมดของงานนี้? (${job.partsNeeded.length} รายการ)`, () => {
     job.partsNeeded = [];
     saveState(true);
@@ -20518,6 +22380,7 @@ function renderJobDetail(jobId){
   }
   html += `</div>`;
 
+  stockWatchJob(job.id);   // v4.7.0 — ยอดเบิกต่อบรรทัด (กันเปิดซ้ำในตัวเอง)
   html += renderJobPartsEditor(job);
 
   // Photos are fetched separately (loadJobPhotos) rather than living on the job doc.
@@ -21500,6 +23363,7 @@ function renderJobPartsEditor(job){
           <select class="unit-select" style="margin-top:5px; width:100%;" onchange="onJobPartFieldChange('${job.id}','${p.id}','warrantyDays', this.value)">
             ${WARRANTY_OPTIONS.map(o => `<option value="${o.value}" ${(Number(p.warrantyDays)||0)===o.value?'selected':''}>ประกัน: ${escapeHtml(o.label)}</option>`).join('')}
           </select>
+          ${jobLineStockHtml(job, p)}
         </td>
         <td class="center" data-label="จำนวน">
           <div class="qty-inline">
