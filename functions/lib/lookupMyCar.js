@@ -26,7 +26,15 @@
 //  - purpose === 'feedback' (หน้า ?feedback): ไม่กรองส่งมอบ/เอารถลง (ยังกรอง deletedAt) แต่รถที่ส่งมอบแล้ว
 //    ต้อง updatedAt ไม่เกิน FEEDBACK_MAX_AGE_MS และ car เหลือเฉพาะ FEEDBACK_FIELDS (security ข้อ 4:
 //    ไล่ last4 ได้ ห้ามคืนราคา / อะไหล่ / อาการของรถที่ส่งมอบไปแล้ว) + includesDelivered: true
-//  - ไม่เขียนอะไรเลย (chatGrants เป็นงานรอบหน้า) · ทุก query เป็น equality ฟิลด์เดียว (ไม่ต้องมี composite index)
+//  - root ไม่เขียนอะไรเลย · ทุก query เป็น equality ฟิลด์เดียว (ไม่ต้องมี composite index)
+//
+// เฟส 3 multi-branch (4 พ.ย. 2569 · spec docs/specs/multi-branch.phase3.md §2, §4):
+//  - data.branchId (มีคีย์นี้ = หน้าสาขา): string /^[a-z0-9-]{2,24}$/ และไม่ใช่ 'donmueang' ผิด = 'invalid-argument' ก่อนอ่าน db
+//    branches/{b} ต้องมีอยู่ ไม่มี = 'not-found' · อ่านเฉพาะ branches/{b}/boardPrivate + branches/{b}/jobs (ไม่อ่าน board ของสาขา
+//    เพราะไม่มี phoneLast4 · ไม่แตะ path root · ไม่มี collectionGroup)
+//  - ผลของสาขา = {cars, v:2, branch, grant} — หน้าสาขารับผลเฉพาะเมื่อ branch ตรง (function รุ่นเก่าไม่คืน branch)
+//  - เขียนได้ที่เดียว: branches/{b}/chatGrants/{uid}_{jobId} (แชท, purpose reception) หรือ {uid}_{jobId}_fb (purpose feedback) (ดูท้ายฟังก์ชัน) · rate limit ใช้คีย์เดิม (root/ทุกสาขาโควตาเดียวกัน)
+//  - ไม่มีคีย์ branchId = root: ผลและการอ่านเหมือนรุ่น 2 ทุกไบต์
 'use strict';
 
 const LAST4_RE = /^[0-9]{4}$/;
@@ -46,6 +54,11 @@ const BOARD_FIELDS = ['queueNo', 'queueLabel', 'plate', 'province', 'brand', 'mo
   'jobNumber', 'shopName', 'shopPhone', 'shopLine', 'est', 'estMins', 'workStart', 'workEnd',
   'status', 'statusLabel', 'statusCls', 'createdAt', 'updatedAt'];
 const JOB_FIELDS = ['deletedAt', 'status', 'queueNo'];
+const BRANCH_RE = /^[a-z0-9-]{2,24}$/;
+const ROOT_BRANCH = 'donmueang';
+const GRANT_ROOT = false;                       // ดอนเมืองยังไม่เขียน grant (multi-branch.phase3.md §6 opt-in ภายหลัง)
+const GRANT_TTL_MS = 24 * 3600 * 1000;
+const GRANT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
 function str(v){ return v === undefined || v === null ? '' : String(v); }
 function num(v){ const n = Number(v); return isFinite(n) ? n : 0; }
@@ -132,6 +145,19 @@ function createLookupMyCar(deps){
     const queueNo = queueRaw.trim();
     if(!queueNo || queueNo.length > QUEUE_MAX_LEN) throw new HttpsError('invalid-argument', 'เลขคิวไม่ถูกต้อง');
 
+    let branch = '';
+    if(Object.prototype.hasOwnProperty.call(d, 'branchId')){
+      const b = d.branchId;
+      if(typeof b !== 'string' || b === ROOT_BRANCH || !BRANCH_RE.test(b)) throw new HttpsError('invalid-argument', 'สาขาไม่ถูกต้อง');
+      branch = b;
+    }
+    const base = branch ? db.collection('branches').doc(branch) : db;
+    if(branch){
+      let bs;
+      try { bs = await dbq(db.collection('branches').doc(branch).get()); }
+      catch(e){ log('branch-error', { code: str(e && e.code).slice(0, 40) || 'error' }); throw new HttpsError('unavailable', 'ระบบดึงข้อมูลไม่ได้ตอนนี้'); }
+      if(!bs || !bs.exists) throw new HttpsError('not-found', 'ไม่พบสาขา');
+    }
     const feedback = d.purpose === 'feedback';
     const t0 = now().getTime();
     // รถที่ยังอยู่ในร้าน = ผ่าน · รถส่งมอบ/เอารถลง = ผ่านเฉพาะ feedback ที่ updatedAt ไม่เกิน 14 วัน
@@ -141,9 +167,11 @@ function createLookupMyCar(deps){
       const at = Date.parse(str(updatedAt));
       return isFinite(at) && t0 - at <= FEEDBACK_MAX_AGE_MS && at - t0 <= FEEDBACK_MAX_AGE_MS;
     };
+    let grant = false;
     const done = cars => {
       const out = { cars, v: 2 };
       if(feedback) out.includesDelivered = true;
+      if(branch){ out.branch = branch; out.grant = grant; }
       return out;
     };
 
@@ -151,8 +179,8 @@ function createLookupMyCar(deps){
     try {
       // equality ฟิลด์เดียว (single-field index อัตโนมัติ) · ไม่ where queueNo เพราะ "04" ต้องเท่ากับ "4"
       const [sp, sb] = await Promise.all([
-        dbq(db.collection('boardPrivate').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get()),
-        dbq(db.collection('board').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get())
+        dbq(base.collection('boardPrivate').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get()),
+        branch ? Promise.resolve({ docs: [] }) : dbq(db.collection('board').where('phoneLast4', '==', last4).select(...BOARD_FIELDS).get())
       ]);
       const merged = new Map();
       (sb.docs || []).forEach(x => merged.set(x.id, x.data() || {}));
@@ -169,7 +197,7 @@ function createLookupMyCar(deps){
     // ยืนยันกับใบงานจริง: board/ ของใบที่ลบลงถังขยะ / ส่งมอบแล้วอาจค้างอยู่
     let jobs;
     try {
-      const refs = rows.map(r => db.collection('jobs').doc(r.id));
+      const refs = rows.map(r => base.collection('jobs').doc(r.id));
       jobs = await dbq(typeof db.getAll === 'function'
         ? db.getAll(...refs, { fieldMask: JOB_FIELDS })
         : Promise.all(refs.map(r => r.get())));
@@ -185,6 +213,21 @@ function createLookupMyCar(deps){
     }).map(r => toCar(r.id, r.b));
     cars.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     if(feedback) cars = cars.map(toFeedbackCar);
+    // เฟส 3: สิทธิ์แชท/ให้คะแนนของลูกค้าสาขา = branches/{b}/chatGrants/{uid}_{jobId} (อายุ 24 ชม.)
+    //   สร้างจาก cars หลังเทียบ jobs/ แล้วเท่านั้น (แถว boardPrivate ที่ค้างไม่ได้สิทธิ์) · batch เดียว <= MAX_CANDIDATES
+    //   refresh: true (ตัวรีเฟรช 60 วิของหน้าเว็บ) ไม่เขียนซ้ำ · root ไม่เขียน (GRANT_ROOT = false)
+    //   เขียนไม่ได้ (เช่น service account ยังเป็น Datastore Viewer) = คืนรถตามปกติ + grant:false · ไม่ทำให้การค้นล้ม
+    //   S-1: feedback (คืนรถที่ส่งมอบแล้วได้) เขียนที่ {uid}_{jobId}_fb เท่านั้น — กฎใช้ id นี้ได้แค่ให้คะแนน เปิดแชทไม่ได้
+    //   และไม่ทับ grant แชท {uid}_{jobId} (purpose 'reception') ของคันเดียวกัน
+    const grantSuffix = feedback ? '_fb' : '';
+    const grantCars = branch && d.refresh !== true ? cars.filter(c => GRANT_ID_RE.test(str(c.id))) : [];
+    if(grantCars.length){
+      const batch = db.batch();
+      grantCars.forEach(c => batch.set(base.collection('chatGrants').doc(uid + '_' + c.id + grantSuffix),
+        { uid, jobId: c.id, branchId: branch, purpose: feedback ? 'feedback' : 'reception', expireAt: new Date(t0 + GRANT_TTL_MS), createdAt: new Date(t0) }));
+      try { await dbq(batch.commit()); grant = true; }
+      catch(e){ log('grant-error', { code: str(e && e.code).slice(0, 40) || 'error' }); grant = false; }
+    }
     log('done', { found: cars.length, feedback });
     return done(cars);
   };

@@ -35,6 +35,15 @@ service cloud.firestore {
         && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
     }
 
+    // [multi-branch] all-branch account: UID + email hash must both match (the repo is public, so no plain email here)
+    // UID is checked first: anonymous tokens have no email claim
+    function allBranchUid() { return 'GqybqhanlWXyKYTVnLqe9YwPknz1'; }
+    function allBranchAdmin() {
+      return request.auth != null
+        && request.auth.uid == allBranchUid()
+        && hashing.sha256(request.auth.token.email.toUtf8()).toHexString().lower() == 'adaf5b32d99f927f6f516b9d651d412a7f8f3efe4415994c8b22f637032bbf23';
+    }
+
     function signedIn() {
       return request.auth != null;
     }
@@ -45,17 +54,51 @@ service cloud.firestore {
 
     // ต้องมีเอกสารใน users/{uid} ถึงจะใช้ระบบได้
     // (สร้างบัญชีใน Authentication เฉยๆ ยังเข้าไม่ได้ จนกว่า Admin จะให้สิทธิ์)
-    function hasAccess() {
-      return bootstrapAdmin()
-        || (signedIn()
-            && exists(/databases/$(database)/documents/users/$(request.auth.uid)));
+    // [multi-branch] root = Don Mueang. Every root rule goes through memberOf/adminOf('donmueang') (B-1, B-2)
+    function hasAccess() { return memberOf('donmueang'); }
+
+    function isAdmin() { return adminOf('donmueang'); }
+
+    function bootUid() { return '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'; }
+    function hasUserDoc() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    // Bootstrap is pinned to Don Mueang whatever its doc says (decision 7, B-7)
+    // Phase 2 (P2-3): a missing branchId is no branch at all, never Don Mueang. Same change in storage.rules and the app.
+    function callerBranch() {
+      return bootstrapAdmin() ? 'donmueang' : profile().get('branchId', '');
+    }
+    // Phase 2 fix 1: an empty branch ('' = no branchId) never matches a member/admin. Only the all-branch account sees no-branch docs.
+    function memberOf(b) {
+      return allBranchAdmin()
+        || (signedIn() && b != '' && (bootstrapAdmin() ? b == 'donmueang' : (hasUserDoc() && callerBranch() == b)));
+    }
+    function adminOf(b) {
+      return allBranchAdmin()
+        || (b == 'donmueang' && bootstrapAdmin())
+        || (signedIn() && b != '' && !bootstrapAdmin() && hasUserDoc() && callerBranch() == b && profile().role == 'admin');
+    }
+    function anonCustomer() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function validBranch(b) {
+      return b is string && b != 'donmueang' && b.matches('^[a-z0-9-]{2,24}$');
     }
 
-    function isAdmin() {
-      return bootstrapAdmin()
-        || (signedIn()
-            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && profile().role == 'admin');
+    // ---------- users helpers ----------
+    function userBranch(d) { return d.get('branchId', ''); }
+    function userKeys() { return ['name', 'email', 'role', 'branchId']; }
+    function userRoleOk(d) { return d.get('role', 'staff') in ['admin', 'staff']; }
+    // S-5: the all-branch account must always send branchId as a real, known value
+    function allBranchUserWriteOk(userId) {
+      let nb = request.resource.data.branchId;
+      return allBranchAdmin()
+        && nb is string
+        && (nb == 'donmueang' || (validBranch(nb) && exists(/databases/$(database)/documents/branches/$(nb))))
+        && (userId != bootUid() || nb == 'donmueang')
+        && userRoleOk(request.resource.data)
+        // Phase 2 fix 2: create = same id format as the branch-admin path (real Auth UID). Update/move keeps the existing id.
+        && (request.method != 'create' || userId.matches('^[A-Za-z0-9]{20,128}$'));
     }
 
     // [ใหม่ 24 ต.ค. 2569 — S-NEW-1] คีย์ที่หน้าลูกค้า (?reception แชท) เขียนลง chatThreads/{jobId}
@@ -68,10 +111,35 @@ service cloud.firestore {
     // ---------- ผู้ใช้และสิทธิ์ ----------
     // ทุกคนอ่านโปรไฟล์ตัวเองได้ (แอปต้องอ่านเพื่อรู้ว่าเป็น admin หรือ staff)
     // แต่สร้าง/แก้/ลบสิทธิ์ ทำได้เฉพาะ Admin
+    // [multi-branch] the same default ('' = no branch) is applied on BOTH sides, so removing branchId cannot move an account (B-3, P2-3).
+    // list: a plain collection get is denied; the query must carry where('branchId','==',x) (S-4). Owner backfills first.
     match /users/{userId} {
-      allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
-      allow list: if isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow get: if signedIn() && (request.auth.uid == userId
+        || allBranchAdmin()
+        || (resource == null && adminOf(callerBranch()))
+        || (resource != null && adminOf(userBranch(resource.data))));
+      allow list: if allBranchAdmin() || adminOf(resource.data.branchId);
+      allow create: if allBranchUserWriteOk(userId)
+        || (bootstrapAdmin() && userId == request.auth.uid   // own doc only, must send branchId 'donmueang' (P2-3, U9)
+            && userBranch(request.resource.data) == 'donmueang'
+            && request.resource.data.keys().hasOnly(userKeys())
+            && userRoleOk(request.resource.data))
+        // Phase 2 fix 1: branch admins may only create ids shaped like a real Auth UID (28 alphanumerics; 20 = Auto-ID is still flagged in the app).
+        // Quotes or other characters in a doc id were stored XSS in the all-branch users screen.
+        || (!allBranchAdmin() && userId != allBranchUid() && userId != bootUid()
+            && userId.matches('^[A-Za-z0-9]{20,128}$')
+            && adminOf(userBranch(request.resource.data))
+            && request.resource.data.keys().hasOnly(userKeys())
+            && userRoleOk(request.resource.data));
+      allow update: if allBranchUserWriteOk(userId)
+        || (!allBranchAdmin() && userId != allBranchUid()
+            && adminOf(userBranch(resource.data))
+            && userBranch(request.resource.data) == userBranch(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(userKeys())
+            && userRoleOk(request.resource.data));
+      allow delete: if allBranchAdmin()
+        || (!allBranchAdmin() && userId != allBranchUid() && userId != bootUid()
+            && adminOf(userBranch(resource.data)));
     }
 
     // ---------- งานประจำวัน — พนักงานทำได้ ----------
@@ -219,7 +287,7 @@ service cloud.firestore {
       // .limit(60)) เห็นห้องแชททุกคันในร้านพร้อมข้อความล่าสุด ไม่ใช่แค่ห้องตัวเอง
       // แยกเป็น get/list: ลูกค้าอ่านห้องตัวเองได้ถ้ารู้ jobId (.doc(id) เท่านั้น)
       // ส่วน list (แอดมินใช้ query จริง) สงวนไว้ให้คนที่มีสิทธิ์เท่านั้น
-      allow get: if signedIn();
+      allow get: if anonCustomer() || hasAccess();
       allow list: if isAdmin();
       /* [แก้ 24 ต.ค. 2569 — bugfix-sweep S-NEW-1]
          เดิม create/update ห้อง = signedIn() เฉย ๆ และข้อความไม่ตรวจช่อง from เลย
@@ -240,7 +308,7 @@ service cloud.firestore {
              พนักงานเขียน 'admin' ได้ · 'bot' เขียนจากเบราว์เซอร์ไม่ได้ (Bot ใช้ Admin SDK)
          แก้ฟิลด์ที่หน้าลูกค้าเขียน ต้องแก้รายการคีย์ตรงนี้ด้วย ไม่งั้นแชทลูกค้าพัง */
       allow create: if hasAccess()
-        || (signedIn()
+        || (anonCustomer()
             && request.resource.data.keys().hasOnly(chatThreadCustomerKeys())
             && request.resource.data.get('lastFrom', 'customer') == 'customer'
             && (!('lastText' in request.resource.data)
@@ -250,7 +318,7 @@ service cloud.firestore {
             && request.resource.data.get('unreadCustomer', 0) is int
             && request.resource.data.get('unreadCustomer', 0) == 0);
       allow update: if hasAccess()
-        || (signedIn()
+        || (anonCustomer()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(chatThreadCustomerKeys())
             && (!('lastFrom' in request.resource.data.diff(resource.data).affectedKeys())
                 || request.resource.data.lastFrom == 'customer')
@@ -264,8 +332,8 @@ service cloud.firestore {
                     && request.resource.data.unreadCustomer == 0)));
       allow delete: if false;
       match /messages/{msgId} {
-        allow read: if signedIn();
-        allow create: if signedIn()
+        allow read: if anonCustomer() || hasAccess();
+        allow create: if (anonCustomer() || hasAccess())
           && request.resource.data.keys().hasOnly(['text','from','at','name'])
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
@@ -285,7 +353,7 @@ service cloud.firestore {
     // แก้ไม่ได้แม้แต่แอดมิน ให้เป็นคะแนนดิบที่ลูกค้าให้จริง ณ ตอนนั้น
     match /feedback/{jobId} {
       allow read: if hasAccess();
-      allow create: if signedIn()
+      allow create: if (anonCustomer() || hasAccess())
         && request.resource.data.keys().hasOnly(['stars','comment','queueNo','plate','at'])
         && request.resource.data.stars is int
         && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
@@ -300,7 +368,7 @@ service cloud.firestore {
     // อ่านได้เฉพาะคนที่มีสิทธิ์ในระบบ (ไม่ใช่ข้อมูลสาธารณะเหมือน board/)
     match /presence/{uid} {
       allow read: if hasAccess();
-      allow write: if signedIn() && request.auth.uid == uid;
+      allow write: if hasAccess() && request.auth.uid == uid;
     }
 
     // ---------- กลุ่ม LINE ที่ Bot ตอบได้ (line-bot-queue-command) ----------
@@ -500,6 +568,337 @@ service cloud.firestore {
         );
 
       allow update, delete: if false;   // ประวัติแก้/ลบไม่ได้ แม้แอดมิน
+    }
+
+    // ---------- new branches (multi-branch) ----------
+    // Don Mueang stays at root; validBranch() rejects branches/donmueang for everyone (B-4).
+    // No {document=**} grant. No bootstrap (B-7).
+    // Phase 3: public paths open per branch (S-1 lifted). Customers reach chat/feedback only with a grant
+    // written by lookupMyCar (Admin SDK) at branches/{b}/chatGrants/{uid}_{jobId} (chat) or {uid}_{jobId}_fb (feedback) (B-8 for new branches).
+    // No rule matches chatGrants: every client read/write of it falls to the catch-all (denied).
+    match /branches/{branchId} {
+      function bAccess() { return validBranch(branchId) && memberOf(branchId); }
+      function bAdmin()  { return validBranch(branchId) && adminOf(branchId); }
+      function bStockItemPath(iid) { return /databases/$(database)/documents/branches/$(branchId)/stockItems/$(iid); }
+      function bStockMovePath(mid) { return /databases/$(database)/documents/branches/$(branchId)/stockMoves/$(mid); }
+      // Phase 2 fix 2: doc ids created under a branch. The all-branch account renders branch ids raw inside
+      // onclick="...('<id>')" (~147 handlers), so an id with ' " < > &  or whitespace was stored XSS.
+      // Allowed = what the app really writes: uid() [a-z0-9]{<=11}, Auto-ID [A-Za-z0-9]{20}, Auth UID [A-Za-z0-9]{28},
+      // dc0..dc7, config main/pushTokens/queueCounter/boardMode; _ and - are harmless margin (same set as stock jobId/rowId).
+      // Creates only: a doc that already exists keeps its id (updates/deletes unchanged).
+      // Not used on stockItems/stockMoves: move ids are already pinned (r_/a_/j_ regex), item ids = masterPartId|brandKey|fitsKey
+      // (brandKey may be Thai) and the stock screens pass ids through data-* + escapeAttr; both must stay equal to root (guard B8).
+      function bIdOk(id) { return id.matches('^[A-Za-z0-9_-]{1,128}$'); }
+
+      // Phase 3: grant check for anonymous customers. 1 distinct doc read (repeated get of one doc counts once).
+      // A grant of branch A lives under branches/A, so it can never satisfy a rule under branches/B.
+      // S-1 (fix loop 1): two grant ids. {uid}_{jobId} = purpose 'reception' (cars still in the shop) -> chat + feedback.
+      // {uid}_{jobId}_fb = purpose 'feedback' (may be a car delivered up to 14 days ago) -> feedback only, never chat.
+      // A feedback lookup writes only the _fb id, so it cannot overwrite (or downgrade) a chat grant.
+      function bGrantPath(gid) { return /databases/$(database)/documents/branches/$(branchId)/chatGrants/$(gid); }
+      function bGranted(jobId) {
+        return validBranch(branchId) && anonCustomer()
+          && exists(bGrantPath(request.auth.uid + '_' + jobId))
+          && get(bGrantPath(request.auth.uid + '_' + jobId)).data.uid == request.auth.uid
+          && get(bGrantPath(request.auth.uid + '_' + jobId)).data.jobId == jobId
+          && get(bGrantPath(request.auth.uid + '_' + jobId)).data.purpose == 'reception'
+          && get(bGrantPath(request.auth.uid + '_' + jobId)).data.expireAt is timestamp
+          && get(bGrantPath(request.auth.uid + '_' + jobId)).data.expireAt > request.time;
+      }
+      // feedback grant: 1 distinct doc read (the _fb id). Used by feedback create only.
+      function bFbGranted(jobId) {
+        return validBranch(branchId) && anonCustomer()
+          && exists(bGrantPath(request.auth.uid + '_' + jobId + '_fb'))
+          && get(bGrantPath(request.auth.uid + '_' + jobId + '_fb')).data.uid == request.auth.uid
+          && get(bGrantPath(request.auth.uid + '_' + jobId + '_fb')).data.jobId == jobId
+          && get(bGrantPath(request.auth.uid + '_' + jobId + '_fb')).data.purpose == 'feedback'
+          && get(bGrantPath(request.auth.uid + '_' + jobId + '_fb')).data.expireAt is timestamp
+          && get(bGrantPath(request.auth.uid + '_' + jobId + '_fb')).data.expireAt > request.time;
+      }
+      // customer = anonymous + grant · everyone else = branch member. Anonymous never falls through to bAccess (no users read).
+      function bCustomerOr(jobId) {
+        return (anonCustomer() && bGranted(jobId)) || (!anonCustomer() && bAccess());
+      }
+
+      // Phase 3: get is public so the customer page can show the branch name and refuse an unknown/unopened branch
+      // (fields: name, code, address, phone, createdAt, catalogCopy*; all business info). list stays all-branch only.
+      allow get:  if validBranch(branchId);
+      allow list: if allBranchAdmin();
+      // U-5: job-number code is 2 capital letters and never PG · a name is required · fixed key list
+      allow create, update: if allBranchAdmin() && validBranch(branchId)
+        && request.resource.data.keys().hasOnly(['name', 'code', 'address', 'phone', 'createdAt', 'catalogCopyStartedAt', 'catalogCopiedAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0
+        && request.resource.data.code is string && request.resource.data.code.matches('^[A-Z]{2}$')
+        && request.resource.data.code != 'PG';
+      allow delete: if false;
+
+      match /jobs/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /vehicles/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /customers/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /models/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /masterParts/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /partBrandOptions/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+
+      match /complaintTypes/{docId} {
+        allow read:   if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if bAccess();
+        allow delete: if bAdmin();
+      }
+      match /jobPhotos/{docId} {
+        allow read, update, delete: if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+      }
+      match /editLog/{docId} {
+        allow read: if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+        allow update: if false;
+        allow delete: if bAdmin();
+      }
+      match /config/{docId} {
+        allow read: if bAccess();
+        allow create: if (bAdmin()
+          || (docId in ['pushTokens','queueCounter'] && bAccess()))
+          && bIdOk(docId);
+        allow update: if bAdmin()
+          || (docId in ['pushTokens','queueCounter'] && bAccess())
+          || (docId == 'main' && bAccess()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['technicians']));
+        allow delete: if bAdmin();
+      }
+      // Phase 3: public read, same as root board (S-1 lifted). The write rule keeps the doc to queue + status only
+      // (decision 6, S-2): must equal BOARD_BRANCH_KEYS in index.html. delete is separate: request.resource does not exist on delete (S-3)
+      match /board/{docId} {
+        allow read: if validBranch(branchId);
+        allow create, update: if bAccess()
+          && request.resource.data.keys().hasOnly(['queueNo','queueLabel','status','statusLabel','statusCls','estMins','workStart','workEnd','bay','bayAt','createdAt','updatedAt'])
+          && (request.method != 'create' || bIdOk(docId));
+        allow delete: if bAccess();
+      }
+      match /boardPrivate/{docId} {
+        allow get, list: if false;
+        allow update, delete: if bAccess();
+        allow create: if bAccess() && bIdOk(docId);
+      }
+      match /presence/{uid} {
+        allow read: if bAccess();
+        allow write: if bAccess() && request.auth.uid == uid
+          && (request.method != 'create' || bIdOk(uid));
+      }
+      // Phase 3: customer = anonymous with a grant for this job (B-8). One slot per job: create only, never update.
+      // S-1: either grant works here (chat grant via bCustomerOr, or the _fb feedback grant).
+      match /feedback/{jobId} {
+        allow read: if bAccess();
+        allow create: if (bCustomerOr(jobId) || bFbGranted(jobId)) && bIdOk(jobId)
+          && request.resource.data.keys().hasOnly(['stars','comment','queueNo','plate','at'])
+          && request.resource.data.stars is int
+          && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
+          && request.resource.data.comment is string
+          && request.resource.data.comment.size() <= 500;
+        allow update, delete: if false;
+      }
+      // Phase 3: customer clauses copied from root chatThreads (S-NEW-1) + grant. Staff paths unchanged.
+      match /chatThreads/{jobId} {
+        allow get: if bCustomerOr(jobId);
+        allow list: if bAdmin();
+        allow create: if bIdOk(jobId) && (
+          (!anonCustomer() && bAccess())
+          || (anonCustomer() && bGranted(jobId)
+              && request.resource.data.keys().hasOnly(chatThreadCustomerKeys())
+              && request.resource.data.get('lastFrom', 'customer') == 'customer'
+              && (!('lastText' in request.resource.data)
+                  || request.resource.data.get('lastFrom', '') == 'customer')
+              && request.resource.data.get('jobId', jobId) == jobId
+              && request.resource.data.get('unreadAdmin', 0) is int
+              && request.resource.data.get('unreadCustomer', 0) is int
+              && request.resource.data.get('unreadCustomer', 0) == 0));
+        allow update: if (!anonCustomer() && bAccess())
+          || (anonCustomer() && bGranted(jobId)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(chatThreadCustomerKeys())
+              && (!('lastFrom' in request.resource.data.diff(resource.data).affectedKeys())
+                  || request.resource.data.lastFrom == 'customer')
+              && (!('lastText' in request.resource.data.diff(resource.data).affectedKeys())
+                  || request.resource.data.get('lastFrom', '') == 'customer')
+              && (!('jobId' in request.resource.data.diff(resource.data).affectedKeys())
+                  || request.resource.data.jobId == jobId)
+              && request.resource.data.get('unreadAdmin', 0) is int
+              && (!('unreadCustomer' in request.resource.data.diff(resource.data).affectedKeys())
+                  || (request.resource.data.unreadCustomer is int
+                      && request.resource.data.unreadCustomer == 0)));
+        allow delete: if false;
+        match /messages/{msgId} {
+          allow read: if bCustomerOr(jobId);
+          allow create: if bIdOk(msgId)
+            && ((!anonCustomer() && bAccess())
+                || (anonCustomer() && bGranted(jobId) && request.resource.data.from == 'customer'))
+            && request.resource.data.keys().hasOnly(['text','from','at','name'])
+            && request.resource.data.text is string
+            && request.resource.data.text.size() > 0
+            && request.resource.data.text.size() <= 2000
+            && request.resource.data.from in ['customer', 'admin'];
+          allow update, delete: if false;
+        }
+      }
+
+      // stock: root rules copied verbatim, only b* names and jobs/masterParts paths differ (a guard compares both)
+      function bQtyByNewMove(itemId, oldQty) {
+        let mid = request.resource.data.lastMoveId;
+        let mv  = getAfter(bStockMovePath(mid)).data;
+        return mid is string
+          && !exists(bStockMovePath(mid))
+          && mv.itemId == itemId
+          && mv.byUid == request.auth.uid
+          && mv.delta == request.resource.data.qty - oldQty
+          && mv.qtyAfter == request.resource.data.qty;
+      }
+
+      match /stockItems/{itemId} {
+        allow get, list: if bAccess();
+
+        allow create: if bAccess()
+          && request.resource.data.keys().hasOnly(stockItemKeys())
+          && itemId == request.resource.data.masterPartId + '|'
+                       + request.resource.data.brandKey + '|' + request.resource.data.fitsKey
+          && request.resource.data.qty is int
+          && request.resource.data.minQty is int && request.resource.data.minQty >= 0
+          && request.resource.data.active is bool
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.updatedByUid == request.auth.uid
+          && strMax(request.resource.data.get('createdBy', ''), 80)
+          && stockItemTextOk(request.resource.data)
+          && exists(/databases/$(database)/documents/branches/$(branchId)/masterParts/$(request.resource.data.masterPartId))
+          && (
+               (request.resource.data.active == true
+                && request.resource.data.minQty == 0
+                && bQtyByNewMove(itemId, 0)
+                && getAfter(bStockMovePath(request.resource.data.lastMoveId)).data.type == 'receive')
+            || (bAdmin()
+                && request.resource.data.qty == 0
+                && !('lastMoveId' in request.resource.data))
+          );
+
+        allow update: if bAccess()
+          && request.resource.data.keys().hasOnly(stockItemKeys())
+          && request.resource.data.updatedByUid == request.auth.uid
+          && stockItemTextOk(request.resource.data)
+          && (
+               (request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['qty','lastMoveId','updatedAt','updatedBy','updatedByUid'])
+                && request.resource.data.qty is int
+                && bQtyByNewMove(itemId, resource.data.qty)
+                && (resource.data.active == true
+                    || getAfter(bStockMovePath(request.resource.data.lastMoveId)).data.type in ['return','adjust']))
+            || (bAdmin()
+                && !request.resource.data.diff(resource.data).affectedKeys()
+                     .hasAny(['qty','lastMoveId','masterPartId','brandKey','fitsKey',
+                              'createdAt','createdBy','createdByUid'])
+                && request.resource.data.minQty is int && request.resource.data.minQty >= 0
+                && request.resource.data.active is bool)
+          );
+
+        allow delete: if false;   // ปิดรายการ = active:false
+      }
+
+      function bStockJobMoveOk(moveId) {
+        let d = request.resource.data;
+        return d.jobId is string && d.jobId.matches('^[A-Za-z0-9_-]{1,40}$')
+          && d.rowId is string && d.rowId.matches('^[A-Za-z0-9_-]{1,40}$')
+          && d.seq is int && d.seq >= 1
+          && moveId == 'j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq)
+          && (d.seq == 1
+              || exists(bStockMovePath('j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq - 1))))
+          && exists(/databases/$(database)/documents/branches/$(branchId)/jobs/$(d.jobId));
+      }
+
+      function bStockReturnBoundOk() {
+        let d = request.resource.data;
+        let prev = get(bStockMovePath('j_' + d.jobId + '|' + d.rowId + '|' + string(d.seq - 1))).data;
+        return d.seq >= 2
+          && prev.type in ['issue','return']
+          && prev.itemId == d.itemId;
+      }
+
+      function stockMoveTextOk(d) {
+        return strMax(d.by, 80) && strMax(d.at, 40)
+          && strMax(d.get('token', ''), 24)
+          && strMax(d.get('jobNumber', ''), 40) && strMax(d.get('partName', ''), 120)
+          && strMax(d.get('supplier', ''), 80) && strMax(d.get('billNo', ''), 40)
+          && strMax(d.get('reason', ''), 200);
+      }
+
+      match /stockMoves/{moveId} {
+        allow get, list: if bAccess();
+
+        allow create: if bAccess()
+          && request.resource.data.keys().hasOnly(stockMoveKeys())
+          && request.resource.data.byUid == request.auth.uid            // S4
+          && stockMoveTextOk(request.resource.data)
+          && request.resource.data.serverAt == request.time             // S5
+          && request.resource.data.itemId is string
+          && request.resource.data.delta is int
+          && request.resource.data.delta != 0
+          && request.resource.data.delta >= -9999 && request.resource.data.delta <= 9999
+          && request.resource.data.qtyAfter is int
+          && request.resource.data.qtyBefore is int
+          && request.resource.data.qtyBefore + request.resource.data.delta == request.resource.data.qtyAfter
+          && getAfter(bStockItemPath(request.resource.data.itemId)).data.lastMoveId == moveId
+          && getAfter(bStockItemPath(request.resource.data.itemId)).data.qty == request.resource.data.qtyAfter
+          && (
+               (request.resource.data.type == 'receive'
+                && request.resource.data.delta > 0
+                && moveId.matches('^r_[A-Za-z0-9]{6,24}$'))
+            || (request.resource.data.type == 'issue'
+                && request.resource.data.delta < 0
+                && bStockJobMoveOk(moveId))
+            || (request.resource.data.type == 'return'
+                && request.resource.data.delta > 0
+                && bStockJobMoveOk(moveId)
+                && bStockReturnBoundOk())
+            || (request.resource.data.type == 'adjust'
+                && bAdmin()
+                && moveId.matches('^a_[A-Za-z0-9]{6,24}$')
+                && request.resource.data.reason is string
+                && request.resource.data.reason.size() <= 200
+                && request.resource.data.reason.matches('.*[^ ].*'))
+          );
+
+        allow update, delete: if false;   // ประวัติแก้/ลบไม่ได้ แม้แอดมิน
+      }
     }
 
     // ---------- ปิดทุกอย่างที่ไม่ได้ระบุไว้ข้างบน ----------

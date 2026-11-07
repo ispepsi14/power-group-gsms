@@ -117,3 +117,13 @@ credentials*.json
 # .active/ = สำเนากฎที่ run.sh คัดมาให้ emulator อ่านในแต่ละรอบ
 .tools/
 tests/rules-emu/.active/
+
+# ===================================================================
+# 2 พ.ย. 2569 — งาน multi-branch: repo นี้เป็นสาธารณะ
+# spec และเทสต์ชุดนี้มีรายละเอียดบัญชีรวมทุกสาขา เก็บไว้ในเครื่องเท่านั้น
+# แอปไม่ได้ใช้ไฟล์พวกนี้ตอนรัน และ GitHub Actions deploy แค่ public/
+docs/specs/
+tests/branch*.js
+tests/rules-emu/branch.test.mjs
+tests/rules-emu/stock-branch.runner.mjs
+tests/rules-emu/fixtures/*multi-branch*

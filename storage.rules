@@ -54,12 +54,37 @@ service firebase.storage {
         && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
     }
 
+    // [multi-branch] all-branch account: UID + email hash must both match (the repo is public, so no plain email here)
+    // UID is checked first: anonymous tokens have no email claim
+    function allBranchUid() { return 'GqybqhanlWXyKYTVnLqe9YwPknz1'; }
+    function allBranchAdmin() {
+      return request.auth != null
+        && request.auth.uid == allBranchUid()
+        && hashing.sha256(request.auth.token.email.toUtf8()).toHexString().lower() == 'adaf5b32d99f927f6f516b9d651d412a7f8f3efe4415994c8b22f637032bbf23';
+    }
+
+    // Bootstrap is pinned to Don Mueang (decision 7). One users doc only: a missing doc errors, which denies.
+    // Phase 2 (P2-3): a missing branchId is no branch at all ('' never matches), same as firestore.rules.
+    function memberOf(b) {
+      return allBranchAdmin()
+        || (request.auth != null
+            && (bootstrapAdmin()
+                ? b == 'donmueang'
+                : firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('branchId', '') == b));
+    }
+    function adminOf(b) {
+      return allBranchAdmin()
+        || (request.auth != null
+            && (bootstrapAdmin()
+                ? b == 'donmueang'
+                : (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('branchId', '') == b
+                   && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin')));
+    }
+
     // พนักงาน/แอดมิน = มีเอกสาร users/{uid} (เหมือน hasAccess() ใน firestore.rules)
     // ลูกค้าที่ล็อกอินแบบ anonymous จากหน้าแชท/หน้าตามรถ ไม่มี users/{uid} จึงไม่ผ่าน
     function hasAccess() {
-      return bootstrapAdmin()
-        || (request.auth != null
-            && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)));
+      return memberOf('donmueang');
     }
 
     // รูปที่แอพอัปโหลด: แอพย่อรูปเป็น JPEG ก่อนส่งเสมอ (dataUrlToBlob)
@@ -93,12 +118,8 @@ service firebase.storage {
     // emulator ประเมินการทับไฟล์เป็น create (resource != null) → เงื่อนไขกันทับใส่ทั้ง create, update
     // เงื่อนไขเขียน firestore.exists ไว้ตรง ๆ (ไม่เรียก hasAccess()) ให้ guard ตรวจได้
     match /jobPrints/{jobId}/{file} {
-      allow read: if request.auth != null
-        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
-            || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)));
-      allow create, update: if request.auth != null
-        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
-            || firestore.exists(/databases/(default)/documents/users/$(request.auth.uid)))
+      allow read: if memberOf('donmueang');
+      allow create, update: if memberOf('donmueang')
         && file.matches('receipt[.]jpg|quote-[0-9]{1,2}[.]jpg')
         && request.resource.contentType == 'image/jpeg'
         && request.resource.size < 2 * 1024 * 1024
@@ -108,12 +129,37 @@ service firebase.storage {
             || int(request.resource.metadata.printedAtMs) >= int(resource.metadata.printedAtMs))
         && (!('printedAtMs' in request.resource.metadata)
             || int(request.resource.metadata.printedAtMs) <= request.time.toMillis() + 600000);
-      allow delete: if request.auth != null
-        && (request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1'
-            || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin');
+      allow delete: if adminOf('donmueang');
     }
 
     // ---------- ที่เหลือทั้งหมด: ปิด ----------
+    // ---------- new branches (multi-branch) ---------- Don Mueang stays at root, no bootstrap here (B-7)
+    match /branches/{branchId}/jobPhotos/{jobId}/{f} {
+      allow read: if branchId != 'donmueang' && memberOf(branchId);
+      allow create, update: if branchId != 'donmueang' && memberOf(branchId) && isPhotoUpload();
+      allow delete: if branchId != 'donmueang' && memberOf(branchId);
+    }
+    match /branches/{branchId}/jobThumbs/{jobId}/{f} {
+      allow read: if branchId != 'donmueang' && memberOf(branchId);
+      allow create, update: if branchId != 'donmueang' && memberOf(branchId) && isPhotoUpload()
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if branchId != 'donmueang' && memberOf(branchId);
+    }
+    match /branches/{branchId}/jobPrints/{jobId}/{file} {
+      allow read: if branchId != 'donmueang' && memberOf(branchId);
+      allow create, update: if branchId != 'donmueang' && memberOf(branchId)
+        && file.matches('receipt[.]jpg|quote-[0-9]{1,2}[.]jpg')
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.size < 2 * 1024 * 1024
+        && (resource == null
+            || !('printedAtMs' in resource.metadata)
+            || !('printedAtMs' in request.resource.metadata)
+            || int(request.resource.metadata.printedAtMs) >= int(resource.metadata.printedAtMs))
+        && (!('printedAtMs' in request.resource.metadata)
+            || int(request.resource.metadata.printedAtMs) <= request.time.toMillis() + 600000);
+      allow delete: if branchId != 'donmueang' && adminOf(branchId);
+    }
+
     // Storage rules เป็น OR — ถ้ามี match ไหนเปิดกว้าง กฎเข้มข้างบนก็ไร้ผล
     // path ใหม่ต้องเพิ่ม match ของตัวเองข้างบน ห้ามแก้บล็อกนี้ให้เปิด
     match /{allPaths=**} {
