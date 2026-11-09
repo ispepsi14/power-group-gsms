@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.8.0";
+  const APP_VERSION = "4.9.0";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3285,6 +3285,25 @@
               ไม่แตะ flushState / mergeSnapshotRows / pickBoardPublic / ฟังก์ชันที่ SNAP_469 ล็อก
 
               เทสต์ใหม่: tests/branch.guard.js · tests/branch2.guard.js · tests/branch-rules.guard.js · tests/rules-emu/ (สาขา)
+     v4.9.0 — หน้าสถิติรายได้: สรุปยอดรายวัน + รถเข้า/ส่งมอบ/อนุมัติ/ไม่อนุมัติ + รถค้าง + ส่งออก Excel + ปุ่มพิมพ์
+              (spec docs/specs/daily-revenue-summary.md + .backend.md + .security.md · คำตอบเจ้าของ 9 พ.ย. 2569)
+              1. การ์ด "สรุปวันนี้" (เลือกวันได้ · view.fin_day): รถเข้า · รถนัดกลับมา · ส่งมอบ · อนุมัติ · ไม่อนุมัติ
+                 · นัดมาทำทีหลัง · รายได้ส่งมอบ · รถค้าง ณ สิ้นวัน (ย่อย พร้อมส่ง รอปิดใบ) · รวมทั้งหมด = รายได้ + ยอดรถค้าง
+              2. การ์ด "สรุปยอดรายวัน" (ช่วง ≤ 366 วัน · view.fin_from/fin_to · ปุ่มลัด เดือนนี้/7 วัน/เดือนก่อน)
+                 ตาราง 13 คอลัมน์ + แถวรวม (รถค้าง/พร้อมส่ง ของแถวรวม = ค่า ณ วันสุดท้าย ไม่บวกข้ามวัน)
+              3. ตัวคำนวณ pure: statusAtEndOf / dailySummaryFor / dailyRangeRows (timeline ต่อใบครั้งเดียว K10)
+                 ใช้ dayKey / deliveredAtOf / jobBestPrice เดิม · financeStats รูปร่างผลเดิม (K8)
+              4. statsJobsSource(): หลังกดรวมยอดทั้งหมด ใช้ state.jobs สด + ใบเก่ากว่าหน้าต่างจากที่ดึงมา (K1)
+                 · คำเตือน 600 ใบขึ้นเฉพาะเมื่อหน้าต่างเต็มและยังไม่ดึงครบ (K2) · ไม่ดึง Firestore เอง
+              5. ส่งออก Excel (ExcelJS เดิม loadExcelLib + pbSaveBlob): 2 ชีต "สรุปรายวัน" / "รายคัน"
+                 ไม่มีชื่อ/เบอร์ลูกค้า ไม่มี id ภายใน · ข้อมูลไม่ครบถามก่อน (uiChoice) · ชื่อไฟล์ สรุปรายวัน-สาขา-ช่วง.xlsx
+              6. ปุ่ม "พิมพ์" ของหน้าสถิติใช้ได้แล้ว: เนื้อหาห่อ .fin-print-page (ตัวท้ายของ sels ใน doPrint)
+                 + หัวใบสร้างตอนพิมพ์ · openPrintFragment(..., {fit:false}) ไม่ย่อลงหน้าเดียว · หัวตารางซ้ำทุกหน้า
+              7. สิทธิ์: renderFinanceTab / loadAllJobsForStats / exportDailyExcel / พิมพ์ หน้านี้ เฉพาะแอดมิน
+                 (พนักงานเห็น "หน้านี้สำหรับแอดมินเท่านั้น") · ไม่มีการเขียน Firestore / saveState จากหน้านี้
+              ไม่แตะ flushState / config/main / firestore.rules / board/
+
+              เทสต์ใหม่: tests/daily-summary.guard.js · tests/shot80cdp.js + tests/shot80_xlsx.py
               -->
 
 
@@ -5163,6 +5182,68 @@
   .fin-pie-legend{display:flex; flex-direction:column; gap:6px; flex:1; min-width:160px;}
   .fin-pie-legend-item{display:flex; align-items:center; gap:8px; font-size:12.5px;}
   .fin-pie-swatch{width:11px; height:11px; border-radius:3px; flex-shrink:0;}
+  /* v4.9.0 — สรุปวันนี้ + สรุปยอดรายวัน (daily-revenue-summary · U2–U4) */
+  .fin-warn{border-color:var(--hazard); border-left:4px solid var(--hazard);}
+  .fin-day h3, .fin-range h3{margin:0 0 8px;}
+  .fin-day .day-bar{box-shadow:none; margin-bottom:12px;}
+  .fin-day-counts{display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:10px;}
+  .fin-day-money{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:8px;}
+  .fin-card.zero .fin-card-val{color:var(--text-2);}
+  .fin-card.total{border:2px solid var(--hazard);}
+  .fin-card.total .fin-card-val{color:var(--text);}
+  .fin-note{font-size:12px; margin:6px 0 0; line-height:1.55;}
+  .fin-range-top{display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:10px;}
+  .fin-range-top h3{flex:1 1 auto; margin:0;}
+  .fin-range-top .fin-presets{order:3; flex:1 1 100%; margin-left:0; justify-content:flex-start;}
+  .fin-range-top .fin-range-line{order:4; flex:1 1 100%; font-size:13px;}
+  .fin-range-top .fin-export-btn{order:2;}
+  .fin-dates{display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .fin-date-sep{color:var(--text-2);}
+  .fin-date-btn{
+    position:relative; overflow:hidden; height:38px; padding:0 12px; gap:6px;
+    border:1px solid var(--border); background:var(--card-bg); border-radius:9px; cursor:pointer;
+    color:var(--text); display:inline-flex; align-items:center; font-size:13px; font-weight:600; white-space:nowrap;
+  }
+  .fin-date-btn:hover{background:var(--surface); border-color:var(--navy);}
+  .fin-date-btn input{position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; padding:0; border:none; background:none;}
+  .fin-date-btn input::-webkit-calendar-picker-indicator{position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; cursor:pointer;}
+  .fin-scroll-hint{display:none; font-size:12px; margin-bottom:6px;}
+  table.parts-table.fin-daily-table{table-layout:auto; width:max-content; min-width:100%;}
+  .fin-daily-table th{white-space:nowrap;}
+  .fin-daily-table td.num{text-align:right; font-family:var(--font-mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .fin-daily-table td.num.z{color:var(--text-2);}
+  .fin-daily-table td:first-child{white-space:nowrap; background:var(--card-bg);}
+  .fin-daily-table th:first-child, .fin-daily-table td:first-child{position:sticky; left:0; z-index:1; box-shadow:inset -1px 0 0 var(--border);}
+  .fin-daily-table tr.today td{font-weight:700;}
+  .fin-daily-table tr.picked td{background:var(--surface);}
+  .fin-daily-table tfoot td, .fin-daily-table tfoot td:first-child{background:var(--surface-2); font-weight:700;}
+  .fin-daily-table sup{font-size:9px; margin-left:1px;}
+  /* โหมดมืด: --navy บนพื้นมืด contrast ต่ำ (3.83:1) และดูจางกว่าเลข 0 -> ใช้ --text เฉพาะการ์ดสรุปวันนี้ */
+  html[data-mode="dark"] .fin-day .fin-card-val{color:var(--text);}
+  html[data-mode="dark"] .fin-day .fin-card.zero .fin-card-val{color:var(--text-2);}
+  @media (min-width:1024px){
+    table.parts-table.fin-daily-table th, table.parts-table.fin-daily-table td{padding:9px 5px;}
+  }
+  /* หัวใบพิมพ์ — มีเฉพาะในเอกสารพิมพ์ (doPrint สร้างตอนพิมพ์ ไม่อยู่บนจอ) */
+  .fin-print-head{border-bottom:1.5px solid #1b1f24; padding-bottom:6px; margin-bottom:10px; color:#111;}
+  .fin-print-head .fph-title{font-size:16px; font-weight:700;}
+  .fin-print-head .fph-sub{font-size:11px;}
+  .fin-print-head .fph-note{font-size:11px; font-weight:700;}
+  @media (max-width:1023px){
+    .fin-day-counts{grid-template-columns:repeat(3,1fr);}
+  }
+  @media (max-width:700px){
+    .fin-day-counts{grid-template-columns:1fr 1fr;}
+    .fin-day-money{grid-template-columns:1fr;}
+    .fin-day-money .fin-card{display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; column-gap:10px;}
+    .fin-day-money .fin-card-val{margin-top:0;}
+    .fin-day-money .fin-card-sub{flex:1 1 100%;}
+    .fin-scroll-hint{display:block;}
+    .fin-range-top .fin-export-btn{order:5; flex:1 1 100%; justify-content:center;}
+    .fin-dates{flex:1 1 100%;}
+    .fin-date-sep{display:none;}
+    .fin-date-btn{flex:1 1 100%;}
+  }
   @media (max-width:700px){
     .fin-cards{grid-template-columns:1fr 1fr;}
     .fin-card-val{font-size:18px;}
@@ -5887,6 +5968,11 @@
     .btn.small, .chk-chip, .fb-select, .unit-select, .brand-name-select, .collapse-head{min-height:44px;}
     .backup-nav .topnav-btn{min-height:44px; min-width:44px; display:inline-flex; align-items:center; justify-content:center;}
     .day-arrow, .day-pick, .darkmode-toggle-btn, .cols-btn{width:44px; height:44px;}
+    /* v4.9.0 — iPad/จอสัมผัส: ตารางรายวันอาจล้นกล่อง บอกให้เลื่อน */
+    .fin-scroll-hint{display:block;}
+    /* v4.9.0 — ชิปวัน/ช่วง + ช่องวันที่ของหน้าสถิติ (เฉพาะหน้านี้ ไม่กระทบหน้ารายการงาน) */
+    .fin-day .day-chip, .fin-range .day-chip{min-height:44px;}
+    .fin-date-btn{height:44px;}
     /* v4.6.4 — M6: × ลบรุ่นชิดมุมขวาบนการ์ด 44x44 ชื่อรุ่นเว้นขวาให้ไม่ลอดใต้ปุ่ม */
     .model-card .del{top:0; right:0; width:44px; height:44px; justify-content:center; border-radius:0 13px 0 10px;}
     .model-card .del:active{background:var(--surface-2); color:var(--danger);}
@@ -6480,6 +6566,30 @@
        the moment it didn't fully fit, leaving a big blank gap at the bottom of the
        previous page for no reason. Tighter spacing too, so more fits per page. */
     .fin-cards{page-break-inside:avoid; break-inside:avoid;}
+    /* v4.9.0 — สรุปวันนี้ + ตารางรายวัน (U6) · ไม่ย่อเอกสาร (doPrint ส่ง fit:false) */
+    .fin-day-counts{grid-template-columns:repeat(6,1fr); page-break-inside:avoid; break-inside:avoid;}
+    .fin-day-money{grid-template-columns:repeat(3,1fr); page-break-inside:avoid; break-inside:avoid;}
+    .fin-day-money .fin-card{display:block;}
+    .fin-card.total{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .fin-daily-wrap{overflow:visible; border:none; box-shadow:none; border-radius:0;}
+    .fin-daily-table th:first-child, .fin-daily-table td:first-child{position:static; box-shadow:none;}
+    table.parts-table.fin-daily-table{width:100%; min-width:0; table-layout:fixed; font-size:9.5px;}
+    table.parts-table.fin-daily-table th, table.parts-table.fin-daily-table td{padding:3px 4px;}
+    table.parts-table.fin-daily-table th{white-space:normal; font-size:8.5px; line-height:1.25; text-transform:none; letter-spacing:0; vertical-align:bottom;}
+    .fin-daily-table td.num{font-family:inherit;}
+    .fin-daily-table th.d{width:10%;}
+    .fin-daily-table th.c{width:6.5%;}
+    .fin-daily-table th.m{width:9.5%;}
+    .fin-daily-table thead{display:table-header-group;}
+    .fin-daily-table tfoot{display:table-row-group;}
+    /* โหมดมืด (AC-38): ถ้าหน้าแอปถูกพิมพ์ตรง ๆ ให้กระดาษกลับเป็นชุดสีสว่าง — ใส่เฉพาะใน print
+       ถ้าไปใส่ในกฎรีเซ็ตของ .preview-page (~3373) หน้าสถิติบนจอโหมดมืดจะกลายเป็นพื้นขาวทั้งหน้า */
+    html[data-mode="dark"] .fin-print-page{
+      --bg:#ffffff; --card-bg:#ffffff; --surface:#EFECEC; --surface-2:#E5E1E1;
+      --border:#DAD5D5; --text:#1B1D20; --text-2:#6E696A; --dark:#16181B; --navy:#3A434E;
+      --red-ink:#B3141A;
+      color:#1B1D20;
+    }
     table.parts-table tr{page-break-inside:avoid; break-inside:avoid;}
     .fin-linechart-wrap, .fin-pie-wrap{page-break-inside:avoid; break-inside:avoid;}
     .card{padding:10px 14px; margin-bottom:8px;}
@@ -24226,8 +24336,10 @@ function doOverlayPrint(){
    ต้องใส่ iframe เข้า DOM ให้เรียบร้อยก่อน แล้วค่อย document.write ลงไป
    ถ้าเขียนก่อนแนบ contentWindow จะยังไม่มี เอกสารจะว่างเปล่า
    และไม่ใช้ srcdoc เพราะ Safari รุ่นเก่าพิมพ์ iframe ที่มาจาก srcdoc ไม่ได้ */
-function openPrint(html){
+function openPrint(html, popts){
   closePrintOverlay();
+  /* v4.9.0 — popts.fit === false = เอกสารยาวหลายหน้าโดยตั้งใจ (หน้าสถิติ) ห้ามย่อลงหน้าเดียว */
+  const noFit = !!(popts && popts.fit === false);
 
   const ov = document.createElement('div');
   ov.id = 'printOverlay';
@@ -24301,12 +24413,12 @@ function openPrint(html){
        เรียกทันทีเผื่อฟอนต์มาจาก cache ทัน แล้วเรียกซ้ำตอนฟอนต์โหลดเสร็จจริง
        (document.fonts.ready) เพราะรอบแรกอาจวัดพลาดถ้าฟอนต์ยังไม่มา — ผู้ใช้
        กว่าจะกดปุ่ม "พิมพ์" ก็มีเวลาให้รอบสองทำงานเสร็จก่อนอยู่แล้วตามธรรมชาติ */
-    autoFitPrintPages(d);
+    if(!noFit) autoFitPrintPages(d);
     syncHostPrintMetrics(f, d);
     fitPreviewToScreen(f, d);
     const fontsReady = (d.fonts && d.fonts.ready) ? d.fonts.ready : Promise.resolve();
     fontsReady.then(() => {
-      try{ autoFitPrintPages(d); syncHostPrintMetrics(f, d); fitPreviewToScreen(f, d); }
+      try{ if(!noFit) autoFitPrintPages(d); syncHostPrintMetrics(f, d); fitPreviewToScreen(f, d); }
       catch(e){ console.error('autoFit(fonts.ready)', e); }
     });
     /* หมุนเครื่อง/เปลี่ยนขนาดหน้าต่าง พรีวิวต้องย่อใหม่ให้พอดีจอ
@@ -24339,7 +24451,7 @@ function openPrint(html){
 
 /* ทางลัดที่ฟังก์ชันพิมพ์เดิมเรียกใช้ */
 function openPrintFragment(fragmentHtml, opts){
-  openPrint(buildPrintDoc(fragmentHtml, opts));
+  openPrint(buildPrintDoc(fragmentHtml, opts), { fit: !(opts && opts.fit === false) });
 }
 
 /* Printing from an iPhone/iPad home-screen app.
@@ -24371,13 +24483,24 @@ function doPrint(){
   /* ลำดับสำคัญ: ใบที่เจาะจงกว่าต้องมาก่อน
      ใบรับรถกับใบเสนอราคาก็ติดคลาส .preview-page ด้วย ถ้าเช็ค .preview-page ก่อน
      จะคว้าผิดใบ — ส่วน .bulk-print-page ครอบ .preview-page อยู่ ต้องมาก่อนเช่นกัน */
+  /* v4.9.0 — หน้าสถิติรายได้ (.fin-print-page) อยู่ท้ายสุด ไม่มีเอกสารอื่นซ้อนในหน้านั้น จึงไม่แย่งใบอื่น */
   const sels = ['.bulk-print-page', '.pb-page', '.bf-page', '.qt-page',
-                '.job-print-page', '.preview-page'];
+                '.job-print-page', '.preview-page', '.fin-print-page'];
   let host = null, picked = '';
   for(const sel of sels){
     if(document.querySelector(sel)){ picked = sel; break; }
   }
   if(!picked){ flashToast('ไม่พบเอกสารที่จะพิมพ์'); return; }
+
+  /* v4.9.0 — หน้าสถิติรายได้: เอกสารยาวหลายหน้า หัวใบสร้างตอนพิมพ์ (escape แล้ว) + เนื้อหาจาก DOM ที่ escape แล้ว
+     fit:false = ห้าม autoFitPrintPages ย่อลงหน้าเดียว (AC-37) · เฉพาะแอดมิน */
+  if(picked === '.fin-print-page'){
+    const fin = document.querySelector('.fin-print-page');
+    if(!fin || !isAdmin()){ flashToast('ไม่พบเอกสารที่จะพิมพ์'); return; }
+    openPrintFragment(finPrintHeaderHtml() + fin.outerHTML,
+      { title: 'สถิติรายได้', orient: 'portrait', margin: '10mm', fit: false });
+    return;
+  }
 
   // พิมพ์หลายรุ่น: แต่ละรุ่นเป็นหนึ่งหน้า คั่นด้วยตัวแบ่งหน้า
   if(picked === '.bulk-print-page'){
@@ -29997,7 +30120,13 @@ let statsAllJobs = null;      // ใบงานทั้งหมดจาก�
 let statsLoading = false;
 
 function loadAllJobsForStats(){
+  /* v4.9.0 — security ข้อ 1: พนักงานไม่อ่านทั้ง collection (หน้าสถิติเป็นของแอดมิน) */
+  if(!isAdmin()) return Promise.resolve(null);
   if(statsAllJobs || statsLoading || !db) return Promise.resolve(statsAllJobs);
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    flashToast('ต่ออินเทอร์เน็ตก่อนรวมยอดทั้งหมด');
+    return Promise.resolve(null);
+  }
   statsLoading = true;
   safeRender();
   return db.collection('jobs').get()
@@ -30018,17 +30147,34 @@ function loadAllJobsForStats(){
     });
 }
 
-/* ใบงานที่ส่งมอบแล้ว ใช้ของที่ดึงครบถ้ามี ไม่งั้นใช้หน้าต่าง 600 ใบ */
-function statsDeliveredJobs(){
-  if(!statsAllJobs) return { jobs: deliveredJobs(), complete: false };
-  const jobs = statsAllJobs
-    .filter(j => !j.deletedAt && j.status === 'delivered')
-    .sort((a, b) => String(deliveredAtOf(b)).localeCompare(String(deliveredAtOf(a))));
-  return { jobs: jobs, complete: true };
+/* v4.9.0 — แหล่งใบงานของสถิติ (backend §3 · K1) — คำนวณครั้งเดียวต่อ render ส่งให้ทั้ง financeStats และสรุปรายวัน
+   id ที่อยู่ใน state.jobs ใช้ของสด (รวมที่แก้ในเครื่องยังไม่บันทึก) · ใบใน statsAllJobs ที่ใหม่กว่า floor แต่ไม่อยู่ใน
+   state.jobs = ถูกลบจริงหลังกดปุ่ม -> ทิ้ง · ใบไม่มี createdAt (listener มองไม่เห็น) เก็บจากที่ดึงมา
+   ยังไม่ดึง: complete = หน้าต่างยังไม่เต็ม (สาขาที่ใบไม่ถึง 600 ข้อมูลครบอยู่แล้ว — backend §4) */
+function statsJobsSource(){
+  const live = state.jobs || [];
+  if(!statsAllJobs) return { jobs: live, complete: live.length < RECENT_JOBS_LIMIT };
+  const ids = new Set(live.map(j => j.id));
+  // floor = createdAt เก่าสุดในหน้าต่าง · หน้าต่างไม่เต็ม = listener เห็นทุกใบที่มี createdAt แล้ว
+  let floor = '';
+  if(live.length >= RECENT_JOBS_LIMIT){
+    live.forEach(j => { const c = j.createdAt; if(c && (!floor || c < floor)) floor = c; });
+  }
+  const old = statsAllJobs.filter(j => !ids.has(j.id) && (!j.createdAt || (floor && j.createdAt <= floor)));
+  return { jobs: live.concat(old), complete: true };
 }
 
-function financeStats(){
-  const src = statsDeliveredJobs();
+/* ใบงานที่ส่งมอบแล้ว ของ statsJobsSource() · complete คงความหมายเดิม (= ดึงครบจากเซิร์ฟเวอร์แล้ว) */
+function statsDeliveredJobs(srcOpt){
+  const src = srcOpt || statsJobsSource();
+  const jobs = src.jobs
+    .filter(j => !j.deletedAt && j.status === 'delivered')
+    .sort((a, b) => String(deliveredAtOf(b)).localeCompare(String(deliveredAtOf(a))));
+  return { jobs: jobs, complete: !!statsAllJobs };
+}
+
+function financeStats(srcOpt){
+  const src = statsDeliveredJobs(srcOpt);
   const jobs = src.jobs;
   const today = todayKey();
   const monthKey = today.slice(0, 7);
@@ -30411,34 +30557,499 @@ function renderCalendarTab(){
   return html;
 }
 
+/* ============================================================================
+   v4.9.0 — สรุปยอดรายวัน + ตัวเลขรถวันนี้ + รถค้าง + ส่งออก Excel (daily-revenue-summary)
+   spec: docs/specs/daily-revenue-summary.md (+ .backend.md / .security.md)
+
+   ตัวคำนวณข้างล่างเป็น pure — ไม่มี UI ไม่อ่าน/เขียน Firestore ไม่แตะ state.settings
+   ใช้ dayKey / deliveredAtOf / jobBestPrice ตัวเดิม (ห้ามเขียนสูตรเงินใหม่)
+   K10: สร้าง timeline ต่อใบครั้งเดียว (เรียง statusHistory ครั้งเดียว) แล้วกวาดช่วงวัน
+   ด้วยตัวชี้ที่เดินหน้าอย่างเดียว ไม่เรียงใหม่ทุกวัน
+   --------------------------------------------------------------------------- */
+const DAILY_STUCK_STATUSES = ['received','inspecting','quoted','approved','repairing','aligning','ready','held'];
+const DAILY_EXCEL_HEADERS = ['วันที่','รถเข้า','รถนัดกลับมา','ส่งมอบ','อนุมัติ','ไม่อนุมัติ','นัดมาทำทีหลัง',
+  'รายได้ส่งมอบ','รถค้าง(คัน)','ยอดรถค้าง','พร้อมส่ง(คัน)','ยอดพร้อมส่ง','รวมทั้งหมด'];
+const DAILY_DETAIL_HEADERS = ['กลุ่ม','วันที่','เลขงาน','ทะเบียน','ยี่ห้อ รุ่น','ช่าง','สถานะ','ยอดเงิน','ที่มาราคา'];
+const DAILY_MAX_DAYS = 366;
+const DAILY_MONEY_IDX = [7, 9, 11, 12];     // 0-based ใน DAILY_EXCEL_HEADERS
+
+/* ใบงาน -> timeline ที่เรียงแล้ว + เหตุการณ์ต่อวัน (คำนวณครั้งเดียวต่อใบ) */
+function dailyTimeline(job){
+  const raw = [];
+  (job.statusHistory || []).forEach((h, i) => {
+    if(!h || !h.status) return;
+    const key = dayKey(h.changedAt);
+    if(!key) return;
+    raw.push({ st: h.status, t: Date.parse(h.changedAt), i: i, key: key });
+  });
+  // เรียงตามเวลา (ใบปิดย้อนหลังต่อท้ายอาร์เรย์ด้วยเวลาย้อนหลัง) · เวลาเท่ากันใช้ลำดับในอาร์เรย์
+  raw.sort((a, b) => (a.t - b.t) || (a.i - b.i));
+  const days = Object.create(null);
+  raw.forEach((e, k) => {
+    const d = days[e.key] || (days[e.key] = { ar: '', sch: false, back: false });
+    if(e.st === 'approved' || e.st === 'rejected') d.ar = e.st;      // ตัวหลังสุดของวันชนะ
+    else if(e.st === 'scheduled') d.sch = true;
+    if(e.st === 'repairing' && k > 0 && (raw[k - 1].st === 'carout' || raw[k - 1].st === 'scheduled')) d.back = true;
+  });
+  return {
+    job: job,
+    created: dayKey(job.createdAt),
+    entries: raw,
+    days: days,
+    delivered: job.status === 'delivered' ? dayKey(deliveredAtOf(job)) : '',
+    price: jobBestPrice(job),
+    p: -1, pDay: ''
+  };
+}
+
+/* สถานะ ณ สิ้นวัน D จาก timeline · ตัวชี้เดินหน้าเมื่อ D เพิ่มขึ้น (ถอยวันเมื่อไรเริ่มนับใหม่) */
+function dailyStatusAt(tl, D, today){
+  if(tl.created && tl.created > D) return '';
+  if(D >= today) return tl.job.status || 'received';
+  if(tl.pDay && D < tl.pDay) tl.p = -1;
+  let p = tl.p;
+  while(p + 1 < tl.entries.length && tl.entries[p + 1].key <= D) p++;
+  tl.p = p; tl.pDay = D;
+  return p >= 0 ? tl.entries[p].st : 'received';
+}
+
+function statusAtEndOf(job, D){
+  if(!job) return '';
+  return dailyStatusAt(dailyTimeline(job), String(D || ''), todayKey());
+}
+
+function dailyEmptyRow(D){
+  return { day: D, inCount: 0, backCount: 0, deliveredCount: 0, approvedCount: 0, rejectedCount: 0, scheduledCount: 0,
+           revenue: 0, stuckCount: 0, stuckValue: 0, readyCount: 0, readyValue: 0, total: 0, deliveredJobs: [], stuckJobs: [] };
+}
+
+function dailyRowFor(tls, D, today){
+  const s = dailyEmptyRow(D);
+  tls.forEach(tl => {
+    if(tl.created === D) s.inCount++;
+    const d = tl.days[D];
+    if(d){
+      if(d.back) s.backCount++;
+      if(d.ar === 'approved') s.approvedCount++;
+      else if(d.ar === 'rejected') s.rejectedCount++;
+      if(d.sch) s.scheduledCount++;
+    }
+    if(tl.delivered === D){ s.deliveredCount++; s.revenue += tl.price; s.deliveredJobs.push(tl.job); }
+    const st = dailyStatusAt(tl, D, today);
+    if(st && DAILY_STUCK_STATUSES.indexOf(st) >= 0){
+      s.stuckCount++; s.stuckValue += tl.price; s.stuckJobs.push(tl.job);
+      if(st === 'ready'){ s.readyCount++; s.readyValue += tl.price; }
+    }
+  });
+  s.total = s.revenue + s.stuckValue;
+  return s;
+}
+
+function dailyTimelines(jobs){
+  return (jobs || []).filter(j => j && !j.deletedAt).map(dailyTimeline);
+}
+
+function dailySummaryFor(jobs, D){
+  return dailyRowFor(dailyTimelines(jobs), String(D || ''), todayKey());
+}
+
+function dailyRangeRows(jobs, fromKey, toKey){
+  const today = todayKey();
+  const tls = dailyTimelines(jobs);
+  const rows = [];
+  if(finValidKey(fromKey) && finValidKey(toKey) && fromKey <= toKey){
+    let d = fromKey;
+    while(d <= toKey && rows.length < 4000){ rows.push(dailyRowFor(tls, d, today)); d = shiftDay(d, 1); }
+  }
+  const total = { days: rows.length, inCount: 0, backCount: 0, deliveredCount: 0, approvedCount: 0, rejectedCount: 0,
+                  scheduledCount: 0, revenue: 0, stuckCount: 0, stuckValue: 0, readyCount: 0, readyValue: 0, total: 0 };
+  rows.forEach(r => {
+    ['inCount','backCount','deliveredCount','approvedCount','rejectedCount','scheduledCount','revenue'].forEach(k => { total[k] += r[k]; });
+  });
+  // รถค้าง/พร้อมส่ง บวกข้ามวันไม่ได้ (คันเดียวค้าง 3 วันจะนับ 3 รอบ) -> ใช้ค่า ณ สิ้นวันสุดท้าย
+  const last = rows[rows.length - 1];
+  if(last){ total.stuckCount = last.stuckCount; total.stuckValue = last.stuckValue; total.readyCount = last.readyCount; total.readyValue = last.readyValue; }
+  total.total = total.revenue + total.stuckValue;
+  return { rows: rows, total: total };
+}
+
+/* ช่วงนี้ไม่มีอะไรเลยทุกวัน (ใช้ทั้งข้อความบนจอและ toast ตอนส่งออก) */
+function dailyRangeIsEmpty(r){
+  return !r.rows.some(x => x.inCount || x.backCount || x.deliveredCount || x.approvedCount || x.rejectedCount || x.scheduledCount || x.stuckCount);
+}
+
+/* ---------- วันที่ภาษาไทย (ไม่มีคำสัมพัทธ์ วันนี้/เมื่อวาน — ให้ตรงกับ Excel/ใบพิมพ์) ---------- */
+const FIN_WD  = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+const FIN_MON = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function finValidKey(k){
+  return typeof k === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(k) && shiftDay(k, 0) === k;
+}
+function finKeyParts(k){
+  const [y, m, d] = k.split('-').map(Number);
+  return { y: y, m: m, d: d, wd: new Date(y, m - 1, d).getDay() };
+}
+function finYY(y){ return String(y + 543).slice(-2); }
+// "จ. 9 พ.ย. 69" / "จ. 9 พ.ย."
+function finDateLabel(k, withYear){
+  const p = finKeyParts(k);
+  return FIN_WD[p.wd] + ' ' + p.d + ' ' + FIN_MON[p.m - 1] + (withYear ? ' ' + finYY(p.y) : '');
+}
+// "9 พ.ย. 69"
+function finShortDate(k){
+  const p = finKeyParts(k);
+  return p.d + ' ' + FIN_MON[p.m - 1] + ' ' + finYY(p.y);
+}
+// "1–9 พ.ย. 69" · "28 ต.ค. – 3 พ.ย. 69" · "28 ธ.ค. 69 – 3 ม.ค. 70" · "9 พ.ย. 69"
+function finRangeLabel(from, to){
+  if(from === to) return finShortDate(from);
+  const a = finKeyParts(from), b = finKeyParts(to);
+  if(a.y === b.y && a.m === b.m) return a.d + '–' + b.d + ' ' + FIN_MON[b.m - 1] + ' ' + finYY(b.y);
+  if(a.y === b.y) return a.d + ' ' + FIN_MON[a.m - 1] + ' – ' + b.d + ' ' + FIN_MON[b.m - 1] + ' ' + finYY(b.y);
+  return finShortDate(from) + ' – ' + finShortDate(to);
+}
+function finDaysBetween(a, b){
+  const A = finKeyParts(a), B = finKeyParts(b);
+  return Math.round((Date.UTC(B.y, B.m - 1, B.d) - Date.UTC(A.y, A.m - 1, A.d)) / 86400000);
+}
+
+/* ---------- ค่าที่เลือกบนจอ — อยู่ใน view เท่านั้น (ห้าม state.settings / saveState / Firestore) ---------- */
+function finClampToday(k){ const t = todayKey(); return k > t ? t : k; }
+function finDay(){
+  const v = view.fin_day;
+  return finValidKey(v) ? finClampToday(v) : todayKey();
+}
+function finRange(){
+  const today = todayKey();
+  let from = view.fin_from, to = view.fin_to;
+  if(!finValidKey(from) || !finValidKey(to)){ from = today.slice(0, 8) + '01'; to = today; }
+  to = finClampToday(to);
+  if(from > to) from = to;
+  return { from: from, to: to };
+}
+function setFinDay(k){
+  if(!finValidKey(k)) return;
+  view.fin_day = finClampToday(k);
+  render();
+}
+function stepFinDay(delta){ setFinDay(shiftDay(finDay(), delta)); }
+function setFinFrom(k){
+  if(!finValidKey(k)) return;
+  k = finClampToday(k);
+  let to = finRange().to, moved = false;
+  if(k > to){ to = k; moved = true; }
+  if(finDaysBetween(k, to) + 1 > DAILY_MAX_DAYS){ flashToast('เลือกได้ไม่เกิน 366 วัน'); return; }
+  view.fin_from = k; view.fin_to = to;
+  if(moved) flashToast('วันสิ้นสุดเลื่อนตามเป็นวันเดียวกัน');
+  render();
+}
+function setFinTo(k){
+  if(!finValidKey(k)) return;
+  k = finClampToday(k);
+  let from = finRange().from, moved = false;
+  if(k < from){ from = k; moved = true; }
+  if(finDaysBetween(from, k) + 1 > DAILY_MAX_DAYS){ flashToast('เลือกได้ไม่เกิน 366 วัน'); return; }
+  view.fin_from = from; view.fin_to = k;
+  if(moved) flashToast('วันเริ่มเลื่อนตามเป็นวันเดียวกัน');
+  render();
+}
+function finPresetRange(p){
+  const today = todayKey();
+  if(p === 'month') return { from: today.slice(0, 8) + '01', to: today };
+  if(p === '7d') return { from: shiftDay(today, -6), to: today };
+  if(p === 'prevMonth'){ const end = shiftDay(today.slice(0, 8) + '01', -1); return { from: end.slice(0, 8) + '01', to: end }; }
+  return null;
+}
+function setFinRangePreset(p){
+  const r = finPresetRange(p);
+  if(!r) return;
+  view.fin_from = r.from; view.fin_to = r.to;
+  render();
+}
+
+/* ---------- Excel (ExcelJS ตัวเดิมผ่าน loadExcelLib + pbSaveBlob) ----------
+   security ข้อ 5–8: เลือกช่องเองทีละช่อง · ห้ามชื่อ/เบอร์ลูกค้า customerId vehicleId job.id อาการ โน้ต ราคาทุน
+   ช่องเงินเป็น Number ล้วน (numFmt ตั้งตอนเขียนไฟล์) · ข้อความเป็น String เสมอ (ไม่ส่ง object ให้ ExcelJS) */
+function dailyNumsOf(s){
+  return [s.inCount, s.backCount, s.deliveredCount, s.approvedCount, s.rejectedCount, s.scheduledCount,
+          s.revenue, s.stuckCount, s.stuckValue, s.readyCount, s.readyValue, s.total].map(v => Number(v) || 0);
+}
+function dailyDetailRow(group, dateKey, job, statusKey){
+  const v = getVehicle(job.vehicleId) || {};
+  return [String(group), String(dateKey || ''), String(job.jobNumber || ''), String(v.plate || ''),
+          [v.brand, v.model].filter(Boolean).map(String).join(' '), String(job.technician || ''),
+          String(statusOf(statusKey).label || ''), Number(jobBestPrice(job)) || 0,
+          jobHasPricedLines(job) ? 'ใบเสนอราคา' : 'ราคาประเมิน'];
+}
+function buildDailyExcelRows(jobs, fromKey, toKey, opts){
+  const o = opts || {};
+  const r = dailyRangeRows(jobs, fromKey, toKey);
+  const summary = [DAILY_EXCEL_HEADERS.slice()];
+  r.rows.forEach(s => summary.push([String(s.day)].concat(dailyNumsOf(s))));
+  summary.push(['รวม ' + r.total.days + ' วัน'].concat(dailyNumsOf(r.total)));
+  summary.push([]);
+  summary.push(['สาขา: ' + String(o.branch == null ? '' : o.branch)]);
+  summary.push(['ช่วง: ' + String(fromKey) + ' ถึง ' + String(toKey) + ' (' + r.total.days + ' วัน)']);
+  summary.push(['* รถค้าง(คัน) ยอดรถค้าง พร้อมส่ง(คัน) ยอดพร้อมส่ง ของแถวรวม = ค่า ณ สิ้นวันที่ ' + String(toKey) + ' ไม่ใช่ผลบวกทุกวัน · รวมทั้งหมดของแถวรวม = รายได้ส่งมอบทั้งช่วง + ยอดรถค้าง ณ วันสุดท้าย']);
+  summary.push(['ยอดรถค้างย้อนหลังคิดจากราคาล่าสุดในใบ']);
+  summary.push(['อนุมัติ/ไม่อนุมัติ = ใบที่ถูกเปลี่ยนเป็นสถานะนั้นในวันนั้น (ใบที่ข้ามขั้นอนุมัติไม่ถูกนับ) · รถค้าง = รถที่ยังจอดอยู่ในอู่ ณ สิ้นวัน']);
+  summary.push([o.complete === false
+    ? 'หมายเหตุ: ตัวเลขคิดจาก ' + RECENT_JOBS_LIMIT + ' ใบล่าสุด ไม่ใช่ทั้งหมด'
+    : 'ข้อมูลครบทุกใบงานของสาขา']);
+
+  const detail = [DAILY_DETAIL_HEADERS.slice()];
+  r.rows.forEach(s => s.deliveredJobs.forEach(j => detail.push(dailyDetailRow('ส่งมอบ', s.day, j, 'delivered'))));
+  const last = r.rows[r.rows.length - 1];
+  if(last) last.stuckJobs.forEach(j => detail.push(dailyDetailRow('ค้าง ณ วันสุดท้าย', dayKey(j.createdAt), j, statusAtEndOf(j, toKey))));
+  if(detail.length === 1) detail.push(['ไม่มีข้อมูลในช่วงนี้']);
+  return { summary: summary, detail: detail, empty: dailyRangeIsEmpty(r) };
+}
+function dailyExcelFileName(branch, fromKey, toKey){
+  const clean = String(branch == null ? '' : branch)
+    .replace(/[\\/:*?"<>|]/g, '').replace(/[\x00-\x1f\x7f]/g, '').trim();
+  const ymd = k => String(k || '').replace(/[^0-9]/g, '');
+  return 'สรุปรายวัน-' + clean + '-' + ymd(fromKey) + '-' + ymd(toKey) + '.xlsx';
+}
+
+let finExporting = false;
+function finSetExportBtn(busy){
+  try{
+    const b = document.getElementById('fin-export-btn');
+    if(!b) return;
+    b.disabled = !!busy;
+    b.innerHTML = icon('download', 13) + ' ' + (busy ? 'กำลังสร้างไฟล์…' : 'ส่งออก Excel');
+  }catch(e){}
+}
+function exportDailyExcel(){
+  if(!isAdmin()) return Promise.resolve();
+  if(finExporting) return Promise.resolve();
+  const src = statsJobsSource();
+  if(!src.complete){
+    // ไฟล์นี้ใช้ทำบัญชีสิ้นเดือน — ข้อมูลขาดแล้วไม่รู้ตัว = ลงบัญชีผิด จึงถามก่อนเสมอ
+    uiChoice('ตัวเลขยังคิดจาก ' + RECENT_JOBS_LIMIT + ' ใบล่าสุด', [
+      { value: 'load', label: 'รวมยอดทั้งหมดก่อน แล้วส่งออก', icon: 'download' },
+      { value: 'go',   label: 'ส่งออกเลย (ไฟล์มีหมายเหตุ)' }
+    ], v => {
+      if(v === 'go') return finDoExport();
+      if(v === 'load'){
+        /* กำลังรวมยอดอยู่แล้ว (กดปุ่มรวมยอดไว้ก่อน) — loadAllJobsForStats คืน null ทันที บอกให้รอ ไม่เงียบ */
+        if(statsLoading){
+          flashToast('กำลังรวมยอดทั้งหมดอยู่ รอสักครู่แล้วกดส่งออกอีกครั้ง');
+          finSetExportBtn(false);
+          return;
+        }
+        return loadAllJobsForStats().then(rows => {
+          if(rows) return finDoExport();
+          finSetExportBtn(false);
+        });
+      }
+    });
+    return Promise.resolve();
+  }
+  return finDoExport();
+}
+async function finDoExport(){
+  if(!isAdmin() || finExporting) return;
+  finExporting = true; finSetExportBtn(true);
+  try{
+    const r = finRange();
+    const src = statsJobsSource();
+    const branch = branchName();
+    const x = buildDailyExcelRows(src.jobs, r.from, r.to, { branch: branch, complete: src.complete });
+    let ExcelJS;
+    try{ ExcelJS = await loadExcelLib(); }
+    catch(err){
+      uiModal({ message: (err && err.message) || 'โหลดตัวจัดการ Excel ไม่ได้ — ตอนส่งออก/นำเข้าต้องต่ออินเทอร์เน็ต',
+                okLabel: 'ปิด', cancelLabel: 'ปิด' });
+      return;
+    }
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'POWER GROUP GSMS';
+    wb.lastModifiedBy = 'POWER GROUP GSMS';
+    const ws = wb.addWorksheet('สรุปรายวัน');
+    const wd = wb.addWorksheet('รายคัน');
+    x.summary.forEach((row, i) => {
+      const rr = ws.addRow(row);
+      if(i === 0){ rr.font = { bold: true }; return; }
+      if(typeof row[1] === 'number'){        // แถววัน + แถวรวม (บรรทัดหมายเหตุเป็นข้อความล้วน)
+        DAILY_MONEY_IDX.forEach(c => { rr.getCell(c + 1).numFmt = '#,##0.00'; });
+        if(String(row[0]).indexOf('รวม ') === 0) rr.font = { bold: true };
+      }
+    });
+    x.detail.forEach((row, i) => {
+      const rr = wd.addRow(row);
+      if(i === 0){ rr.font = { bold: true }; return; }
+      if(typeof row[7] === 'number') rr.getCell(8).numFmt = '#,##0.00';
+    });
+    try{
+      ws.getColumn(1).width = 14;
+      for(let c = 2; c <= 13; c++) ws.getColumn(c).width = DAILY_MONEY_IDX.indexOf(c - 1) >= 0 ? 15 : 11;
+      [12, 12, 16, 14, 22, 14, 12, 14, 13].forEach((w, i) => { wd.getColumn(i + 1).width = w; });
+    }catch(e){}
+    const buf = await wb.xlsx.writeBuffer();
+    pbSaveBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+               dailyExcelFileName(branch, r.from, r.to));
+    flashToast(x.empty ? 'ส่งออกแล้ว — ช่วงนี้ไม่มีรถเลย' : 'ส่งออกแล้ว — สรุปรายวัน ' + (finDaysBetween(r.from, r.to) + 1) + ' วัน');
+    if(isStandalone()) flashToast('ถ้าไฟล์เปิดขึ้นมา แตะปุ่มแชร์ แล้วเลือก "บันทึกไปยังไฟล์"');
+  }catch(err){
+    console.error('exportDailyExcel', err);
+    uiModal({ message: 'ส่งออกไฟล์ไม่สำเร็จ ลองใหม่อีกครั้ง', okLabel: 'ปิด', cancelLabel: 'ปิด' });
+  }finally{
+    finExporting = false; finSetExportBtn(false);
+  }
+}
+
+/* ---------- หน้าจอ ---------- */
+function finCountCardHtml(label, n){
+  return `<div class="fin-card${n ? '' : ' zero'}"><div class="fin-card-label">${escapeHtml(label)}</div><div class="fin-card-val">${Number(n)}</div><div class="fin-card-sub">คัน</div></div>`;
+}
+function finDayCardHtml(s, D){
+  const today = todayKey();
+  const yest = shiftDay(today, -1);
+  const title = D === today ? 'สรุปวันนี้' : (D === yest ? 'สรุปเมื่อวาน' : 'สรุปวันที่ ' + finDateLabel(D, true));
+  return `<div class="card fin-day">
+    <h3>${escapeHtml(title)}</h3>
+    <div class="day-bar no-print">
+      <button class="day-arrow" title="วันก่อนหน้า" onclick="stepFinDay(-1)">${icon('back',17)}</button>
+      <div class="day-now"><div class="day-label">${escapeHtml(finDateLabel(D, true))}</div></div>
+      <button class="day-arrow" title="วันถัดไป" onclick="stepFinDay(1)" ${D >= today ? 'disabled' : ''}>${icon('forward',17)}</button>
+      <div class="day-quick">
+        <button class="day-chip ${D === today ? 'active' : ''}" onclick="setFinDay(todayKey())">วันนี้</button>
+        <button class="day-chip ${D === yest ? 'active' : ''}" onclick="setFinDay(shiftDay(todayKey(), -1))">เมื่อวาน</button>
+        <label class="day-pick" title="เลือกวันที่">
+          ${icon('calendar',17)}
+          <input type="date" max="${escapeAttr(today)}" value="${escapeAttr(D)}" onchange="if(this.value) setFinDay(this.value)">
+        </label>
+      </div>
+    </div>
+    <div class="fin-day-counts">
+      ${finCountCardHtml('รถเข้า', s.inCount)}
+      ${finCountCardHtml('รถนัดกลับมา', s.backCount)}
+      ${finCountCardHtml('ส่งมอบ', s.deliveredCount)}
+      ${finCountCardHtml('อนุมัติ', s.approvedCount)}
+      ${finCountCardHtml('ไม่อนุมัติ', s.rejectedCount)}
+      ${finCountCardHtml('นัดมาทำทีหลัง', s.scheduledCount)}
+    </div>
+    <div class="fin-day-money">
+      <div class="fin-card${s.revenue ? '' : ' zero'}"><div class="fin-card-label">รายได้ส่งมอบ</div><div class="fin-card-val">฿${fmtMoney(s.revenue)}</div><div class="fin-card-sub">${Number(s.deliveredCount)} คัน</div></div>
+      <div class="fin-card${s.stuckValue ? '' : ' zero'}"><div class="fin-card-label">รถค้าง ${Number(s.stuckCount)} คัน</div><div class="fin-card-val">฿${fmtMoney(s.stuckValue)}</div><div class="fin-card-sub">ในนั้นพร้อมส่ง รอปิดใบ ${Number(s.readyCount)} คัน ฿${fmtMoney(s.readyValue)}</div></div>
+      <div class="fin-card total"><div class="fin-card-label">รวมทั้งหมด</div><div class="fin-card-val">฿${fmtMoney(s.total)}</div><div class="fin-card-sub">รายได้ส่งมอบ + ยอดรถค้าง</div></div>
+    </div>
+    <p class="muted fin-note">อนุมัติ/ไม่อนุมัติ = ใบที่ถูกเปลี่ยนเป็นสถานะนั้นในวันนั้น · รถค้าง = รถที่ยังจอดอยู่ในอู่ ณ สิ้นวัน<br>(ไม่นับรถนัดและรถไม่อนุมัติที่กลับบ้านแล้ว จึงอาจไม่เท่าหน้ารถค้างรายวัน)${D !== today ? '<br>ยอดรถค้างย้อนหลังคิดจากราคาล่าสุดในใบ' : ''}</p>
+  </div>`;
+}
+function finNumTdHtml(v, sup){
+  return `<td class="num${v ? '' : ' z'}">${Number(v)}${sup ? '<sup>*</sup>' : ''}</td>`;
+}
+function finMoneyTdHtml(v, sup){
+  return `<td class="num${v ? '' : ' z'}">${fmtMoney(v)}${sup ? '<sup>*</sup>' : ''}</td>`;
+}
+function finRowCellsHtml(s, sup){
+  return finNumTdHtml(s.inCount) + finNumTdHtml(s.backCount) + finNumTdHtml(s.deliveredCount) +
+         finNumTdHtml(s.approvedCount) + finNumTdHtml(s.rejectedCount) + finNumTdHtml(s.scheduledCount) +
+         finMoneyTdHtml(s.revenue) + finNumTdHtml(s.stuckCount, sup) + finMoneyTdHtml(s.stuckValue, sup) +
+         finNumTdHtml(s.readyCount, sup) + finMoneyTdHtml(s.readyValue, sup) + finMoneyTdHtml(s.total, sup);
+}
+function finRangeCardHtml(rr, r, D){
+  const today = todayKey();
+  const days = rr.rows.length;
+  const crossYear = r.from.slice(0, 4) !== r.to.slice(0, 4);
+  const preset = ['month', '7d', 'prevMonth'].find(p => { const x = finPresetRange(p); return x && x.from === r.from && x.to === r.to; }) || '';
+  const heads = DAILY_EXCEL_HEADERS.map((h, i) => `<th class="${i === 0 ? 'd' : (DAILY_MONEY_IDX.indexOf(i) >= 0 ? 'm' : 'c')}">${escapeHtml(h)}</th>`).join('');
+  const body = rr.rows.map(s => `<tr class="${s.day === today ? 'today' : ''}${s.day === D && D !== today ? ' picked' : ''}"><td>${escapeHtml(finDateLabel(s.day, crossYear))}</td>${finRowCellsHtml(s, false)}</tr>`).join('');
+  return `<div class="card fin-range">
+    <div class="fin-range-top">
+      <h3>สรุปยอดรายวัน</h3>
+      <button id="fin-export-btn" class="btn secondary small no-print fin-export-btn" onclick="exportDailyExcel()" ${finExporting ? 'disabled' : ''}>${icon('download',13)} ${finExporting ? 'กำลังสร้างไฟล์…' : 'ส่งออก Excel'}</button>
+      <div class="day-quick fin-presets no-print">
+        <button class="day-chip ${preset === 'month' ? 'active' : ''}" onclick="setFinRangePreset('month')">เดือนนี้</button>
+        <button class="day-chip ${preset === '7d' ? 'active' : ''}" onclick="setFinRangePreset('7d')">7 วัน</button>
+        <button class="day-chip ${preset === 'prevMonth' ? 'active' : ''}" onclick="setFinRangePreset('prevMonth')">เดือนก่อน</button>
+        <span class="fin-dates">
+          <label class="fin-date-btn" title="วันเริ่ม">${icon('calendar',15)}<span>จาก ${escapeHtml(finShortDate(r.from))}</span><input type="date" max="${escapeAttr(today)}" value="${escapeAttr(r.from)}" onchange="if(this.value) setFinFrom(this.value)"></label>
+          <span class="fin-date-sep">–</span>
+          <label class="fin-date-btn" title="วันสิ้นสุด">${icon('calendar',15)}<span>ถึง ${escapeHtml(finShortDate(r.to))}</span><input type="date" max="${escapeAttr(today)}" value="${escapeAttr(r.to)}" onchange="if(this.value) setFinTo(this.value)"></label>
+        </span>
+      </div>
+      <div class="muted fin-range-line">${escapeHtml(finRangeLabel(r.from, r.to))} · ${Number(days)} วัน</div>
+    </div>
+    ${dailyRangeIsEmpty(rr) ? '<p class="muted fin-note">ช่วงนี้ยังไม่มีรถเข้า ส่งมอบ หรือรถค้างเลย</p>' : ''}
+    <div class="muted no-print fin-scroll-hint">← เลื่อนซ้าย-ขวาเพื่อดูคอลัมน์อื่น</div>
+    <div class="table-wrap fin-daily-wrap"><table class="parts-table fin-daily-table">
+      <thead><tr>${heads}</tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td>รวม ${Number(days)} วัน</td>${finRowCellsHtml(rr.total, true)}</tr></tfoot>
+    </table></div>
+    <p class="muted fin-note">* ค่า ณ สิ้นวันที่ ${escapeHtml(finShortDate(r.to))} ไม่ใช่ผลบวกทุกวัน · รวมทั้งหมดของแถวรวม = รายได้ส่งมอบทั้งช่วง + ยอดรถค้าง ณ วันสุดท้าย<br>ยอดรถค้างย้อนหลังคิดจากราคาล่าสุดในใบ<br>อนุมัติ = ใบที่ถูกกดเป็นสถานะ "อนุมัติ" ในวันนั้น (ใบที่ข้ามขั้นนี้ไปซ่อมเลยไม่ถูกนับ)</p>
+  </div>`;
+}
+
+/* หัวใบพิมพ์ของหน้าสถิติ — สร้างตอนพิมพ์เท่านั้น ไม่อยู่ใน DOM บนจอ */
+function finPrintHeaderHtml(){
+  const r = finRange();
+  const D = finDay();
+  const n = finDaysBetween(r.from, r.to) + 1;
+  const now = new Date();
+  const pad = x => String(x).padStart(2, '0');
+  const printed = finShortDate(dayKey(now)) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  const src = statsJobsSource();
+  return `<div class="fin-print-head">
+    <div class="fph-title">สถิติรายได้ · POWER GROUP สาขา${escapeHtml(branchName())}</div>
+    <div class="fph-sub">สรุปวันที่ ${escapeHtml(finDateLabel(D, true))} · ตารางรายวัน ${escapeHtml(finRangeLabel(r.from, r.to))} (${Number(n)} วัน)</div>
+    <div class="fph-sub">พิมพ์เมื่อ ${escapeHtml(printed)}</div>
+    ${src.complete ? '' : `<div class="fph-note">หมายเหตุ: ตัวเลขคิดจาก ${Number(RECENT_JOBS_LIMIT)} ใบล่าสุด ไม่ใช่ทั้งหมด</div>`}
+  </div>`;
+}
+
 function renderFinanceTab(){
-  const stats = financeStats();
+  /* v4.9.0 — กันที่ตัว render ด้วย (เดิมกันแค่ปุ่มในเมนู · goTab('finance') ไม่เช็กสิทธิ์)
+     ห้ามมีตัวเลขเงิน/จำนวนคันใน DOM ของพนักงาน */
+  if(!isAdmin()){
+    return `<div class="page-head">
+    <button class="ph-back no-print" title="กลับไปรายการงาน" onclick="goTab('joblist')">${icon('back',20)}</button>
+    <div class="ph-text">
+      <div class="ph-title">สถิติรายได้</div>
+    </div>
+  </div>
+  <div class="empty-state">หน้านี้สำหรับแอดมินเท่านั้น
+    <div style="margin-top:12px;"><button class="btn secondary" onclick="goTab('joblist')">กลับไปรายการงาน</button></div>
+  </div>`;
+  }
+  // แหล่งใบงานคำนวณครั้งเดียวต่อ render แล้วส่งต่อทั้งการ์ดเดิมและสรุปใหม่ (backend §3 K10)
+  const src = statsJobsSource();
+  const stats = financeStats(src);
   const series = financeLast14Days(stats.byDay);
   const maxRev = Math.max(1, ...series.map(d => d.revenue));
+  const D = finDay();
+  const range = finRange();
+  const daySum = dailySummaryFor(src.jobs, D);
+  const rangeRows = dailyRangeRows(src.jobs, range.from, range.to);
 
   let html = `<div class="page-head">
     <button class="ph-back no-print" title="กลับไปรายการงาน" onclick="goTab('joblist')">${icon('back',20)}</button>
     <div class="ph-text">
       <div class="ph-title">สถิติรายได้</div>
-      <div class="ph-sub">สรุปจากงานที่ส่งมอบแล้วเท่านั้น</div>
+      <div class="ph-sub">${branchLabelVisible() ? 'สาขา' + escapeHtml(branchName()) + ' · ' : ''}รายได้ รถเข้า-ออก และรถค้าง</div>
     </div>
     <button class="btn secondary small no-print" style="margin-left:auto;" onclick="doPrint()">${icon('printer',13)} พิมพ์</button>
   </div>`;
+  // ทุกอย่างข้างล่างคือ "เอกสาร" ที่ doPrint() หยิบไปพิมพ์ (.fin-print-page)
+  html += `<div class="fin-print-page">`;
 
   /* v4.3.2 — ข้อ M6: บอกตรง ๆ ว่าตัวเลขที่เห็นคิดจากกี่ใบ
-     ตัวฟังโหลดแค่ 600 ใบล่าสุด ยอด "ปีนี้" กับ "รวมสะสม" จึงต่ำกว่าความจริง
-     ถ้ายังไม่ได้ดึงทั้งหมด ให้ปุ่มกดดึง ไม่ดึงเองอัตโนมัติเพราะมีค่าอ่าน */
-  if(!stats.complete){
-    html += `<div class="card" style="border-color:var(--accent);">
+     v4.9.0 — ย้ายขึ้นบนสุด (กระทบทุกตัวเลขข้างล่าง) · เตือนเฉพาะเมื่อหน้าต่าง 600 ใบเต็มและยังไม่ได้ดึงครบ
+     (สาขาที่ใบยังไม่ถึง 600 ข้อมูลครบอยู่แล้ว — backend §4) · ไม่ดึงเองอัตโนมัติเพราะมีค่าอ่าน */
+  if(!src.complete){
+    html += `<div class="card fin-warn">
       <p class="muted" style="margin:0 0 8px;">
-        ตัวเลขข้างล่างคิดจากใบงาน <b>${stats.windowLimit}</b> ใบล่าสุดที่โหลดมา ไม่ใช่ทั้งหมด —
-        ยอด <b>ปีนี้</b> และ <b>รวมสะสม</b> จะต่ำกว่าความจริง
+        ตัวเลขคิดจากใบงาน <b>${stats.windowLimit}</b> ใบล่าสุดที่โหลดมา ไม่ใช่ทั้งหมด — รถค้างนาน รถนัด และยอดย้อนหลัง/ปีนี้ อาจต่ำกว่าความจริง
       </p>
       <button class="btn small no-print" onclick="loadAllJobsForStats()" ${stats.loading ? 'disabled' : ''}>
         ${stats.loading ? 'กำลังรวมยอดทั้งหมด…' : 'รวมยอดทั้งหมดจากเซิร์ฟเวอร์'}
       </button>
     </div>`;
   }
+
+  html += finDayCardHtml(daySum, D);
 
   html += `<div class="fin-cards">
     <div class="fin-card"><div class="fin-card-label">วันนี้</div><div class="fin-card-val">${fmtMoney(stats.todayRev)}</div><div class="fin-card-sub">${stats.todayCount} คัน</div></div>
@@ -30447,8 +31058,12 @@ function renderFinanceTab(){
     <div class="fin-card"><div class="fin-card-label">ปีนี้</div><div class="fin-card-val">${fmtMoney(stats.yearRev)}</div><div class="fin-card-sub">${stats.yearCount} คัน</div></div>
   </div>`;
 
+  html += finRangeCardHtml(rangeRows, range, D);
+
+  // ร้านที่ยังไม่เคยส่งมอบก็มีรถเข้า/รถค้างได้ — early-return ข้ามเฉพาะกราฟและตารางช่าง/ยี่ห้อ
   if(stats.totalCount === 0){
     html += `<div class="empty-state">ยังไม่มีงานที่ส่งมอบแล้วเลย — สถิติจะเริ่มมีข้อมูลเมื่อมีการส่งมอบรถคันแรก</div>`;
+    html += `</div>`;
     return html;
   }
 
@@ -30488,10 +31103,11 @@ function renderFinanceTab(){
   </div>`;
 
   html += `<div class="card">
-    <h3>ภาพรวมสะสม${stats.complete ? 'ทั้งหมด' : ' (เฉพาะช่วงที่โหลดมา)'}</h3>
+    <h3>ภาพรวมสะสม${src.complete ? 'ทั้งหมด' : ' (เฉพาะช่วงที่โหลดมา)'}</h3>
     <p>งานที่ส่งมอบแล้วทั้งหมด <b>${stats.totalCount}</b> คัน &nbsp;·&nbsp; รายได้รวมสะสม <b>${fmtMoney(stats.allRev)}</b> บาท &nbsp;·&nbsp; เฉลี่ย <b>${fmtMoney(stats.avgJobValue)}</b> บาท/คัน</p>
   </div>`;
 
+  html += `</div>`;   // .fin-print-page
   return html;
 }
 
