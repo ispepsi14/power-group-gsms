@@ -85,6 +85,15 @@ service cloud.firestore {
       return b is string && b != 'donmueang' && b.matches('^[a-z0-9-]{2,24}$');
     }
 
+    // per-branch-bays 4.10.0: config/bays (ผังช่องซ่อม) get สาธารณะให้กระดาน ?board
+    // ตรวจรูปร่างตอนเขียน (rules วนตรวจทีละช่องไม่ได้ -> แอปตรวจซ้ำตอนอ่าน + escape)
+    function baysDocOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['bays','updatedAt']) && d.keys().hasAll(['bays'])
+        && d.bays is list && d.bays.size() >= 1 && d.bays.size() <= 30
+        && (!('updatedAt' in d) || (d.updatedAt is string && d.updatedAt.size() <= 40));
+    }
+
     // ---------- users helpers ----------
     function userBranch(d) { return d.get('branchId', ''); }
     function userKeys() { return ['name', 'email', 'role', 'branchId']; }
@@ -237,9 +246,10 @@ service cloud.firestore {
     // การมอบหมายงานจริงก็หายไปด้วย ไม่ใช่แค่ config เขียนไม่ผ่านเฉย ๆ
     match /config/{docId} {
       allow read: if hasAccess();
-      allow create: if isAdmin()
+      allow get: if docId == 'bays';  // per-branch-bays 4.10.0: get เท่านั้น ไม่เปิด list
+      allow create: if (isAdmin() && (docId != 'bays' || baysDocOk()))
         || (docId in ['pushTokens','queueCounter'] && hasAccess());
-      allow update: if isAdmin()
+      allow update: if (isAdmin() && (docId != 'bays' || baysDocOk()))
         || (docId in ['pushTokens','queueCounter'] && hasAccess())
         || (docId == 'main' && hasAccess()
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['technicians']));
@@ -692,10 +702,11 @@ service cloud.firestore {
       }
       match /config/{docId} {
         allow read: if bAccess();
-        allow create: if (bAdmin()
+        allow get: if validBranch(branchId) && docId == 'bays';  // per-branch-bays 4.10.0
+        allow create: if ((bAdmin() && (docId != 'bays' || baysDocOk()))
           || (docId in ['pushTokens','queueCounter'] && bAccess()))
           && bIdOk(docId);
-        allow update: if bAdmin()
+        allow update: if (bAdmin() && (docId != 'bays' || baysDocOk()))
           || (docId in ['pushTokens','queueCounter'] && bAccess())
           || (docId == 'main' && bAccess()
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['technicians']));

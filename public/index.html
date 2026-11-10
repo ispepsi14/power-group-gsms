@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.9.0";
+  const APP_VERSION = "4.10.0";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3304,6 +3304,27 @@
               ไม่แตะ flushState / config/main / firestore.rules / board/
 
               เทสต์ใหม่: tests/daily-summary.guard.js · tests/shot80cdp.js + tests/shot80_xlsx.py
+     v4.10.0 — ช่องทำงานต่อสาขา: แต่ละสาขาตั้งจำนวน ชื่อ ลำดับ และแท่นตั้งศูนย์ของช่องได้เอง
+              (spec docs/specs/per-branch-bays.md + .backend.md ข้อแก้ A–D + .security.md · คำตอบเจ้าของ Q1=ข Q2=ก Q3=ก)
+              1. ผังอยู่ในเอกสารแยก config/bays ต่อสาขา (scopedDb) {bays:[{id,name,align}], updatedAt}
+                 ไม่อยู่ใน config/main / state.settings / SYNC_COLLECTIONS / flushState · buildConfigPayload ไม่เปลี่ยน
+              2. DEFAULT_BAYS (H1–H11 + ตั้งศูนย์ align) แทน WORK_BAYS/ALIGN_BAY · bayList / bayLabel / isAlignBay
+                 ไม่มีเอกสาร / อ่านไม่ได้ / ข้อมูลเสีย = ผังเริ่มต้น · jobs.bay = id ของช่อง → ใบงานเดิมไม่ migrate
+                 ตรวจตอนอ่าน: 1–30 ช่อง · คีย์ id,name,align เท่านั้น · ชื่อมองเห็น ≤ 12 ตัว (ไม่นับสระบน/ล่าง/วรรณยุกต์) ดิบ ≤ 24
+                 · id/ชื่อไม่ซ้ำ · แคชผังล่าสุดใน localStorage branchKey('gsms.bays') (ข้อแก้ C)
+              3. ตั้งค่า > ข้อมูลร้าน และผู้ใช้งาน > การ์ด "ช่องทำงานของสาขา …" (#set-bays): แอดมินแก้ร่าง (view.baysDraft)
+                 เพิ่ม/เปลี่ยนชื่อ/เลื่อน/ติ๊กแท่นตั้งศูนย์/ลบ (undo) → saveBays() set ทั้งเอกสาร ไม่ merge (ข้อแก้ A)
+                 ไม่รอ .then (ออฟไลน์ = "จะส่งขึ้นเมื่อมีเน็ต" + ป้ายรอซิงก์ · ข้อแก้ D) · ยังไม่ได้ snapshot = ห้ามบันทึก
+                 · ลบช่องที่มีรถ = บล็อก + ปุ่มเอาออก/ย้ายช่อง · มีคนแก้จากอีกเครื่อง = เตือน ไม่ทับร่าง · editLog 1 แถว
+                 พนักงานเห็นแบบอ่านอย่างเดียว · หน้าหลัก (แอดมิน) มีปุ่ม "ตั้งค่าช่อง" ท้ายการ์ดช่องทำงาน
+              4. ทุกจอใช้ผังสาขา: การ์ดช่องทำงาน x/N (> 12 ช่อง = ตารางแน่นขึ้น) · กล่องเลือกช่อง · ลงช่องหลายคัน · ตัวกรองช่อง
+                 · รถค้าง · ชิปบนการ์ดรถ · หน้าใบงาน · กระดาน ?board (ฟัง doc('bays') · สาขาอื่นหลัง publicBranchCheck · ข้อแก้ B)
+                 · กด "รอตั้งศูนย์" ไม่ไล่รถลงจากช่องที่ติ๊กแท่นตั้งศูนย์ · setJobBay ปฏิเสธช่องที่ไม่มีในผัง
+              5. bayIssues().orphan = รถที่อยู่ในช่องที่ไม่มีแล้ว → แถบเตือน + ชิปเลือกช่องใหม่ · "ปรับให้ตรงกัน" ล้าง bay ให้
+              6. ชื่อช่อง escapeHtml/escapeAttr ทุกจุด · ปุ่มในการ์ดตั้งค่าใช้ data-* ไม่ต่อชื่อช่องลง onclick
+              ไม่แตะ flushState / config/main / board/ (ไม่เพิ่มคีย์) · firestore.rules (public get config/bays) — เจ้าของ publish เอง
+
+              เทสต์ใหม่: tests/baysguard.js
               -->
 
 
@@ -4602,7 +4623,7 @@
      Deliberately separate classes from .bay-grid/.bay-cell above (the staff-facing
      bay picker) so this photo-heavy redesign only touches the public board. */
   .board-bay-grid{
-    display:grid; grid-template-columns:repeat(6,1fr);
+    display:grid; grid-template-columns:repeat(var(--bay-cols-l,6),minmax(0,var(--bay-colw,1fr)));
     gap:10px; margin-top:12px;
   }
   .board-bay-slot{display:flex; flex-direction:column; gap:3px;}
@@ -4768,7 +4789,7 @@
     .board-branch-name{font-size:16px;}
     .bcc-branch .bcc-q-no{font-size:32px;}
     .board-bay-qno{font-size:24px;}
-    .is-branch .board-bay-grid{grid-template-columns:repeat(3,1fr);}
+    .is-branch .board-bay-grid{grid-template-columns:repeat(var(--bay-cols-s,3),minmax(0,var(--bay-colw,1fr)));}
     .is-branch .board-bay-cell{height:96px;}
     .is-branch .board-bay-badge{font-size:11px; padding:2px 6px;}
     .is-branch .board-bay-plate-top{font-size:13px;}
@@ -6259,6 +6280,85 @@
   .qt-sec-range{ font-weight:400; font-size:.86em; opacity:.75; }
 
   /* ===== แถบเตือนช่องทำงานไม่ตรงกับสถานะรถ (v3.30.0) ===== */
+  /* ===== v4.10.0 per-branch-bays — การ์ดตั้งค่าช่องทำงาน (U2) + ชื่อยาว/ช่องมาก (U6) ===== */
+  .bay-name{line-height:1.3; overflow-wrap:anywhere; max-width:100%; overflow:hidden;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;}
+  .bay-name.long{font-size:12px; letter-spacing:0;}   /* ชื่อมองเห็น > 6 ตัว: ย่อให้ชื่อ 12 ตัวขึ้นครบ ไม่ถูกตัดจนสองช่องเหมือนกัน */
+  .bay-cell.align .bay-name{display:-webkit-inline-box;}
+  .bay-grid.dense{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));}
+  .bay-grid.dense .bay-cell{min-height:64px; padding:7px 6px;}
+  .bay-chip.orphan{background:transparent; color:var(--text-2); border:1px dashed var(--text-2);}
+  .bay-set-btn{display:flex; margin:10px 0 0 auto;}
+  .bay-orphan-chip{padding:6px 10px; font-size:12px; color:var(--text);}
+  #set-bays .bays-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  #set-bays .bays-head h3{margin-right:auto;}
+  .bays-badge{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+    background:var(--hazard); color:var(--hazard-dark); border-radius:20px; padding:2px 9px;}
+  .bays-badge.sync{background:var(--surface); color:var(--text-2); border:1px solid var(--border);}
+  .bays-chips{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0;}
+  .bays-chip{background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:6px;
+    padding:3px 9px; font-size:12.5px; font-weight:700; max-width:100%; overflow-wrap:anywhere; line-height:1.35;}
+  .bays-chip.align{background:var(--hazard); color:var(--hazard-dark); border-color:var(--hazard);}
+  .bays-list{display:flex; flex-direction:column; gap:6px; margin:10px 0;}
+  .bays-row{display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:6px 8px;}
+  .bays-row.bad{border-color:var(--danger);}
+  .bays-row.bad .bays-name{border-color:var(--danger);}
+  .bays-no{flex:0 0 auto; min-width:28px; text-align:center; font-weight:800; font-size:13px; color:var(--text-2);
+    border-radius:6px; padding:2px 4px;}
+  .bays-no.align{background:var(--hazard); color:var(--hazard-dark);}
+  .bays-main{flex:1 1 auto; min-width:0;}
+  .bays-nameline{display:flex; align-items:center; gap:8px;}
+  .bays-name{flex:1 1 auto; min-width:0; min-height:40px;}
+  .bays-cnt{flex:0 0 auto; font-size:11.5px; color:var(--text-2); font-variant-numeric:tabular-nums;}
+  .bays-cnt.over{color:var(--red-ink); font-weight:700;}
+  .bays-occ{font-size:11.5px; color:var(--text-2); margin-top:2px;}
+  .bays-occ .mono{font-family:var(--font-mono);}
+  .bays-err{font-size:11.5px; color:var(--red-ink); min-height:0;}
+  .bays-err:empty{display:none;}
+  .bays-ctl{flex:0 0 auto; display:flex; align-items:center; gap:6px;}
+  .bays-align{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 6px; cursor:pointer;
+    font-size:12.5px; white-space:nowrap; user-select:none;}
+  .bays-align input{accent-color:var(--hazard); width:18px; height:18px; margin:0;}
+  .bays-btns{display:flex; gap:2px;}
+  .bays-btns .icon-btn{min-width:44px; min-height:44px; justify-content:center; padding:0; border-radius:8px;}
+  .bays-btns .icon-btn:disabled{opacity:.3; cursor:default;}
+  .bays-btns .bays-up svg{transform:rotate(180deg);}
+  .bays-btns .bays-del{color:var(--danger);}
+  .bays-add{display:flex; align-items:center; justify-content:center; gap:6px; width:100%; min-height:44px;
+    border:1.5px dashed var(--border); border-radius:var(--radius); background:none; color:var(--text);
+    font-family:inherit; font-size:13.5px; font-weight:700; cursor:pointer;}
+  .bays-add:disabled{opacity:.55; cursor:default;}
+  .bays-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border);}
+  .bays-actions .bays-reset{margin-left:auto;}
+  .bays-occ-line{padding:8px 0; border-bottom:1px solid var(--border);}
+  .bays-occ-acts{display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;}
+  .bays-occ-hint{margin-top:8px;}
+  @media (max-width:1024px){
+    #set-bays .btn{min-height:44px;}
+    .bays-name{min-height:44px;}
+    .bay-orphan .bn-chip-bay, .bay-nobay .bay-orphan-btn{min-width:44px; min-height:44px; justify-content:center;}
+  }
+  @media (max-width:600px){
+    .bays-row{flex-wrap:wrap;}
+    .bays-main{flex:1 1 calc(100% - 40px);}
+    .bays-ctl{flex:1 1 100%; justify-content:space-between;}
+    .bays-actions .bays-save{flex:1 1 100%;}
+    .bays-actions #bays-discard, .bays-actions .bays-reset{flex:1 1 0; margin-left:0;}
+  }
+  /* กระดาน: คอลัมน์ตามจำนวนช่อง (ตัวแปรตั้งจาก JS ใน renderBoard) · ป้ายชื่อบรรทัดเดียว */
+  .board-bay-grid{grid-template-columns:repeat(var(--bay-cols-l,6),minmax(0,var(--bay-colw,1fr))); justify-content:center;}
+  @media (max-width:1024px){
+    .board-bay-grid{grid-template-columns:repeat(var(--bay-cols-m,6),minmax(0,var(--bay-colw,1fr)));}
+  }
+  @media (max-width:600px){
+    .board-bay-grid{grid-template-columns:repeat(var(--bay-cols-s,3),minmax(0,var(--bay-colw,1fr)));}
+  }
+  @media (min-width:1025px){
+    .board-bay-grid.many .board-bay-cell{min-height:0; aspect-ratio:auto; height:132px;}
+    .board-bay-grid.many .board-bay-photo{min-height:0;}
+  }
+  .board-bay-badge{max-width:calc(100% - 12px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.35;}
   .bay-warn{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
     margin:10px 0 8px; padding:9px 11px; border-radius:9px;
@@ -8608,8 +8708,425 @@ function chunkQuoteParts(parts){
   return out;
 }
 
-const ALIGN_BAY = 'ตั้งศูนย์';
-const WORK_BAYS = ['H1','H2','H3','H4','H5','H6','H7','H8','H9','H10','H11', ALIGN_BAY];
+/* ===================== v4.10.0 per-branch-bays — ช่องทำงานต่อสาขา =====================
+   spec docs/specs/per-branch-bays.md (+ .backend.md ข้อแก้ A–D, .security.md ข้อ 3–4)
+   ผังช่องของ "สาขา" อยู่ในเอกสารแยก config/bays (ผ่าน scopedDb: ดอนเมือง = config/bays,
+   สาขาอื่น = branches/{b}/config/bays) — ไม่อยู่ใน config/main / state.settings / flushState
+   เพราะเขียนพลาดเมื่อไหร่ batch ของ flushState จะล้มทั้งก้อน (gsms-code-guard §2)
+   jobs.bay เก็บ "id" ของช่อง · ค่าเริ่มต้น id = ชื่อเดิม (H1..H11, ตั้งศูนย์) → ใบงานเดิมไม่ต้อง migrate
+   ชื่อช่องอ่านได้สาธารณะ (กระดาน ?board) → ตรวจรูปร่างซ้ำทุกครั้งที่อ่าน ไม่ผ่าน = ผังเริ่มต้น */
+const DEFAULT_BAYS = Object.freeze(['H1','H2','H3','H4','H5','H6','H7','H8','H9','H10','H11']
+  .map(id => Object.freeze({ id, name: id, align: false }))
+  .concat([Object.freeze({ id: 'ตั้งศูนย์', name: 'ตั้งศูนย์', align: true })]));
+const BAYS_MAX = 30;          // ช่องต่อสาขาสูงสุด (กฎ Firestore ตรวจซ้ำ)
+const BAY_NAME_MAX = 12;      // ตัวที่มองเห็น (PM §9)
+const BAY_NAME_RAW_MAX = 24;  // .length ดิบ กันข้อมูลเพี้ยน (PM §9 / security ข้อ 3)
+// key = branchKey('gsms.bays') ของสาขาที่ state นี้เป็นของ · loaded = ได้ snapshot จริงแล้ว
+// list = ผังที่ผ่านการตรวจ (null = ไม่มีเอกสาร/ข้อมูลเสีย = ผังเริ่มต้น) · error = อ่านไม่ได้
+let baysState = { key: null, loaded: false, error: null, list: null, updatedAt: '' };
+let baysCacheMemo = null;     // { key, raw, list } — ไม่ parse localStorage ซ้ำทุกครั้งที่จอเรียก
+let baysPending = null;       // { at, offline } ระหว่างรอ set() ของ config/bays resolve
+let baysOwnSaveAt = '';       // updatedAt ที่เครื่องนี้เพิ่งเขียน (snapshot ของตัวเองไม่นับว่า "มีคนอื่นแก้")
+let baysBoardWaitUntil = 0;   // กระดาน: รอผังได้ไม่เกิน 3 วิ ก่อนวาดผังเริ่มต้น (U7)
+
+// นับ "ตัวที่มองเห็น" — ไม่นับสระบน/ล่างและวรรณยุกต์ไทย (แท่นตั้งศูนย์ = 9 ไม่ใช่ 13)
+function bayVisibleLen(s){ return String(s).replace(/[ัิ-ฺ็-๎]/g, '').length; }
+// '' = ใช้ได้ · 'empty' / 'long' = เหตุผลที่ใช้ไม่ได้
+function bayNameIssue(s){
+  if(typeof s !== 'string' || !s.trim()) return 'empty';
+  if(s.length > BAY_NAME_RAW_MAX || bayVisibleLen(s.trim()) > BAY_NAME_MAX) return 'long';
+  return '';
+}
+// ตรวจผังที่อ่านมา (snapshot / แคช) — ถือว่าเชื่อไม่ได้ · ผ่าน = สำเนาที่สะอาด · ไม่ผ่าน = null
+function validBays(arr){
+  if(!Array.isArray(arr) || arr.length < 1 || arr.length > BAYS_MAX) return null;
+  const ids = Object.create(null), names = Object.create(null);
+  for(let i = 0; i < arr.length; i++){
+    const b = arr[i];
+    if(!b || typeof b !== 'object' || Array.isArray(b)) return null;
+    const k = Object.keys(b);
+    if(k.length !== 3 || k.some(x => x !== 'id' && x !== 'name' && x !== 'align')) return null;
+    if(bayNameIssue(b.id) || bayNameIssue(b.name) || typeof b.align !== 'boolean') return null;
+    const nk = b.name.trim().toLowerCase();
+    if(ids[b.id] || names[nk]) return null;
+    ids[b.id] = 1; names[nk] = 1;
+  }
+  return arr.map(b => ({ id: b.id, name: b.name, align: b.align }));
+}
+// ข้อแก้ C — แคชผังล่าสุดของ "สาขานี้" ในเครื่อง (ค่าของเครื่อง ไม่ใช่ state) ใช้ก่อน snapshot มา / กระดานออฟไลน์
+function readBaysCache(){
+  const key = branchKey('gsms.bays');
+  let raw = null;
+  try { raw = localStorage.getItem(key); } catch(e){ raw = null; }
+  if(baysCacheMemo && baysCacheMemo.key === key && baysCacheMemo.raw === raw) return baysCacheMemo.list;
+  let list = null;
+  if(raw){ try { const d = JSON.parse(raw); list = validBays(Array.isArray(d) ? d : (d && d.bays)); } catch(e){ list = null; } }
+  baysCacheMemo = { key, raw, list };
+  return list;
+}
+function writeBaysCache(list){
+  try {
+    const key = branchKey('gsms.bays');
+    if(list) localStorage.setItem(key, JSON.stringify({ bays: list }));
+    else localStorage.removeItem(key);
+  } catch(e){}
+  baysCacheMemo = null;
+}
+// ผังที่ใช้อยู่ (อ่านอย่างเดียว ห้ามแก้ค่าที่คืน — ภายนอกใช้ bayList() ซึ่งคืนสำเนา)
+function baysCurrent(){
+  const mine = baysState.key === branchKey('gsms.bays');
+  if(mine && baysState.list) return baysState.list;
+  if(mine && baysState.loaded) return DEFAULT_BAYS;
+  return readBaysCache() || DEFAULT_BAYS;
+}
+function baysLoaded(){ return baysState.loaded && baysState.key === branchKey('gsms.bays'); }
+// มีเอกสารผังของสาขานี้จริง (ไม่ใช่ผังเริ่มต้น)
+function baysHasDoc(){ return baysLoaded() && !!baysState.list; }
+function bayList(){ return baysCurrent().map(b => ({ id: b.id, name: b.name, align: b.align })); }
+function bayLabel(id){
+  const b = baysCurrent().find(x => x.id === id);
+  return b ? b.name : (id === undefined || id === null ? '' : String(id));
+}
+function isAlignBay(id){ const b = baysCurrent().find(x => x.id === id); return !!(b && b.align); }
+function bayIdKnown(id){ return baysCurrent().some(x => x.id === id); }
+
+// ตัวรับ snapshot ของ config/bays (startSync + กระดาน) · data = doc.data() หรือ null เมื่อไม่มีเอกสาร
+function applyBaysSnapshot(data){
+  const key = branchKey('gsms.bays');
+  const list = data ? validBays(data.bays) : null;
+  const at = (data && typeof data.updatedAt === 'string') ? data.updatedAt.slice(0, 40) : '';
+  const prev = baysState;
+  // U4 — เครื่องอื่นบันทึกผังระหว่างเรามีร่างค้าง: ไม่ทับร่าง แค่บอก
+  if(typeof view !== 'undefined' && view && Array.isArray(view.baysDraft) && prev.loaded && prev.key === key &&
+     at !== prev.updatedAt && at !== baysOwnSaveAt){
+    view.baysRemoteAt = at || nowIso();
+  }
+  baysState = { key, loaded: true, error: null, list, updatedAt: at };
+  writeBaysCache(list);
+}
+function applyBaysError(err){
+  console.warn('sync config/bays', err);
+  const key = branchKey('gsms.bays');
+  if(baysState.key === key && baysState.loaded) return;   // เคยได้ผังจริงแล้ว — คงไว้
+  baysState = { key, loaded: false, error: (err && err.code) || 'error', list: null, updatedAt: '' };
+}
+// กระดาน ?board — ฟังเฉพาะ doc('bays') (กฎเปิดสาธารณะแค่ get ไม่ใช่ query) · สาขาอื่นเรียกหลัง publicBranchCheck ผ่าน
+function subscribeBoardBays(){
+  try {
+    db.collection('config').doc('bays').onSnapshot(doc => {
+      applyBaysSnapshot(doc && doc.exists ? (doc.data() || {}) : null);
+      baysBoardWaitUntil = 0;
+      if(boardReady) renderBoard();
+    }, err => {
+      applyBaysError(err);
+      baysBoardWaitUntil = 0;
+      if(boardReady) renderBoard();
+    });
+  } catch(e){ baysBoardWaitUntil = 0; }
+}
+
+/* ---------- การ์ดตั้งค่า: ร่าง (view.baysDraft) ---------- */
+function baysDraftNow(){
+  if(!Array.isArray(view.baysDraft)) view.baysDraft = bayList();
+  return view.baysDraft;
+}
+function baysNormDraft(d){
+  return (d || []).map(b => ({ id: (b && typeof b.id === 'string') ? b.id : '', name: String((b && b.name) || '').trim(), align: !!(b && b.align) }));
+}
+function baysDraftDirty(){
+  if(!Array.isArray(view.baysDraft)) return false;
+  return JSON.stringify(baysNormDraft(view.baysDraft)) !== JSON.stringify(baysNormDraft(bayList()));
+}
+// ข้อความผิดต่อแถว ('' = ผ่าน) · showEmpty = แสดง "ใส่ชื่อช่อง" ด้วย (หลังกดบันทึก — แถวที่เพิ่งเพิ่มยังไม่แดง)
+function baysRowErrors(d, showEmpty){
+  const rows = baysNormDraft(d);
+  return rows.map((b, i) => {
+    const iss = bayNameIssue(b.name);
+    if(iss === 'empty') return showEmpty ? 'ใส่ชื่อช่อง' : '';
+    if(iss === 'long') return 'ชื่อยาวเกิน ' + BAY_NAME_MAX + ' ตัว';
+    const k = b.name.toLowerCase();
+    const other = rows.findIndex((x, j) => j !== i && x.name.toLowerCase() === k);
+    return other >= 0 ? 'ชื่อซ้ำกับช่องที่ ' + (other + 1) : '';
+  });
+}
+function bayRowIndex(el){ const i = parseInt(el && el.getAttribute ? el.getAttribute('data-i') : el, 10); return isNaN(i) ? -1 : i; }
+// พิมพ์ชื่อ = แก้ร่างตรง ๆ ไม่เรียก render() (คีย์บอร์ด iPad ไม่หลุด) · ตัวนับ/ข้อความผิด/ปุ่มบันทึก อัปเดตผ่าน DOM
+function onBayNameInput(el){
+  const i = bayRowIndex(el); const d = baysDraftNow();
+  if(i < 0 || !d[i]) return;
+  d[i].name = String(el.value || '');
+  refreshBaysCardChrome();
+}
+function refreshBaysCardChrome(){
+  if(typeof document === 'undefined' || !document.getElementById) return;
+  const d = view.baysDraft || [];
+  const errs = baysRowErrors(d, !!view.baysShowErr);
+  d.forEach((b, i) => {
+    const nm = String(b.name || '');
+    const n = bayVisibleLen(nm.trim());
+    const cnt = document.getElementById('bay-cnt-' + i);
+    if(cnt){ cnt.textContent = n + '/' + BAY_NAME_MAX; if(cnt.classList) cnt.classList.toggle('over', n > BAY_NAME_MAX || nm.length > BAY_NAME_RAW_MAX); }
+    const er = document.getElementById('bay-err-' + i);
+    if(er) er.textContent = errs[i] || '';
+    const row = document.getElementById('bay-row-' + i);
+    if(row && row.classList) row.classList.toggle('bad', !!errs[i]);
+  });
+  const dirty = baysDraftDirty();
+  const save = document.getElementById('bays-save');
+  if(save){ save.disabled = !dirty; if(save.classList) save.classList.toggle('secondary', !dirty); }
+  const disc = document.getElementById('bays-discard');
+  if(disc) disc.disabled = !dirty;
+  const badge = document.getElementById('bays-dirty');
+  if(badge && badge.style) badge.style.display = dirty ? '' : 'none';
+}
+function toggleBayAlign(el){
+  const i = bayRowIndex(el); const d = baysDraftNow();
+  if(i < 0 || !d[i]) return;
+  d[i].align = !!el.checked;
+  render();
+}
+function moveBayRow(el, dir){
+  const i = bayRowIndex(el); const d = baysDraftNow(); const j = i + dir;
+  if(i < 0 || j < 0 || j >= d.length) return;
+  const t = d[i]; d[i] = d[j]; d[j] = t;
+  render();
+}
+function bayRowOccupant(row){ return (row && row.id) ? jobInBay(row.id) : null; }
+function addBayRow(){
+  const d = baysDraftNow();
+  if(d.length >= BAYS_MAX){ flashToast('ได้สูงสุด ' + BAYS_MAX + ' ช่อง'); return; }
+  // เดาชื่อถัดไปจากแถวสุดท้าย (H11 → H12, L5 → L6) ถ้าไม่ซ้ำ · เดาไม่ได้ = ว่าง
+  let guess = '';
+  const last = d.length ? String(d[d.length - 1].name || '').trim() : '';
+  const m = /^(.*?)(\d+)$/.exec(last);
+  if(m && m[1] && !/\s$/.test(m[1])){
+    const cand = m[1] + (parseInt(m[2], 10) + 1);
+    if(!bayNameIssue(cand) && !d.some(b => String(b.name || '').trim().toLowerCase() === cand.toLowerCase())) guess = cand;
+  }
+  d.push({ id: '', name: guess, align: false });
+  const at = d.length - 1;
+  render();
+  setTimeout(() => {
+    try { const inp = document.getElementById('bay-name-' + at); if(inp){ inp.focus(); if(guess) inp.select(); } } catch(e){}
+  }, 30);
+}
+function removeBayRow(el){
+  const i = bayRowIndex(el); const d = baysDraftNow();
+  if(i < 0 || !d[i]) return;
+  if(d.length <= 1){ flashToast('ต้องมีอย่างน้อย 1 ช่อง'); return; }
+  const row = d[i];
+  const occ = bayRowOccupant(row);
+  if(occ){ bayOccupiedModal([occ], 'ลบช่องนี้ไม่ได้'); return; }   // AC16 / Q3=ก — ไม่ลบจากร่าง
+  d.splice(i, 1);
+  render();
+  const nm = String(row.name || row.id || '').trim();
+  showUndoToast(`เอาช่อง ${nm} ออกจากผังแล้ว (ยังไม่บันทึก)`, () => {
+    const dd = baysDraftNow(); dd.splice(Math.min(i, dd.length), 0, row); render();
+  });
+}
+// กล่องบอกว่าช่องมีรถ (ลบตอนแก้ร่าง / ตรวจซ้ำตอนบันทึก) · ปุ่มใช้ data-job ไม่ต่อค่าลง onclick (security ข้อ 4)
+function bayOccupiedModal(jobs, title){
+  const lines = jobs.map(j => {
+    const v = getVehicle(j.vehicleId) || {};
+    const plate = v.plate || j.jobNumber || 'รถ';
+    return { j, plate, text: 'ช่อง ' + bayLabel(j.bay) + ' มีรถ ' + plate + ' อยู่' };
+  });
+  const hint = 'เอารถออกจากช่อง หรือย้ายไปช่องอื่นก่อน แล้วค่อยลบ';
+  const message = title + '\n' + lines.map(x => x.text).join('\n') + '\n' + hint;
+  const bodyHtml = `<div class="ui-modal-title">${escapeHtml(title)}</div>` +
+    lines.map(x => `<div class="bays-occ-line">
+      <div>${escapeHtml(x.text)}</div>
+      <div class="bays-occ-acts">
+        ${lines.length > 1 ? `<button type="button" class="btn small" data-job="${escapeAttr(String(x.j.id))}" onclick="bayModalClear(this)">เอา ${escapeHtml(x.plate)} ออกจากช่อง</button>` : ''}
+        <button type="button" class="btn secondary small" data-job="${escapeAttr(String(x.j.id))}" onclick="bayModalMove(this)">ย้ายไปช่องอื่น</button>
+      </div></div>`).join('') +
+    `<div class="muted bays-occ-hint">${escapeHtml(hint)}</div>`;
+  // ปุ่มล่าง: คันเดียว = "เอา {ทะเบียน} ออกจากช่อง" · หลายคัน = เอาออกทั้งหมด (setJobBay(id,'') = เขียนใบงานจริงทันที) · ปิด
+  const ids = jobs.map(j => j.id);
+  uiModal({ message, bodyHtml, cancelLabel: 'ปิด',
+    okLabel: lines.length === 1 ? 'เอา ' + lines[0].plate + ' ออกจากช่อง' : 'เอาออกจากช่องทั้งหมด (' + lines.length + ' คัน)',
+    onOk: () => { ids.forEach(id => setJobBay(id, '')); } });
+}
+function bayModalClear(el){
+  const id = el && el.getAttribute ? el.getAttribute('data-job') : '';
+  closeUiModal();
+  if(id) setJobBay(id, '');
+}
+function bayModalMove(el){
+  const id = el && el.getAttribute ? el.getAttribute('data-job') : '';
+  closeUiModal();
+  if(id) openBayPicker(id);
+}
+function discardBaysDraft(){
+  uiConfirm('ทิ้งที่แก้ทั้งหมด แล้วกลับไปใช้ผังที่บันทึกไว้?', () => {
+    view.baysDraft = null; view.baysShowErr = false; view.baysRemoteAt = null; render();
+  }, 'ทิ้งที่แก้', 'แก้ต่อ');
+}
+function resetBaysToDefault(){
+  uiConfirm('ใช้ผังเริ่มต้น H1–H11 + ตั้งศูนย์ (12 ช่อง)? ชื่อช่องที่ตั้งไว้จะหายเมื่อกดบันทึก', () => {
+    view.baysDraft = DEFAULT_BAYS.map(b => ({ id: b.id, name: b.name, align: b.align }));
+    view.baysShowErr = false; render();
+  }, 'ใช้ผังเริ่มต้น', 'ยกเลิก');
+}
+function reloadBaysFromServer(){ view.baysDraft = null; view.baysShowErr = false; view.baysRemoteAt = null; render(); }
+// หน้าหลัก → ตั้งค่า > ข้อมูลร้าน และผู้ใช้งาน > การ์ดช่องทำงาน (แอดมินเท่านั้นที่เห็นปุ่ม)
+function goBaySettings(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  goTab('settings');
+  (view.setOpen || (view.setOpen = {})).shop = true;
+  render();
+  setTimeout(() => { try { const el = document.getElementById('set-bays'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); } catch(e2){} }, 30);
+}
+
+/* บันทึกผัง — เฉพาะแอดมิน · set ทั้งเอกสาร ไม่ merge (ข้อแก้ A: กฎ hasOnly ตรวจทั้งเอกสาร)
+   ไม่ผ่าน batch ของ flushState (AC5/AC21) · ไม่รอ .then (ออฟไลน์ promise ไม่ resolve — ข้อแก้ D) */
+function saveBays(opts){
+  opts = opts || {};
+  if(!isAdmin()){ flashToast('แก้ผังช่องได้เฉพาะผู้ดูแลระบบ'); return; }
+  if(!baysLoaded()){
+    flashToast(baysState.error ? 'โหลดผังช่องของสาขานี้ไม่ได้ — ต่อเน็ตแล้วเปิดหน้านี้ใหม่' : 'กำลังโหลดผังช่อง… รอสักครู่แล้วกดบันทึกอีกครั้ง');
+    return;
+  }
+  const draft = baysNormDraft(Array.isArray(view.baysDraft) ? view.baysDraft : bayList());
+  if(!draft.length){ flashToast('ต้องมีอย่างน้อย 1 ช่อง'); return; }
+  if(draft.length > BAYS_MAX){ flashToast('ได้สูงสุด ' + BAYS_MAX + ' ช่อง'); return; }
+  const errs = baysRowErrors(draft, true);
+  const nBad = errs.filter(Boolean).length;
+  if(nBad){
+    view.baysShowErr = true;
+    flashToast('ยังบันทึกไม่ได้ — แก้ช่องที่มีกรอบแดง ' + nBad + ' ช่อง');
+    render();
+    const first = errs.findIndex(Boolean);
+    setTimeout(() => { try { const el = document.getElementById('bay-row-' + first); if(el) el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }, 30);
+    return;
+  }
+  // แถวใหม่: id = ชื่อ · ชนกับ id ที่มีอยู่ → -2, -3
+  const cur = bayList();
+  const used = Object.create(null);
+  cur.forEach(b => { used[b.id] = 1; });
+  draft.forEach(b => { if(b.id) used[b.id] = 1; });
+  draft.forEach(b => {
+    if(b.id) return;
+    let id = b.name, n = 2;
+    while(used[id]) id = b.name + '-' + (n++);
+    b.id = id; used[id] = 1;
+  });
+  // AC16 — ช่องที่ถูกเอาออกแต่ยังมีรถ (เครื่องอื่นอาจเพิ่งลงรถ) = บล็อก
+  const keep = Object.create(null);
+  draft.forEach(b => { keep[b.id] = 1; });
+  const blocked = activeJobs().filter(j => j.bay && occupiesBay(j) && !keep[j.bay] && cur.some(b => b.id === j.bay));
+  if(blocked.length){ bayOccupiedModal(blocked, 'ยังบันทึกไม่ได้'); return; }
+  if(view.baysRemoteAt && !opts.force){
+    uiConfirm('มีคนแก้ผังช่องจากอีกเครื่องแล้ว — ผังที่บันทึกล่าสุดจะถูกแทนด้วยของคุณ', () => saveBays({ force: true }), 'บันทึกทับ', 'ยกเลิก');
+    return;
+  }
+  const doc = { bays: draft.map(b => ({ id: b.id, name: b.name, align: b.align })), updatedAt: nowIso() };
+  const list = validBays(doc.bays);
+  if(!list){ flashToast('ยังบันทึกไม่ได้ — ผังช่องไม่ถูกต้อง'); return; }
+  const prev = baysState;
+  // ผังใหม่มีผลในเครื่องทันที (AC24) — snapshot ของ Firestore ตามมายืนยันเอง
+  baysOwnSaveAt = doc.updatedAt;
+  baysState = { key: branchKey('gsms.bays'), loaded: true, error: null, list, updatedAt: doc.updatedAt };
+  writeBaysCache(list);
+  pushEditLog('แก้ช่องทำงาน', '', '', `แก้ช่องทำงาน: ${cur.length} → ${doc.bays.length} ช่อง`);
+  saveState(true);
+  view.baysDraft = null; view.baysShowErr = false; view.baysRemoteAt = null;
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
+  const pend = { at: Date.now(), offline };
+  baysPending = pend;
+  let p;
+  try { p = Promise.resolve(db.collection('config').doc('bays').set(doc)); } catch(e){ p = Promise.reject(e); }
+  p.then(() => {
+    if(baysPending === pend){ baysPending = null; safeRender(); }
+  }).catch(err => {
+    console.warn('save config/bays', err);
+    if(baysPending === pend) baysPending = null;
+    // ร่างยังอยู่ · ผังในเครื่องกลับเป็นของเดิม (snapshot จากเซิร์ฟเวอร์ยืนยันอีกที)
+    if(baysState.updatedAt === doc.updatedAt){ baysState = prev; writeBaysCache(prev.list); }
+    if(!Array.isArray(view.baysDraft)) view.baysDraft = doc.bays.map(b => Object.assign({}, b));
+    flashToast('บันทึกผังช่องไม่สำเร็จ — ร่างยังอยู่ ลองกดบันทึกอีกครั้ง');
+    safeRender();
+  });
+  if(offline) flashToast('บันทึกในเครื่องแล้ว — จะส่งขึ้นเมื่อมีเน็ต');
+  else {
+    flashToast('บันทึกผังช่องแล้ว — ' + doc.bays.length + ' ช่อง');
+    // set() ยังไม่ resolve ใน 2 วิ = ถือว่ารอซิงก์ (ป้ายบนหัวการ์ด)
+    setTimeout(() => { if(baysPending === pend) safeRender(); }, 2100);
+  }
+  render();
+}
+function baysWaitingSync(){ return !!(baysPending && (baysPending.offline || Date.now() - baysPending.at > 2000)); }
+
+// การ์ด "ช่องทำงานของสาขา" ในหน้าตั้งค่า (หมวด shop) · พนักงาน = อ่านอย่างเดียว ไม่มี input/ปุ่ม (AC19 / U5)
+function renderBaysSettingsCard(){
+  const title = `<h3>${icon('wrench',15)} ช่องทำงานของสาขา ${escapeHtml(branchName())}</h3>`;
+  const chipsHtml = list => `<div class="bays-chips">${list.map(b =>
+    `<span class="bays-chip ${b.align ? 'align' : ''}" title="${escapeAttr(b.name)}">${escapeHtml(b.name)}</span>`).join('')}</div>`;
+  if(!isAdmin()){
+    const l = bayList();
+    return `<div class="card no-print" id="set-bays">${title}${chipsHtml(l)}
+      <p class="muted">${l.length} ช่อง · แก้ได้เฉพาะผู้ดูแลระบบ</p></div>`;
+  }
+  if(!baysLoaded()){
+    // ห้ามให้แก้บนผังเริ่มต้นตอนยังไม่รู้ผังจริง — บันทึกแล้วจะทับผังของสาขา (U4)
+    const msg = (baysState.error && baysState.key === branchKey('gsms.bays'))
+      ? 'โหลดผังช่องของสาขานี้ไม่ได้ — ต่อเน็ตแล้วเปิดหน้านี้ใหม่' : 'กำลังโหลดผังช่อง…';
+    return `<div class="card no-print" id="set-bays">${title}<p class="muted">${escapeHtml(msg)}</p>${chipsHtml(bayList())}</div>`;
+  }
+  const d = baysDraftNow();
+  const dirty = baysDraftDirty();
+  const errs = baysRowErrors(d, !!view.baysShowErr);
+  const n = d.length;
+  const rows = d.map((b, i) => {
+    const nm = String(b.name || '');
+    const vis = bayVisibleLen(nm.trim());
+    const over = vis > BAY_NAME_MAX || nm.length > BAY_NAME_RAW_MAX;
+    const occ = bayRowOccupant(b);
+    const ov = occ ? (getVehicle(occ.vehicleId) || {}) : null;
+    return `<div class="bays-row ${errs[i] ? 'bad' : ''}" id="bay-row-${i}">
+      <span class="bays-no ${b.align ? 'align' : ''}">${escapeHtml(String(i + 1))}</span>
+      <div class="bays-main">
+        <div class="bays-nameline">
+          <input type="text" class="bays-name" id="bay-name-${i}" data-i="${i}" value="${escapeAttr(nm)}" oninput="onBayNameInput(this)" aria-label="ชื่อช่องที่ ${i + 1}" autocomplete="off">
+          <span class="bays-cnt ${over ? 'over' : ''}" id="bay-cnt-${i}">${vis}/${BAY_NAME_MAX}</span>
+        </div>
+        ${occ ? `<div class="bays-occ">มีรถ <span class="mono">${escapeHtml(ov.plate || occ.jobNumber || '')}</span></div>` : ''}
+        <div class="bays-err" id="bay-err-${i}">${escapeHtml(errs[i] || '')}</div>
+      </div>
+      <div class="bays-ctl">
+        <label class="bays-align"><input type="checkbox" data-i="${i}" onchange="toggleBayAlign(this)" ${b.align ? 'checked' : ''}> แท่นตั้งศูนย์</label>
+        <div class="bays-btns">
+          <button type="button" class="icon-btn bays-up" data-i="${i}" onclick="moveBayRow(this,-1)" aria-label="เลื่อนขึ้น" ${i === 0 ? 'disabled' : ''}>${icon('chevron',18)}</button>
+          <button type="button" class="icon-btn" data-i="${i}" onclick="moveBayRow(this,1)" aria-label="เลื่อนลง" ${i === n - 1 ? 'disabled' : ''}>${icon('chevron',18)}</button>
+          <button type="button" class="icon-btn bays-del" data-i="${i}" onclick="removeBayRow(this)" aria-label="ลบช่อง ${escapeAttr(nm)}" ${n <= 1 ? 'disabled title="ต้องมีอย่างน้อย 1 ช่อง"' : ''}>${icon('trash',18)}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  const remote = view.baysRemoteAt ? `<div class="bay-warn">
+      <div class="bw-text">${icon('bell',14)} มีคนแก้ผังช่องจากอีกเครื่องเมื่อ ${escapeHtml(fmtDT(view.baysRemoteAt))}</div>
+      <button type="button" class="btn small" onclick="reloadBaysFromServer()">ดูผังล่าสุด (ทิ้งที่แก้)</button>
+    </div>` : '';
+  return `<div class="card no-print" id="set-bays">
+    <div class="bays-head">${title}
+      <span class="bays-badge" id="bays-dirty" ${dirty ? '' : 'style="display:none"'}>ยังไม่บันทึก</span>
+      ${baysWaitingSync() ? `<span class="bays-badge sync"><span class="sync-dot offline"></span> รอซิงก์</span>` : ''}
+    </div>
+    <p class="muted">เลือกได้ 1–${BAYS_MAX} ช่อง · ชื่อไม่เกิน ${BAY_NAME_MAX} ตัว · ช่องที่ติ๊ก "แท่นตั้งศูนย์" รถจะไม่ถูกเอาลงตอนกด "รอตั้งศูนย์" · ชื่อช่องลูกค้ามองเห็นได้บนจอกระดานสถานะ</p>
+    ${baysHasDoc() ? '' : `<p class="muted bays-note">สาขานี้ยังใช้ผังเริ่มต้น (H1–H11 + ตั้งศูนย์) — แก้แล้วกดบันทึกเพื่อใช้ผังของสาขานี้</p>`}
+    ${remote}
+    <div class="bays-list">${rows}</div>
+    <button type="button" class="bays-add" onclick="addBayRow()" ${n >= BAYS_MAX ? 'disabled' : ''}>${n >= BAYS_MAX ? `ครบ ${BAYS_MAX} ช่องแล้ว` : `${icon('plus',15)} เพิ่มช่อง`}</button>
+    <div class="bays-actions">
+      <button type="button" class="btn ${dirty ? '' : 'secondary'} bays-save" id="bays-save" onclick="saveBays()" ${dirty ? '' : 'disabled'}>บันทึกผังช่อง (${n} ช่อง)</button>
+      <button type="button" class="btn secondary" id="bays-discard" onclick="discardBaysDraft()" ${dirty ? '' : 'disabled'}>ยกเลิกที่แก้</button>
+      ${baysHasDoc() ? `<button type="button" class="btn secondary bays-reset" onclick="resetBaysToDefault()">คืนค่าเริ่มต้น</button>` : ''}
+    </div>
+  </div>`;
+}
+// กระดาน: จำนวนคอลัมน์ที่เฉลี่ยแถวไม่ให้เหลือเศษ 1 ช่อง (U7)
+function boardBayCols(n, max){ return Math.max(1, Math.ceil(n / Math.ceil(n / max))); }
+/* ===================== /per-branch-bays ===================== */
 
 const DEFAULT_COMPLAINTS = [
   "รถกินซ้าย","รถกินขวา","พวงมาลัยสั่น","เบรกสั่น","ช่วงล่างดัง","รถเอียง","เปลี่ยนโช๊ค","เช็กช่วงล่าง"
@@ -13444,6 +13961,17 @@ function startSync(){
   });
   listeners.push(unsubBoardMode);
 
+  /* v4.10.0 per-branch-bays — ผังช่องของสาขา: ตัวฟังของตัวเอง ไม่นับใน pending (หน้าไม่รอ)
+     ไม่ผ่าน applyConfigSnapshot / buildConfigPayload / flushState · ไม่มีเอกสาร = ผังเริ่มต้น */
+  const unsubBays = db.collection('config').doc('bays').onSnapshot(doc => {
+    applyBaysSnapshot(doc && doc.exists ? (doc.data() || {}) : null);
+    if(dataReady) safeRender();
+  }, err => {
+    applyBaysError(err);
+    if(dataReady) safeRender();
+  });
+  listeners.push(unsubBays);
+
   /* v4.7.0 สต็อกอะไหล่ — ตัวฟังของตัวเอง ไม่นับใน pending (หน้าโหลดไม่รอ) · push เข้า listeners เอง */
   stockResetState();
   startStockSync();
@@ -15915,7 +16443,7 @@ function jobSearchBlob(job){
   const c = getCustomer(job.customerId) || {};
   const plate = (v.plate || '');
   return [
-    job.jobNumber, job.queueNo, job.bay, job.technician,
+    job.jobNumber, job.queueNo, job.bay, job.bay ? bayLabel(job.bay) : '', job.technician,
     plate, plate.replace(/[\s-]/g, ''),
     v.province, v.brand, v.model, v.year, v.color,
     c.name, c.phone
@@ -17549,7 +18077,7 @@ function freeBayIfLeaving(job, statusKey){
      แปลว่างานบนแท่นยกจบแล้ว รถแค่รอคิวขึ้นแท่นตั้งศูนย์ ถ้าปล่อยให้ถือแท่นยกไว้
      แท่นนั้นจะว่างอยู่จริงแต่ระบบบอกว่าไม่ว่าง คันต่อไปก็ขึ้นไม่ได้
      ข้อยกเว้นเดียว: ถ้ารถอยู่บนแท่นตั้งศูนย์อยู่แล้ว ไม่ต้องไล่ลง เพราะนั่นคือที่ของมัน */
-  if(statusKey === 'aligning' && job.bay && job.bay !== ALIGN_BAY){
+  if(statusKey === 'aligning' && job.bay && !isAlignBay(job.bay)){
     job.bay = ''; job.bayAt = '';
   }
 }
@@ -17984,11 +18512,15 @@ function bayIssues(){
   const dup   = {};   // สองคันขึ้นแท่นเดียวกัน — ซ่อมเองได้ (เก็บคันที่ขึ้นทีหลัง)
   const noBay = [];   // กำลังซ่อมอยู่ แต่ไม่ได้อยู่ช่องไหนเลย — ต้องให้คนเลือก
   const idle  = [];   // คาช่องมานานผิดปกติ อาจส่งรถไปแล้วแต่ลืมกด — ต้องให้คนยืนยัน
+  const orphan = [];  // v4.10.0 — อยู่ในช่องที่ไม่มีในผังสาขาแล้ว (เครื่องเก่า/ออฟไลน์/ลบพร้อมกัน) — ซ่อมเองได้ (ล้าง bay)
+  const known = Object.create(null);
+  baysCurrent().forEach(b => { known[b.id] = 1; });
 
   jobs.forEach(j => {
     if(bayLooksForgotten(j)) idle.push(j);
     if(j.bay && BAY_FREEING_STATUSES.indexOf(j.status) !== -1) stale.push(j);
-    if(occupiesBay(j)) (dup[j.bay] = dup[j.bay] || []).push(j);
+    if(occupiesBay(j) && !known[j.bay]) orphan.push(j);
+    else if(occupiesBay(j)) (dup[j.bay] = dup[j.bay] || []).push(j);
     /* เฉพาะ "กำลังซ่อม" เท่านั้นที่ไม่มีช่องแล้วผิด — รถที่รอตั้งศูนย์แต่ยังไม่มีช่อง
        คือรถที่ลงจากแท่นยกแล้วกำลังรอคิวแท่นตั้งศูนย์ ซึ่งเป็นสภาพปกติของงาน */
     if(!j.bay && j.status === 'repairing') noBay.push(j);
@@ -17997,8 +18529,8 @@ function bayIssues(){
   const clashes = [];
   Object.keys(dup).forEach(bay => { if(dup[bay].length > 1) clashes.push({ bay, jobs: dup[bay] }); });
   idle.sort((a, b) => bayIdleHours(b) - bayIdleHours(a));
-  return { stale, clashes, noBay, idle, fixable: stale.length + clashes.length,
-           total: stale.length + clashes.length + noBay.length + idle.length };
+  return { stale, clashes, noBay, idle, orphan, fixable: stale.length + clashes.length + orphan.length,
+           total: stale.length + clashes.length + noBay.length + idle.length + orphan.length };
 }
 
 /* ปุ่มบนการ์ดรถที่ถูกลืม — สองทางเลือกเท่านั้น เพราะมีความจริงอยู่แค่สองแบบ:
@@ -18062,7 +18594,7 @@ function clearForgottenBays(){
   if(!rows.length){ flashToast('ไม่มีช่องที่ค้างผิดปกติ'); return; }
   const list = rows.slice(0, 6).map(j => {
     const v = getVehicle(j.vehicleId) || {};
-    return `• ${j.bay} — ${v.plate || j.jobNumber} (ค้าง ${Math.floor(bayIdleHours(j)/24)} วัน)`;
+    return `• ${bayLabel(j.bay)} — ${v.plate || j.jobNumber} (ค้าง ${Math.floor(bayIdleHours(j)/24)} วัน)`;
   }).join('\n');
   uiConfirm(
     `เอารถออกจากช่องทั้งหมด ${rows.length} ช่อง?\n\n${list}${rows.length > 6 ? `\n…และอีก ${rows.length-6} ช่อง` : ''}` +
@@ -18084,9 +18616,11 @@ function fixBaySync(){
   const detail = [];
   if(iss.stale.length)   detail.push(`คืนช่องที่ค้าง ${iss.stale.length} ช่อง`);
   if(iss.clashes.length) detail.push(`แก้ช่องที่มีรถซ้อนกัน ${iss.clashes.length} ช่อง`);
+  if(iss.orphan.length)  detail.push(`เอารถออกจากช่องที่ไม่มีแล้ว ${iss.orphan.length} คัน`);
   uiConfirm('ปรับช่องทำงานให้ตรงกับสถานะรถ?\n\n' + detail.join('\n'), () => {
     let n = 0;
     iss.stale.forEach(j => { j.bay = ''; n++; });
+    iss.orphan.forEach(j => { j.bay = ''; j.bayAt = ''; n++; });
     iss.clashes.forEach(c => {
       // เก็บคันที่เพิ่งเข้าช่องล่าสุดไว้ ที่เหลือเอาออก — คันที่ขึ้นทีหลังคือคันที่อยู่จริง
       const keep = c.jobs.slice().sort((a, b) =>
@@ -18107,6 +18641,8 @@ function bayAssignedAt(job){
 function setJobBay(jobId, bay){
   const job = getJob(jobId);
   if(!job) return;
+  // v4.10.0 — ช่องต้องอยู่ในผังของสาขา ('' = เอาออกจากช่อง ได้เสมอ)
+  if(bay && !bayIdKnown(bay)){ flashToast('ไม่มีช่องนี้ในผังของสาขา'); return; }
   if(bay){
     // One car per bay: whoever was parked here gets bumped out rather than
     // silently sharing the lift.
@@ -18116,7 +18652,7 @@ function setJobBay(jobId, bay){
   job.bay = bay || '';
   job.bayAt = bay ? nowIso() : '';   // ใช้ตอนต้องตัดสินว่าใครอยู่บนแท่นจริงถ้าซ้อนกัน
   saveState(true);
-  flashToast(bay ? ('ย้ายเข้า ' + bay + ' แล้ว') : 'เอาออกจากช่องแล้ว');
+  flashToast(bay ? ('ย้ายเข้า ' + bayLabel(bay) + ' แล้ว') : 'เอาออกจากช่องแล้ว');
   render();
 }
 
@@ -18125,14 +18661,17 @@ function openBayPicker(jobId, e){
   const job = getJob(jobId);
   if(!job) return;
   const v = getVehicle(job.vehicleId) || {};
-  const options = WORK_BAYS.map(bay => {
+  const options = bayList().map(bb => {
+    const bay = bb.id;
     const occupant = jobInBay(bay, jobId);
     const ov = occupant ? (getVehicle(occupant.vehicleId) || {}) : null;
-    return {
+    const o = {
       value: bay,
-      label: bay + (ov ? `  —  มี ${ov.plate || 'รถ'} อยู่` : '  —  ว่าง'),
+      label: bb.name + (ov ? `  —  มี ${ov.plate || 'รถ'} อยู่` : '  —  ว่าง'),   // uiChoice escape ให้เอง
       current: job.bay === bay
     };
+    if(bb.align) o.sub = 'แท่นตั้งศูนย์';
+    return o;
   });
   options.push({ value:'', label:'— ไม่อยู่ในช่องทำงาน —', current: !job.bay });
   uiChoice(`เลือกช่องทำงาน — ${v.plate || job.jobNumber}`, options, bay => setJobBay(jobId, bay));
@@ -18382,7 +18921,7 @@ function bulkAssignBay(){
   const ids = (view.job_selectedIds || []).slice();
   if(!ids.length) return;
   if(ids.length === 1){ openBayPicker(ids[0]); return; }
-  const free = WORK_BAYS.filter(b => !jobInBay(b));
+  const free = bayList().map(b => b.id).filter(b => !jobInBay(b));
   let i = 0, placed = 0, alreadyParked = 0;
   ids.forEach(jobId => {
     const job = getJob(jobId);
@@ -20509,7 +21048,8 @@ function renderJobList(){
   html += queueBarHtml(dayJobs);
 
   // Floor overview — every bay, occupied or free, in one strip.
-  const busyBays = WORK_BAYS.filter(b => jobInBay(b)).length;
+  const BL = bayList();   // v4.10.0 — ผังของสาขาที่เปิดอยู่
+  const busyBays = BL.filter(b => jobInBay(b.id)).length;
   /* v3.31.1 — จำนวนที่น่าสงสัยต้องเห็นตั้งแต่ยังไม่กางกระดานออก
      เพราะอาการที่ร้านเจอคือกระดานบอก 11/12 ทั้งที่มีรถจริง 3 คัน
      ถ้าตัวเลขนี้ซ่อนอยู่ข้างใน คนก็ยังเชื่อ 11/12 ต่อไปอีกเป็นเดือน */
@@ -20518,7 +21058,7 @@ function renderJobList(){
     <button class="collapse-head" onclick="toggleBayBoard()">
       <span>${icon('wrench',15)} ช่องทำงาน${forgotN ? ` <span class="ch-warn">${forgotN} ช่องน่าจะไม่มีรถแล้ว</span>` : ''}</span>
       <span class="ch-right">
-        <span class="ch-count">${busyBays}/${WORK_BAYS.length}</span>
+        <span class="ch-count">${busyBays}/${BL.length}</span>
         <span class="ch-caret ${view.bayBoardOpen?'open':''}">${icon('chevron',15)}</span>
       </span>
     </button>`;
@@ -20531,6 +21071,7 @@ function renderJobList(){
       if(iss.stale.length)   parts.push(`${iss.stale.length} คันถือช่องไว้ทั้งที่ออกจากอู่ไปแล้ว`);
       if(iss.clashes.length) parts.push(`${iss.clashes.length} ช่องมีรถซ้อนกัน`);
       if(iss.noBay.length)   parts.push(`${iss.noBay.length} คันกำลังซ่อมแต่ยังไม่ได้เข้าช่อง`);
+      if(iss.orphan.length)  parts.push(`${iss.orphan.length} คันอยู่ในช่องที่ไม่มีแล้ว`);
       if(iss.idle.length)    parts.push(`${iss.idle.length} คันคาช่องมานาน อาจส่งรถไปแล้วแต่ยังไม่ได้กด`);
       html += `<div class="bay-warn">
         <div class="bw-text">${icon('bell',14)} ช่องทำงานไม่ตรงกับสถานะรถ — ${escapeHtml(parts.join(' · '))}</div>
@@ -20549,13 +21090,28 @@ function renderJobList(){
           const days = Math.floor(bayIdleHours(j) / 24);
           html += `<div class="bi-row">
             <div class="bi-info">
-              <b>${escapeHtml(j.bay)}</b> · ${escapeHtml(iv.plate || j.jobNumber || 'รถ')}
+              <b>${escapeHtml(bayLabel(j.bay))}</b> · ${escapeHtml(iv.plate || j.jobNumber || 'รถ')}
               <span class="bi-sub">${escapeHtml(statusOf(j.status).label)} · ไม่มีความเคลื่อนไหว ${days >= 1 ? days + ' วัน' : Math.round(bayIdleHours(j)) + ' ชม.'}</span>
             </div>
             <div class="bi-acts">
               <button class="btn small" onclick="markDeliveredFromBay(${escapeAttr(JSON.stringify(String(j.id)))}, event)">${icon('check',12)} ส่งมอบแล้ว</button>
               <button class="btn secondary small" onclick="clearBayOnly(${escapeAttr(JSON.stringify(String(j.id)))}, event)">เอาออกจากช่อง</button>
             </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      if(iss.orphan.length){
+        // v4.10.0 (AC18) — รถในช่องที่ถูกลบออกจากผังแล้ว · ยังอยู่ในรายการงานตามเดิม
+        html += `<div class="bay-idle-head">
+          <span>ช่องเหล่านี้ถูกลบออกจากผังแล้ว — เลือกช่องใหม่ให้รถ หรือกด "ปรับให้ตรงกัน" เพื่อเอารถออกจากช่อง</span>
+        </div>`;
+        html += `<div class="bay-nobay bay-orphan">`;
+        iss.orphan.forEach(j => {
+          const nv = getVehicle(j.vehicleId) || {};
+          html += `<div class="bn-chip-wrap">
+            <span class="bay-orphan-chip">${escapeHtml(nv.plate || j.jobNumber || 'รถ')} · ช่อง ${escapeHtml(j.bay)} (ไม่มีแล้ว)</span>
+            <button class="bn-chip bn-chip-bay" onclick="openBayPicker(${escapeAttr(JSON.stringify(String(j.id)))}, event)" title="เลือกช่องใหม่" aria-label="เลือกช่องใหม่">${icon('wrench',12)}</button>
           </div>`;
         });
         html += `</div>`;
@@ -20577,8 +21133,9 @@ function renderJobList(){
         html += `</div>`;
       }
     }
-    html += `<div class="bay-grid">`;
-    WORK_BAYS.forEach(bay => {
+    html += `<div class="bay-grid${BL.length > 12 ? ' dense' : ''}">`;
+    BL.forEach(bb => {
+      const bay = bb.id;
       const occ = jobInBay(bay);
       const ov = occ ? (getVehicle(occ.vehicleId) || {}) : null;
       const ost = occ ? statusOf(occ.status) : null;
@@ -20586,9 +21143,9 @@ function renderJobList(){
          ถ้าไม่โชว์ รถที่คาไว้สามสัปดาห์กับรถที่เพิ่งขึ้นแท่นเมื่อกี้ หน้าตาเหมือนกันเป๊ะ */
       const stale = occ && bayLooksForgotten(occ);
       const ageD = occ ? Math.floor(bayIdleHours(occ) / 24) : 0;
-      html += `<div class="bay-cell ${occ ? 'busy' : ''} ${stale ? 'stale' : ''} ${bay === ALIGN_BAY ? 'align' : ''} ${ost ? ost.cls : ''}"
+      html += `<div class="bay-cell ${occ ? 'busy' : ''} ${stale ? 'stale' : ''} ${bb.align ? 'align' : ''} ${ost ? ost.cls : ''}"
         ${occ ? `onclick="openJob(${escapeAttr(JSON.stringify(String(occ.id)))})"` : ''}>
-        <div class="bay-name">${escapeHtml(bay)}</div>
+        <div class="bay-name${bayVisibleLen(bb.name) > 6 ? ' long' : ''}" title="${escapeAttr(bb.name)}">${escapeHtml(bb.name)}</div>
         ${occ
           ? `<div class="bay-plate mono">${escapeHtml(ov.plate || '-')}</div>
              <div class="bay-st">${escapeHtml(ost.label)}</div>
@@ -20597,6 +21154,7 @@ function renderJobList(){
       </div>`;
     });
     html += `</div>`;
+    if(isAdmin()) html += `<button class="btn secondary small bay-set-btn" onclick="goBaySettings(event)">${icon('settings',13)} ตั้งค่าช่อง</button>`;
   }
   html += `</div>`;
 
@@ -20609,7 +21167,9 @@ function renderJobList(){
      ช่าง/ช่องทำงาน สร้างรายการจากงานที่อยู่ในขอบเขตวันนี้จริง ๆ ไม่ใช่จากทะเบียนทั้งหมด
      เพราะ dropdown ที่มีชื่อช่างที่ไม่มีงานสักคันในวันนั้น เลือกไปก็ได้หน้าว่าง */
   const techOpts = Array.from(new Set(dayJobs.map(j => j.technician).filter(Boolean))).sort();
-  const bayOpts  = WORK_BAYS.filter(b => dayJobs.some(j => j.bay === b));
+  // v4.10.0 — ช่องในผังสาขาที่มีรถ + ช่องที่ไม่มีแล้วแต่ยังมีรถค้าง (ต่อท้าย)
+  const bayOpts  = bayList().map(b => b.id).filter(b => dayJobs.some(j => j.bay === b))
+    .concat(Array.from(new Set(dayJobs.map(j => j.bay).filter(b => b && !bayIdKnown(b)))));
   const activeFilters = jobExtraFilterCount();
   html += `<div class="filter-bar no-print">
     <label class="fb-item">
@@ -20631,7 +21191,7 @@ function renderJobList(){
       <select class="fb-select" onchange="setJobBayFilter(this.value)">
         <option value="all" ${(view.bayFilter||'all')==='all'?'selected':''}>ทุกช่อง</option>
         <option value="__none__" ${view.bayFilter==='__none__'?'selected':''}>ยังไม่เข้าช่อง</option>
-        ${bayOpts.map(b => `<option value="${escapeAttr(b)}" ${view.bayFilter===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
+        ${bayOpts.map(b => `<option value="${escapeAttr(b)}" ${view.bayFilter===b?'selected':''}>${escapeHtml(bayIdKnown(b) ? bayLabel(b) : b + ' (ไม่มีแล้ว)')}</option>`).join('')}
       </select>
     </label>
     ${activeFilters ? `<button class="fb-clear" onclick="clearJobExtraFilters()">${icon('x',13)} ล้างตัวกรอง (${activeFilters})</button>` : ''}
@@ -20716,7 +21276,7 @@ function renderJobList(){
           <div class="jc-tags">
             ${job.queueNo ? `<span class="jc-queue ${queueIsFromToday(job) ? '' : 'jc-queue-old'}">${escapeHtml(queueLabel(job))}</span>` : ''}
             ${job.bay
-              ? `<span class="bay-chip ${job.bay === ALIGN_BAY ? 'align' : ''}">${escapeHtml(job.bay)}${job.technician ? ' • '+escapeHtml(job.technician) : ''}</span>`
+              ? `<span class="bay-chip ${isAlignBay(job.bay) ? 'align' : ''} ${bayIdKnown(job.bay) ? '' : 'orphan'}">${escapeHtml(bayLabel(job.bay))}${job.technician ? ' • '+escapeHtml(job.technician) : ''}</span>`
               : (job.technician ? `<span class="bay-chip">${icon('wrench',10)} ${escapeHtml(job.technician)}</span>` : '')}
             ${job.appointmentDate ? `<span class="jc-appt ${appointmentChipClass(job)}" ${selMode ? '' : `onclick="decideScheduled(${escapeAttr(JSON.stringify(String(job.id)))}, event)"`}>${icon('calendar',12)} นัด ${escapeHtml(dayLabel(job.appointmentDate))}</span>` : ''}
             ${jobEtaChipHtml(job)}
@@ -20729,7 +21289,7 @@ function renderJobList(){
       </div>
       ${selMode ? '' : `<div class="jc-actions">
         ${renderStatusTrack(job)}
-        <button class="btn secondary small" onclick="openBayPicker(${escapeAttr(JSON.stringify(String(job.id)))}, event)">${job.bay ? escapeHtml(job.bay) : 'เลือกช่อง'}</button>
+        <button class="btn secondary small" onclick="openBayPicker(${escapeAttr(JSON.stringify(String(job.id)))}, event)">${job.bay ? escapeHtml(bayLabel(job.bay)) : 'เลือกช่อง'}</button>
         <button class="btn secondary small" onclick="assignTechnician(${escapeAttr(JSON.stringify(String(job.id)))}, event)">${icon('wrench',13)} ${job.technician ? escapeHtml(job.technician) : 'มอบหมายช่าง'}</button>
         <button class="btn secondary small" onclick="openStatusPicker(${escapeAttr(JSON.stringify(String(job.id)))}, event)">สถานะ</button>
         ${(!isDecisionPoint(job.status) && (prevSt || nextSt)) ? `
@@ -23764,7 +24324,7 @@ function renderJobDetail(jobId){
     <h3>ข้อมูลลูกค้า &amp; รถ</h3>
     <div class="info-grid">
       <div><div class="k">คิวที่</div><div class="v">${job.queueNo ? escapeHtml(queueLabel(job)).replace(/^คิว /,'') : '-'}</div></div>
-      <div><div class="k">ช่องทำงาน</div><div class="v">${job.bay ? escapeHtml(job.bay) : '-'} <button class="btn secondary small" style="margin-left:6px;" onclick="openBayPicker(${escapeAttr(JSON.stringify(String(job.id)))})">เปลี่ยน</button></div></div>
+      <div><div class="k">ช่องทำงาน</div><div class="v">${job.bay ? escapeHtml(bayLabel(job.bay)) : '-'} <button class="btn secondary small" style="margin-left:6px;" onclick="openBayPicker(${escapeAttr(JSON.stringify(String(job.id)))})">เปลี่ยน</button></div></div>
       <div><div class="k">ช่างผู้รับผิดชอบ</div><div class="v">${job.technician ? escapeHtml(job.technician) : '-'} <button class="btn secondary small" style="margin-left:6px;" onclick="assignTechnician(${escapeAttr(JSON.stringify(String(job.id)))})">${job.technician ? 'เปลี่ยน' : 'มอบหมาย'}</button></div></div>
       <div><div class="k">Job Number</div><div class="v">${escapeHtml(job.jobNumber)}</div></div>
       <div><div class="k">วันที่รับรถ</div><div class="v">${fmtDT(job.createdAt)}</div></div>
@@ -28108,7 +28668,7 @@ const SETTINGS_SECTIONS = [
   { key:'branches', icon:'pin',      title:'สาขา',
     desc:'สร้างสาขาใหม่ และคัดลอกรายการรถจากดอนเมือง', cards:['branches'] },
   { key:'shop',     icon:'settings', title:'ข้อมูลร้าน และผู้ใช้งาน',
-    desc:'ชื่อร้าน เบอร์ติดต่อ ผู้ดูแล สิทธิ์การใช้งาน', cards:['shop','admin','users'] },
+    desc:'ชื่อร้าน เบอร์ติดต่อ ช่องทำงาน ผู้ดูแล สิทธิ์การใช้งาน', cards:['shop','bays','admin','users'] },
   { key:'docs',     icon:'printer',  title:'เอกสารและการพิมพ์',
     desc:'ขนาดและแนวกระดาษของทุกใบที่พิมพ์', cards:['print'] },
   { key:'customer', icon:'chat',     title:'ช่องทางลูกค้า',
@@ -29239,6 +29799,8 @@ function renderSettingsTab(){
     </div>`;
   }
 
+  C.bays = renderBaysSettingsCard();   // v4.10.0 per-branch-bays (แอดมินแก้ได้ · พนักงานอ่านอย่างเดียว)
+
   C.shop = `<div class="card">
     <h3>${icon('settings',15)} ข้อมูลร้าน (แสดงบนหัวแคตตาล็อกทุกหน้า)</h3>
     <div class="field"><label>ชื่อร้าน</label><input type="text" style="width:100%;" value="${escapeAttr(s.name)}" oninput="onShopFieldInput('name', this.value)"></div>
@@ -29900,7 +30462,8 @@ function renderHeldTab(){
           <span>ช่องทำงาน</span>
           <select onchange="setJobBay(${escapeAttr(JSON.stringify(String(job.id)))}, this.value)">
             <option value="">— ไม่ระบุ —</option>
-            ${WORK_BAYS.map(b => `<option value="${escapeAttr(b)}" ${job.bay===b?'selected':''}>${escapeHtml(b)}</option>`).join('')}
+            ${bayList().map(b => `<option value="${escapeAttr(b.id)}" ${job.bay===b.id?'selected':''}>${escapeHtml(b.name)}</option>`).join('')}
+            ${job.bay && !bayIdKnown(job.bay) ? `<option value="${escapeAttr(job.bay)}" selected disabled>${escapeHtml(job.bay)} (ไม่มีแล้ว)</option>` : ''}
           </select>
         </label>
         <button class="btn small hazard" onclick="resumeHeldJob(${escapeAttr(JSON.stringify(String(job.id)))}, event)">${icon('forward',13)} เอากลับเข้าคิว (${escapeHtml(back.label)})</button>
@@ -33070,6 +33633,9 @@ function startBoard(){
     }
   } catch(e){}
   window.addEventListener('resize', () => { if(boardBranchSkipResize()) return; fitBoardToScreen(true); });
+  /* v4.10.0 — รอผังช่องของสาขาได้ไม่เกิน 3 วิ แล้ววาดผังเริ่มต้น/แคช (U7) */
+  baysBoardWaitUntil = Date.now() + 3000;
+  setTimeout(() => { if(baysBoardWaitUntil){ baysBoardWaitUntil = 0; if(boardReady) renderBoard(); } }, 3100);
   renderBoard();   // paint the shell immediately so the screen isn't blank
   /* v4.1.6 — จอลูกค้าโชว์ "0/12 ว่างหมด" ตลอด ทั้งที่ในอู่มีรถจริง — สาเหตุ: โค้ดนี้
      ลองอ่าน 'boardPublic' (กระจกสำเนาที่ต้องมี Cloud Function trigger คอยเขียนให้)
@@ -33082,14 +33648,15 @@ function startBoard(){
      เฉพาะตอน 'board' โดนปิดสิทธิ์ — วันไหนสร้าง Cloud Function trigger เสร็จแล้วค่อย
      ปิดสิทธิ์อ่าน 'board' สาธารณะในกฎ Firestore โค้ดจุดนี้จะสลับไปใช้ 'boardPublic'
      เองอัตโนมัติโดยไม่ต้องแก้อะไรเพิ่ม */
-  if(isRootBranch()) subscribeBoard('board', () => subscribeBoard('boardPublic', null));
+  if(isRootBranch()){ subscribeBoardBays(); subscribeBoard('board', () => subscribeBoard('boardPublic', null)); }
   else {
     // [เฟส 3] แถบ "ขาดการเชื่อมต่อ" เฉพาะกระดานสาขา (U3-1) · รถบนจอคงไว้ตามเดิม
     boardOffline = (typeof navigator !== 'undefined' && navigator.onLine === false);
     window.addEventListener('offline', () => boardSetOffline(true));
     window.addEventListener('online', () => boardSetOffline(false));
   }
-  if(!isRootBranch()) publicBranchCheck('board', () => { document.title = 'กระดานสถานะ · ' + pubBranchName(); renderBoard(); subscribeBoard('board', null); });
+  // สาขาอื่น: เริ่มฟังผังช่องหลังรู้ว่าสาขามีจริงและเปิดอยู่เท่านั้น (ข้อแก้ B)
+  if(!isRootBranch()) publicBranchCheck('board', () => { document.title = 'กระดานสถานะ · ' + pubBranchName(); renderBoard(); subscribeBoardBays(); subscribeBoard('board', null); });
   /* The clock ticks every second, but only the clock element is rewritten — redrawing
      the whole board once a second would be wasteful on a screen that sits on all day.
      The slower full redraw stays so the "today only" filter rolls over at midnight;
@@ -33275,7 +33842,7 @@ function boardBranchCardHtml(r){
     <div class="bcc-mid">
       <div class="bcc-status ${escapeAttr(r.statusCls || '')}">${escapeHtml(r.statusLabel || '')}</div>
       ${carry ? `<span class="bcc-carry">ค้างจาก ${escapeHtml(fmtQueueDate(r.createdAt))}</span>` : ''}
-      ${(est || r.bay) ? `<div class="bcc-branch-row">${est ? `<div class="bcc-eta ${escapeAttr(est.phase)}">${icon('clock',13)}<span class="bcc-eta-text">${escapeHtml(boardBranchEtaText(est.text))}</span></div>` : ''}${r.bay ? `<span class="bcc-bay">ช่อง ${escapeHtml(r.bay)}</span>` : ''}</div>` : ''}
+      ${(est || r.bay) ? `<div class="bcc-branch-row">${est ? `<div class="bcc-eta ${escapeAttr(est.phase)}">${icon('clock',13)}<span class="bcc-eta-text">${escapeHtml(boardBranchEtaText(est.text))}</span></div>` : ''}${r.bay ? `<span class="bcc-bay">ช่อง ${escapeHtml(bayLabel(r.bay))}</span>` : ''}</div>` : ''}
       ${time ? `<div class="bcc-time">${escapeHtml(time)}</div>` : ''}
     </div>
   </div>`;
@@ -33351,20 +33918,30 @@ function renderBoard(errorMsg){
        bay, and showing it as free would be wrong. Cars already handed back release
        their bay. Always drawn, even with an empty shop, so the layout is recognisable. */
     const bayOwner = bayOwnerFromRows(boardRows);   // v4.3.4 Q9 — ตัดสินด้วย bayAt
-    const busy = WORK_BAYS.filter(b => bayOwner[b]).length;
+    /* v4.10.0 — ผังของสาขา (config/bays สาธารณะ) · รถในช่องที่ไม่มีแล้วไม่วาด ไม่นับ
+       ยังไม่ได้ผังและไม่มีแคช = รอได้ไม่เกิน 3 วิ (หัวอย่างเดียว) กันจอทีวีกระพริบ 12 → N ช่อง */
+    const baysWait = baysBoardWaitUntil && !baysLoaded() && !readBaysCache() && Date.now() < baysBoardWaitUntil;
+    const BLB = bayList();
+    const busy = BLB.filter(b => bayOwner[b.id]).length;
+    const nB = BLB.length;
+    const cS = boardBayCols(nB, 3), cM = boardBayCols(nB, 6), cL = boardBayCols(nB, nB > 18 ? 8 : 6);
+    // ค่าเริ่มต้นของตัวแปร CSS = 3/6/6 (ผัง 12 ช่อง) → ผังเริ่มต้นได้ HTML เดิมทุกตัวอักษร ใส่ style เฉพาะที่ต่าง
+    const colsStyle = [cS !== 3 ? `--bay-cols-s:${cS}` : '', cM !== 6 ? `--bay-cols-m:${cM}` : '', cL !== 6 ? `--bay-cols-l:${cL}` : '',
+                       nB <= 4 ? '--bay-colw:260px' : ''].filter(Boolean).join(';');
     html += `<div class="board-bays">
       <div class="bb-head">
         <span class="bb-title">รถที่กำลังซ่อม</span>
-        <span class="bb-count mono">${busy}/${WORK_BAYS.length}</span>
+        ${baysWait ? '' : `<span class="bb-count mono">${busy}/${nB}</span>`}
       </div>
-      <div class="board-bay-grid">`;
-    WORK_BAYS.forEach(bay => {
+      <div class="board-bay-grid${nB > 18 ? ' many' : ''}"${colsStyle ? ` style="${colsStyle}"` : ''}>`;
+    (baysWait ? [] : BLB).forEach(bb => {
+      const bay = bb.id;
       const o = bayOwner[bay];
       const plate = o ? (isRootBranch() ? (o.plate || o.plateMasked || '') : (queueLabelFromRow(o) || '')) : '';
       html += `<div class="board-bay-slot">
         <div class="board-bay-plate-top mono">${plate ? escapeHtml(plate) : '&nbsp;'}</div>
-        <div class="board-bay-cell ${o ? 'busy' : ''} ${bay === ALIGN_BAY ? 'align' : ''} ${o ? escapeAttr(o.statusCls||'') : ''}">
-          <span class="board-bay-badge">${escapeHtml(bay)}</span>
+        <div class="board-bay-cell ${o ? 'busy' : ''} ${bb.align ? 'align' : ''} ${o ? escapeAttr(o.statusCls||'') : ''}">
+          <span class="board-bay-badge">${escapeHtml(bb.name)}</span>
           ${o
             ? (!isRootBranch() ? `<div class="board-bay-qno mono">${escapeHtml(o.queueNo || '')}</div>` : safeImgSrc(o.thumb)
                 ? `<img class="board-bay-photo" src="${escapeAttr(safeImgSrc(o.thumb))}" alt="">`
