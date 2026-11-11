@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.10.0";
+  const APP_VERSION = "4.10.1";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3325,6 +3325,17 @@
               ไม่แตะ flushState / config/main / board/ (ไม่เพิ่มคีย์) · firestore.rules (public get config/bays) — เจ้าของ publish เอง
 
               เทสต์ใหม่: tests/baysguard.js
+     v4.10.1 — แก้ข้อมูลหาย + ข้อความลงไลน์มีเลขไมล์และปีรถ (2026-11-11)
+              1. (backend-dev) ใบงานย้อนกลับเป็น "รับรถ" / รายการเสนอราคาหาย เมื่ออีกเครื่องเปิดแอปด้วยแคชเก่า
+                 แก้ที่ mergeSnapshotRows / normalizeJobRow / ensureJobFields / เงื่อนไข migration / ตัวสร้างใบงาน
+              2. (backend-dev) ลายเซ็นและรายการที่กดในหน้าต่าง (modal callback) ไม่หายเงียบ ๆ อีก
+              3. formatLineSummary (บล็อก LINE-SHARED): ปีรถต่อท้ายบรรทัดยี่ห้อ/รุ่น เช่น "HONDA ACCORD G10 2019"
+                 + บรรทัดใหม่ "ไมล์ 123,456 กม." ต่อจากบรรทัดสี · เฉพาะเมื่อ vehicle.year / job.mileageIn ไม่ว่างหลัง trim
+                 · comma หลักพันเฉพาะตัวเลข ASCII ล้วน อย่างอื่นแสดงตามที่พิมพ์ · ค่าว่าง = ไม่มีบรรทัด ไม่มีช่องว่าง/ขีดเกิน
+                 · สร้าง functions/shared/lineSummary.js ใหม่ด้วย scripts/extract-line-shared.js (LINE Bot ได้รูปแบบเดียวกัน)
+              ไม่แตะ config/main / firestore.rules
+
+              เทสต์: tests/line-mileage.guard.js · tests/job-revert.guard.js
               -->
 
 
@@ -11450,7 +11461,12 @@ function icon(name, size){
   return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;">${paths[name]||''}</svg>`;
 }
 
-function statusOf(key){ return STATUS_FLOW.find(s => s.key === key) || STATUS_FLOW[0]; }
+function statusOf(key){
+  // v4.10.1 — สถานะเก่าแปลงตอนแสดงผลเท่านั้น (ไม่แก้ข้อมูล ดู normalizeJobRow)
+  return STATUS_FLOW.find(s => s.key === key)
+    || (LEGACY_STATUS_MAP[key] && STATUS_FLOW.find(s => s.key === LEGACY_STATUS_MAP[key]))
+    || STATUS_FLOW[0];
+}
 function nowIso(){ return new Date().toISOString(); }
 function fmtDT(iso){
   if(!iso) return '-';
@@ -11607,78 +11623,94 @@ function ensureUppercaseNames(){
 
 // Migration: jobs gained a คิวที่ (queueNo) field, and partsNeeded rows gained an id,
 // a ราคา (price) and แบรนด์ (brand) so a job can be quoted after the mechanic inspects.
+/* v4.10.1 job-revert-stale-cache R1 — ค่าเริ่มต้นของใบงาน เติมในหน่วยความจำเท่านั้น
+
+   เดิม ensureJobFields เติมช่องที่ขาดตอนเปิดแอปแล้ว saveState -> flushState เขียนใบงานทั้งใบ
+   ถ้า snapshot แรกมาจาก offline cache (มือถือ/iPad ที่ปิดแอปไปตั้งแต่เช้า) สำเนาเก่านั้น
+   (สถานะ "รับรถ" ไม่มีรายการเสนอราคา) ถูกเขียนทับของจริงบนเซิร์ฟเวอร์ทั้งใบ
+   = ใบงานเด้งกลับเป็นรับรถ รายการเสนอราคาหาย ทุกเครื่อง
+
+   ตอนนี้ mergeSnapshotRows เรียกฟังก์ชันนี้กับแถวจากเซิร์ฟเวอร์ "ก่อน" คำนวณ shadow
+   ค่าเริ่มต้นจึงไม่ถูกนับเป็นการแก้ และไม่มีการเขียนใด ๆ จากการเติมค่า
+   ต้อง deterministic (ห้าม uid()/nowIso()) ไม่งั้น snapshot แต่ละรอบได้ค่าไม่เท่ากัน
+   createdAt ไม่อยู่ที่นี่ — ใบที่ขาดต้องเขียนจริง (ดู ensureJobFields)
+   ช่องที่เคยมีเหตุผลกำกับ (v4.3.4 Q6 / v4.3.7 docTone / v3.27.0 รถค้าง) ยังเหมือนเดิมทุกช่อง */
+function normalizeJobRow(j){
+  if(!j || typeof j !== 'object') return false;
+  let changed = false;
+  const jid = String(j.id || '');
+  const at = j.createdAt || '';
+  if(!Array.isArray(j.statusHistory)){
+    j.statusHistory = j.status ? [{ status: j.status, changedAt: at }] : [];
+    changed = true;
+  }
+  if(!Array.isArray(j.complaints)){
+    j.complaints = (j.complaint && String(j.complaint).trim())
+      ? [{ id: 'cmp0-' + jid, text: String(j.complaint).trim() }] : [];
+    changed = true;
+  }
+  if(j.queueNo === undefined){ j.queueNo = ''; changed = true; }
+  if(j.bay === undefined){ j.bay = ''; changed = true; }
+  if(j.bayAt === undefined){ j.bayAt = ''; changed = true; }
+  if(j.heldFrom === undefined){ j.heldFrom = ''; changed = true; }
+  if(j.heldAt === undefined){ j.heldAt = ''; changed = true; }
+  if(j.thumb === undefined){ j.thumb = ''; changed = true; }
+  if(j.thumbPath === undefined){ j.thumbPath = ''; changed = true; }
+  if(j.note === undefined){ j.note = ''; changed = true; }
+  if(j.notes === undefined){
+    j.notes = (j.note && String(j.note).trim()) ? [{ text: String(j.note).trim(), at: at, by: '' }] : [];
+    changed = true;
+  }
+  if(j.priceEstimate === undefined){ j.priceEstimate = 0; changed = true; }
+  if(j.discountType === undefined){ j.discountType = 'amount'; changed = true; }
+  if(j.discountValue === undefined){ j.discountValue = 0; changed = true; }
+  if(j.signatures === undefined){ j.signatures = {}; changed = true; }
+  if(j.estValue === undefined){ j.estValue = 0; changed = true; }
+  if(j.estUnit === undefined){ j.estUnit = 'hour'; changed = true; }
+  if(j.photoCount === undefined){
+    j.photoCount = Array.isArray(j.photos) ? j.photos.length : 0;
+    changed = true;
+  }
+  // The status list was expanded from 5 to 8; anything unrecognised (e.g. from a
+  // much older build) falls back to the first stage rather than rendering blank.
+  /* v4.10.1 รอบแก้ 1 — ว่าง/ไม่มี = 'received' · อยู่ใน LEGACY_STATUS_MAP = แปลงตามแผนที่ · สถานะที่เครื่องนี้ไม่รู้จัก (เช่นมาจากเวอร์ชันที่ใหม่กว่า
+     ระหว่างที่บางเครื่องยังไม่อัปเดต) ต้องคงไว้ตามเดิม ถ้าแปลงเป็น 'received' ตรงนี้ การแก้ช่องอื่นของ
+     เครื่องเก่าจะเขียน 'received' กลับขึ้นไปผ่าน rebasePendingRow = บั๊กเดิมในอีกรูป
+     สถานะที่ไม่รู้จักแสดงผลผ่าน statusOf() (ไม่แก้ข้อมูล) */
+  if(!j.status){
+    j.status = 'received';
+    changed = true;
+  } else if(Object.prototype.hasOwnProperty.call(LEGACY_STATUS_MAP, j.status)
+            && !STATUS_FLOW.some(s => s.key === j.status)){
+    // สถานะเก่าที่รู้จัก (เช่น customerout) แปลงเหมือน 4.10.0 ตัวกรอง j.status === 'quoted' จึงยังเห็นใบเก่า
+    j.status = LEGACY_STATUS_MAP[j.status];
+    changed = true;
+  }
+  if(!Array.isArray(j.partsNeeded)){ j.partsNeeded = []; changed = true; }
+  j.partsNeeded.forEach((p, i) => {
+    if(!p || typeof p !== 'object') return;
+    if(p.id === undefined){ p.id = 'pn' + i + '-' + jid; changed = true; }
+    if(p.price === undefined){ p.price = ''; changed = true; }
+    if(p.brand === undefined){ p.brand = ''; changed = true; }
+    if(p.note === undefined){ p.note = ''; changed = true; }
+  });
+  return changed;
+}
+
+/* v4.10.1 — เขียนจริงเฉพาะใบที่ขาด createdAt (listener เรียง orderBy('createdAt') ใบที่ขาด
+   จะหายจากจอถาวรถ้าไม่เขียน — v4.3.4 Q6) ช่องอื่นเติมในหน่วยความจำผ่าน normalizeJobRow
+   และไม่สั่งบันทึก · เรียกจาก runSafeMigrations (หลัง snapshot เซิร์ฟเวอร์เท่านั้น) และตอนนำเข้าไฟล์ */
 function ensureJobFields(){
   let changed = false;
-  const validStatuses = STATUS_FLOW.map(s => s.key);
   state.jobs.forEach(j => {
-    /* v4.3.4 — ข้อ Q6: สามฟิลด์ที่ถ้าขาด แอปพังหรือใบงานหายถาวร
-
-       statusHistory — setJobStatus() เรียก j.statusHistory.push() ตรง ๆ ไม่มี guard
-         ใบที่ขาดฟิลด์นี้ กดเปลี่ยนสถานะแล้วโยน TypeError กลางคัน จอค้าง/ขาว
-       complaints   — ทุกที่ที่อ่านอาการใช้ (job.complaints || []) ยกเว้นบางจุดที่ map
-         ตรง ๆ และ boardPayloadFor ก็ map ตรง ๆ ทำให้เขียน board ไม่ขึ้น
-       createdAt    — อันตรายสุด: listener หลักเรียง orderBy('createdAt') ซึ่ง Firestore
-         ตัดเอกสารที่ไม่มีฟิลด์นั้นออกจากผลลัพธ์ทั้งใบ ใบงานจะ "หาย" จากจอถาวร
-         ทั้งที่ยังอยู่ในฐาน และกู้คืนจากในแอปไม่ได้เลยเพราะมองไม่เห็น
-       เติมย้อนหลังจากเวลาแรกใน statusHistory ถ้ามี ไม่งั้นใช้เวลาปัจจุบัน — เวลาที่
-       เพี้ยนไปยังดีกว่าใบงานที่มองไม่เห็น */
-    if(!Array.isArray(j.statusHistory)){
-      j.statusHistory = j.status ? [{ status: j.status, changedAt: j.createdAt || nowIso() }] : [];
-      changed = true;
-    }
-    if(!Array.isArray(j.complaints)){
-      j.complaints = (j.complaint && String(j.complaint).trim())
-        ? [{ id: uid(), text: String(j.complaint).trim() }] : [];
-      changed = true;
-    }
+    if(!j) return;
     if(!j.createdAt){
-      const first = j.statusHistory.find(h => h && h.changedAt);
+      const hist = Array.isArray(j.statusHistory) ? j.statusHistory : [];
+      const first = hist.find(h => h && h.changedAt);
       j.createdAt = (first && first.changedAt) || nowIso();
       changed = true;
     }
-    /* v4.3.7 — ตั้งใจ "ไม่" เติม docTone ย้อนหลังให้ใบเก่า
-       docToneOf() มีค่าสำรองอยู่แล้ว ใบเก่าจึงพิมพ์ออกมาถูกโดยไม่ต้องแตะข้อมูล
-       ถ้าเติม: ใบงานทุกใบใน state (สูงสุด RECENT_JOBS_LIMIT = 600) ถูกมาร์กว่า
-       เปลี่ยน แล้ว flushState เขียน jobs 600 + board อีก 600 รวมพันกว่ารายการ
-       ในก้อนเดียวที่ล้มทั้งก้อนได้ — แลกกับการเติมฟิลด์ที่ไม่มีใครต้องใช้ */
-    if(j.queueNo === undefined){ j.queueNo = ''; changed = true; }
-    if(j.bay === undefined){ j.bay = ''; changed = true; }
-    // v3.27.0 — รถค้าง: ขั้นที่ค้างไว้ + เวลาที่เริ่มพัก
-    if(j.bayAt === undefined){ j.bayAt = ''; changed = true; }
-    if(j.heldFrom === undefined){ j.heldFrom = ''; changed = true; }
-    if(j.heldAt === undefined){ j.heldAt = ''; changed = true; }
-    if(j.thumb === undefined){ j.thumb = ''; changed = true; }
-  if(j.thumbPath === undefined){ j.thumbPath = ''; changed = true; }
-    if(j.note === undefined){ j.note = ''; changed = true; }
-    if(j.notes === undefined){
-      // Carries over anything already typed into the old single-field version rather
-      // than silently discarding it.
-      j.notes = (j.note && j.note.trim()) ? [{ text: j.note.trim(), at: j.createdAt || nowIso(), by: '' }] : [];
-      changed = true;
-    }
-    if(j.priceEstimate === undefined){ j.priceEstimate = 0; changed = true; }
-    if(j.discountType === undefined){ j.discountType = 'amount'; changed = true; }
-    if(j.discountValue === undefined){ j.discountValue = 0; changed = true; }
-    if(j.signatures === undefined){ j.signatures = {}; changed = true; }
-    if(j.estValue === undefined){ j.estValue = 0; changed = true; }
-    if(j.estUnit === undefined){ j.estUnit = 'hour'; changed = true; }
-    if(j.photoCount === undefined){
-      j.photoCount = Array.isArray(j.photos) ? j.photos.length : 0;
-      changed = true;
-    }
-    // The status list was expanded from 5 to 8; anything unrecognised (e.g. from a
-    // much older build) falls back to the first stage rather than rendering blank.
-    if(!validStatuses.includes(j.status)){
-      j.status = LEGACY_STATUS_MAP[j.status] || 'received';
-      changed = true;
-    }
-    if(!Array.isArray(j.partsNeeded)){ j.partsNeeded = []; changed = true; }
-    j.partsNeeded.forEach(p => {
-      if(p.id === undefined){ p.id = uid(); changed = true; }
-      if(p.price === undefined){ p.price = ''; changed = true; }
-      if(p.brand === undefined){ p.brand = ''; changed = true; }
-      if(p.note === undefined){ p.note = ''; changed = true; }
-    });
+    normalizeJobRow(j);
   });
   if(changed) saveState(false);
 }
@@ -12560,9 +12592,43 @@ v3.23.0 — ของที่เพิ่งกดแต่ยังไม่�
          ถ้าเหมือนกัน แปลว่าไม่มีอะไรค้าง -> รับของจากเซิร์ฟเวอร์ตามปกติ
          แถวที่ shadow ไม่เคยรู้จักเลย คือแถวที่เพิ่งสร้างในเครื่อง -> เก็บไว้เช่นกัน
          ส่วนแถวที่ shadow เคยรู้จักแต่หายไปจาก snapshot คือถูกลบจริงบนเซิร์ฟเวอร์ -> ปล่อยหาย */
-function mergeSnapshotRows(col, incoming){
+/* v4.10.1 job-revert-stale-cache
+   R2 — แถวที่มีของค้าง: เดิมเก็บ "ทั้งแถวในเครื่อง" ทับแถวจากเซิร์ฟเวอร์ แล้วเขียนกลับทั้งแถว
+        เครื่องที่ถือสำเนาเก่าแล้วแก้ช่องเดียว (เช่นหมายเหตุ) จึงลบสถานะ/รายการเสนอราคาของเครื่องอื่น
+        ตอนนี้ rebase: เริ่มจากแถวของเซิร์ฟเวอร์ แล้วทาบเฉพาะช่องบนสุดที่ในเครื่อง ≠ shadow
+        (สองเครื่องแก้ "ช่องเดียวกัน" เช่น partsNeeded ทั้งคู่ ยังเป็นเครื่องที่บันทึกทีหลังชนะ — เฟส 2)
+   R3 — แถวที่ไม่มีของค้าง อัปเดตลงวัตถุเดิม (ไม่สลับวัตถุใหม่) กล่อง/closure ที่ถือแถวไว้
+        จึงยังเขียนลงแถวที่อยู่ใน state จริง ไม่หายเงียบ
+   R4 — opts.pendingWriteIds: เอกสารที่ snapshot นี้แสดง "ของที่เครื่องนี้เพิ่งเขียนแต่เซิร์ฟเวอร์ยังไม่ตอบ"
+        (hasPendingWrites) และตรงกับของในเครื่อง -> ไม่เลื่อน shadow · ถ้า commit ถูกปฏิเสธ ของในเครื่อง
+        ยังนับเป็นของค้าง ไม่ถูก snapshot ถัดไปทับ (shadow เลื่อนตอน commit ผ่านใน flushState ตามเดิม) */
+function replaceRowInPlace(target, src){
+  if(target === src) return target;
+  Object.keys(target).forEach(k => { if(!Object.prototype.hasOwnProperty.call(src, k)) delete target[k]; });
+  Object.assign(target, src);
+  return target;
+}
+
+function rebasePendingRow(local, server, prevEnc){
+  let prev = {};
+  try { prev = JSON.parse(prevEnc) || {}; } catch(e){ prev = {}; }
+  const base = Object.assign({}, server);
+  const keys = {};
+  Object.keys(local).forEach(k => { keys[k] = 1; });
+  Object.keys(prev).forEach(k => { keys[k] = 1; });
+  Object.keys(keys).forEach(k => {
+    if(k === 'id') return;
+    if(stableJson(local[k]) === stableJson(prev[k])) return;   // ไม่ได้แก้ในเครื่อง -> ใช้ของเซิร์ฟเวอร์
+    if(Object.prototype.hasOwnProperty.call(local, k) && local[k] !== undefined) base[k] = local[k];
+    else delete base[k];                                         // ช่องที่ลบในเครื่อง ยังไม่ได้ส่ง
+  });
+  return replaceRowInPlace(local, base);
+}
+
+function mergeSnapshotRows(col, incoming, opts){
   __unitAuditCache = null;   // v4.3.9 — snapshot เข้ามา ราคาอาจเปลี่ยนโดยที่จำนวนใบเท่าเดิม
   const prevShadow = shadow[col] || {};
+  const pendingWriteIds = (opts && opts.pendingWriteIds) || null;
   const localById = {};
   (Array.isArray(state[col]) ? state[col] : []).forEach(r => {
     if(r && r.id) localById[r.id] = r;
@@ -12572,13 +12638,23 @@ function mergeSnapshotRows(col, incoming){
   let kept = 0;
   (incoming || []).forEach(data => {
     if(!data || !data.id) return;
-    nextShadow[data.id] = stableJson(data);
+    if(col === 'jobs') normalizeJobRow(data);      // R1 — ค่าเริ่มต้นไม่นับเป็นการแก้
+    const enc = stableJson(data);
+    const prevEnc = prevShadow[data.id];
     const local = localById[data.id];
-    const pending = local
-      && prevShadow[data.id] !== undefined
-      && stableJson(local) !== prevShadow[data.id];
-    if(pending) kept++;
-    rows.push(pending ? local : data);
+    const localEnc = local ? stableJson(local) : null;
+    nextShadow[data.id] = (pendingWriteIds && pendingWriteIds[data.id] && prevEnc !== undefined && localEnc === enc)
+      ? prevEnc : enc;                             // R4
+    const pending = local && prevEnc !== undefined && localEnc !== prevEnc;
+    if(pending){
+      // snapshot ตรงกับของในเครื่องอยู่แล้ว (= การเขียนของเครื่องนี้เอง) -> ไม่ต้องสั่งบันทึกซ้ำ
+      if(localEnc !== enc){ rebasePendingRow(local, data, prevEnc); kept++; }
+      rows.push(local);
+    } else if(local){
+      rows.push(replaceRowInPlace(local, data));
+    } else {
+      rows.push(data);
+    }
     delete localById[data.id];
   });
   Object.keys(localById).forEach(id => {
@@ -13882,7 +13958,7 @@ function startSync(){
       : 'พร้อมใช้งาน', totalReady - pending, totalReady);
     if(pending === 0){
       dataReady = true;
-      runSafeMigrations();
+      maybeRunMigrations();   // v4.10.1 R1 — รอ snapshot จากเซิร์ฟเวอร์ก่อน (จาก cache = ยังไม่ migrate)
       applyTheme(state.settings && state.settings.themeId);
       applyDarkMode(isDarkOn());
       render();
@@ -13900,6 +13976,18 @@ function startSync(){
     }
   };
 
+  /* v4.10.1 job-revert-stale-cache R1 — migration รันครั้งเดียว หลังทุกคอลเลกชันได้ snapshot
+     ที่ไม่ใช่ metadata.fromCache แล้ว สำเนาเก่าใน offline cache ห้ามเป็นฐานของการเขียนใด ๆ
+     แอปยังเปิดได้จาก cache ตามเดิม (dataReady ไม่รอ) แค่ migration เลื่อนไปตอนเน็ตมา */
+  const serverSeen = {};
+  let migrationsDone = false;
+  function maybeRunMigrations(){
+    if(migrationsDone || !dataReady) return;
+    if(!SYNC_COLLECTIONS.every(c => serverSeen[c])) return;
+    migrationsDone = true;
+    runSafeMigrations();
+  }
+
   SYNC_COLLECTIONS.forEach(col => {
     let first = true;
     // At 20-30 cars a day the jobs collection grows by ~9,000 rows a year. Loading all
@@ -13913,14 +14001,36 @@ function startSync(){
       : (col === 'editLog')
       ? db.collection(col).orderBy('ts', 'desc').limit(EDIT_LOG_LIMIT)
       : db.collection(col);
-    const unsub = ref.onSnapshot(snap => {
+    /* v4.10.1 รอบแก้ 1 — includeMetadataChanges: snapshot แรกมาจาก cache (fromCache) ถ้าเซิร์ฟเวอร์ยืนยันแล้ว
+       ไม่มีอะไรเปลี่ยน SDK จะไม่ยิงซ้ำถ้าไม่เปิดตัวนี้ serverSeen ของคอลเลกชันที่ไม่ค่อยเปลี่ยน
+       (complaintTypes, partBrandOptions, models) จึงไม่เคยเป็นจริง และ migration ไม่เคยรัน
+       ไม่มีการอ่านเพิ่ม (เป็นแค่ event ของ listener เดิม) · event ที่เปลี่ยนแค่ metadata (docChanges ว่าง)
+       อัปเดต serverSeen + maybeRunMigrations เท่านั้น ห้าม merge/render/เขียน
+       R4: การยืนยันของที่เขียนค้าง (hasPendingWrites true -> false) ก็เป็น metadata-only จึงข้ามเช่นกัน
+       shadow เลื่อนตอน commit ผ่านใน flushState ตามเดิม */
+    const unsub = ref.onSnapshot({ includeMetadataChanges: true }, snap => {
+      const meta = snap.metadata || {};
+      if(!first && typeof snap.docChanges === 'function' && snap.docChanges().length === 0){
+        if(!meta.fromCache) serverSeen[col] = true;
+        maybeRunMigrations();
+        return;
+      }
       const incoming = [];
-      snap.forEach(doc => incoming.push(Object.assign({}, doc.data(), { id: doc.id })));
-      mergeSnapshotRows(col, incoming);
+      const pendingWriteIds = {};
+      snap.forEach(doc => {
+        incoming.push(Object.assign({}, doc.data(), { id: doc.id }));
+        // R4 — ระดับเอกสารก่อน (SDK จริงมีทุกใบ) ไม่มีค่อยใช้ระดับ snapshot
+        const dm = doc.metadata;
+        const pw = (dm && typeof dm.hasPendingWrites === 'boolean') ? dm.hasPendingWrites : !!meta.hasPendingWrites;
+        if(pw) pendingWriteIds[doc.id] = true;
+      });
+      mergeSnapshotRows(col, incoming, { pendingWriteIds });
+      if(!meta.fromCache) serverSeen[col] = true;
       if(first){ first = false; oneReady(col); }
-      else if(dataReady){ safeRender(); }
+      else if(dataReady){ maybeRunMigrations(); safeRender(); }
     }, err => {
       console.error('sync ' + col, err);
+      serverSeen[col] = true;   // พฤติกรรมเดิม: listener ล้มก็ยังให้ migration รัน
       if(first){ first = false; oneReady(col); }
       flashToast('ซิงค์ ' + col + ' ไม่สำเร็จ');
     });
@@ -18046,6 +18156,11 @@ function submitCheckin(){
     thumb: '', thumbPath: '',
     photoCount: view.ci_photos.length,
     photos: [],
+    // v4.10.1 R1b — ครบทุกช่องที่ normalizeJobRow เติม ใบใหม่จึงไม่ต่างจากที่เครื่องอื่นเห็น
+    bay: '', bayAt: '', heldFrom: '', heldAt: '',
+    note: '', notes: [],
+    priceEstimate: 0, discountType: 'amount', discountValue: 0,
+    signatures: {},
     createdAt: nowIso(),
     // v4.3.7 — โทนเอกสารติดไปกับใบงาน ไม่คิดสดตอนพิมพ์ (ดูคอมเมนต์ที่ DOC_TONES)
     docTone: effectiveCheckinDocTone(),
@@ -21961,6 +22076,8 @@ function openSignaturePad(jobId, role, label){
     if(!hasDrawn){ flashToast('ยังไม่ได้เซ็นชื่อ'); return; }
     const dataUrl = cropSignatureCanvas(canvas);
     closeUiModal();
+    const job = getJob(jobId);   // v4.10.1 R3 — อ่านใหม่ตอนกดบันทึก ไม่ใช้วัตถุตอนเปิดกล่อง
+    if(!job){ flashToast('ไม่พบรายการรถคันนี้แล้ว — ลายเซ็นไม่ถูกบันทึก'); return; }
     job.signatures = job.signatures || {};
     job.signatures[role] = dataUrl;
     saveState(true);
@@ -22296,6 +22413,8 @@ function addCustomJobPart(jobId){
   uiPrompt('ชื่อรายการที่ต้องการเพิ่ม (เช่น ค่าแรง, อะไหล่นอกรายการ)', '', name => {
     const trimmed = name.trim();
     if(!trimmed) return;
+    const job = getJob(jobId);   // v4.10.1 R3 — อ่านใหม่หลังกล่องปิด
+    if(!job) return;
     /* v4.2.5 — ถ้าชื่อนี้มีอยู่ในรายการที่เลือกได้อยู่แล้ว (ต่างแค่วิธีพิมพ์)
        ให้ดึงตัวนั้นขึ้นใบแทนการสร้างบรรทัดลอย ๆ ราคาที่ผูกไว้จะได้ตามมาด้วย
        — นี่คือจุดที่เคยหายไปบ่อยที่สุด: พิมพ์เองแล้วช่องราคาว่าง ทั้งที่ระบบจำราคาไว้แล้ว */
@@ -22311,7 +22430,9 @@ function addCustomJobPart(jobId){
     }
     // แถวนี้ลงเฉพาะใบนี้ ไม่เข้าแคตตาล็อก แต่ยังเตือนให้เห็นว่ามีชิปชื่อคล้ายกันให้กดอยู่แล้ว
     confirmIfSimilarPartName(trimmed, partNamePool(getJobModel(job)), 'ใบนี้', () => {
-      job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'1', unit:'ชิ้น', brand:'', price:'', note:'' });
+      const j = getJob(jobId);
+      if(!j) return;
+      j.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'1', unit:'ชิ้น', brand:'', price:'', note:'' });
       saveState(true);
       render();
     });
@@ -22329,6 +22450,8 @@ function addQuickPartToCategory(jobId, category){
   uiPrompt(`เพิ่มรายการใหม่ในหมวด "${category}"`, '', name => {
     const trimmed = name.trim();
     if(!trimmed) return;
+    const job = getJob(jobId);   // v4.10.1 R3 — อ่านใหม่หลังกล่องปิด
+    if(!job) return;
     const picker = jobPickableParts(job);
     const model = (picker.source === 'model') ? getJobModel(job) : null;
     if(picker.source === 'model' && !model) return;
@@ -22368,14 +22491,18 @@ function addQuickPartToCategory(jobId, category){
     // ชั้นที่ 2: ชื่อคล้ายกันแต่ไม่ใช่อันเดียวกันแน่ ๆ -> ถามก่อน (v4.2.2)
     const scopeLabel = model ? `รุ่น ${model.brand} ${model.name}` : 'รายการกลาง';
     confirmIfSimilarPartName(trimmed, partNamePool(model), scopeLabel, () => {
-      if(model){
-        model.parts = model.parts || [];
-        model.parts.push({ id: uid(), partName: trimmed, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
+      const j = getJob(jobId);   // v4.10.1 R3 — อ่านใหม่หลังกล่องยืนยันชื่อคล้าย
+      if(!j) return;
+      const m = model ? getJobModel(j) : null;
+      if(model && !m) return;
+      if(m){
+        m.parts = m.parts || [];
+        m.parts.push({ id: uid(), partName: trimmed, category, qty:'', unit:'ชิ้น', brands: [], variant:'' });
       } else {
         state.masterParts = state.masterParts || [];
         state.masterParts.push({ id: uid(), name: trimmed, category });
       }
-      job.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'', unit:'ชิ้น', brand:'', price:'', note:'' });
+      j.partsNeeded.push({ id: uid(), partName: trimmed, variant:'', qty:'', unit:'ชิ้น', brand:'', price:'', note:'' });
       saveState(true);
       flashToast('เพิ่มรายการแล้ว');
       render();
@@ -22614,7 +22741,9 @@ function clearJobParts(jobId, stockChecked){
     return;
   }
   uiConfirm(`ล้างรายการอะไหล่ทั้งหมดของงานนี้? (${job.partsNeeded.length} รายการ)`, () => {
-    job.partsNeeded = [];
+    const j = getJob(jobId);   // v4.10.1 R3 — อ่านใหม่ตอนกดยืนยัน
+    if(!j) return;
+    j.partsNeeded = [];
     saveState(true);
     flashToast('ล้างรายการแล้ว');
     render();
@@ -23317,8 +23446,19 @@ function formatLineSummary(job, ctx){
   lines.push(`คุณ${c.name || '-'}${o.seenBefore ? ' (ลูกค้าเดิม)' : ''}`);
   lines.push(c.phone || '-');
   lines.push(`${v.plate || '-'}${v.province || ''}`);
-  lines.push(`${v.brand || ''} ${v.model || ''}`.trim() || '-');
+  // v4.10.1 — ปีรถต่อท้ายยี่ห้อ/รุ่น และบรรทัดไมล์ต่อจากสี เฉพาะเมื่อมีค่า (ค่าว่าง = ไม่มีอะไรเพิ่ม)
+  const yearTxt = String(v.year == null ? '' : v.year).trim();
+  const brandModel = `${v.brand || ''} ${v.model || ''}`.trim();
+  lines.push([brandModel, yearTxt].filter(Boolean).join(' ') || '-');
   lines.push(v.color || '-');
+  const mileRaw = String(j.mileageIn == null ? '' : j.mileageIn).trim();
+  if(mileRaw){
+    // ใส่ comma หลักพันเฉพาะตัวเลขล้วน (ASCII) โดยตัดเลข 0 นำหน้าก่อน (0123 → 123 · 000 → 0) · อย่างอื่นแสดงตามที่ช่างพิมพ์
+    const mileTxt = /^[0-9]+$/.test(mileRaw)
+      ? (mileRaw.replace(/^0+(?=\d)/, '')).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      : mileRaw;
+    lines.push(`ไมล์ ${mileTxt} กม.`);
+  }
   const svc = o.lastService || null;
   const typedDate = o.prevDate !== null && o.prevDate !== undefined;
   const typedWork = o.prevWork !== null && o.prevWork !== undefined;

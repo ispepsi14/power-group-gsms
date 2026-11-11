@@ -201,8 +201,19 @@ function formatLineSummary(job, ctx){
   lines.push(`คุณ${c.name || '-'}${o.seenBefore ? ' (ลูกค้าเดิม)' : ''}`);
   lines.push(c.phone || '-');
   lines.push(`${v.plate || '-'}${v.province || ''}`);
-  lines.push(`${v.brand || ''} ${v.model || ''}`.trim() || '-');
+  // v4.10.1 — ปีรถต่อท้ายยี่ห้อ/รุ่น และบรรทัดไมล์ต่อจากสี เฉพาะเมื่อมีค่า (ค่าว่าง = ไม่มีอะไรเพิ่ม)
+  const yearTxt = String(v.year == null ? '' : v.year).trim();
+  const brandModel = `${v.brand || ''} ${v.model || ''}`.trim();
+  lines.push([brandModel, yearTxt].filter(Boolean).join(' ') || '-');
   lines.push(v.color || '-');
+  const mileRaw = String(j.mileageIn == null ? '' : j.mileageIn).trim();
+  if(mileRaw){
+    // ใส่ comma หลักพันเฉพาะตัวเลขล้วน (ASCII) โดยตัดเลข 0 นำหน้าก่อน (0123 → 123 · 000 → 0) · อย่างอื่นแสดงตามที่ช่างพิมพ์
+    const mileTxt = /^[0-9]+$/.test(mileRaw)
+      ? (mileRaw.replace(/^0+(?=\d)/, '')).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+      : mileRaw;
+    lines.push(`ไมล์ ${mileTxt} กม.`);
+  }
   const svc = o.lastService || null;
   const typedDate = o.prevDate !== null && o.prevDate !== undefined;
   const typedWork = o.prevWork !== null && o.prevWork !== undefined;
