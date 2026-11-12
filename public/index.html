@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.11.1";
+  const APP_VERSION = "5.1.3";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3350,6 +3350,22 @@
               ไม่แตะ firestore.rules / config/main · เครื่องที่ยังเป็น 4.10.1 ยังเขียนทั้งเอกสาร ต้องอัปเดตทุกเครื่องวันเดียวกัน
 
               เทสต์: tests/job-revert-p2.guard.js · tests/job-revert.guard.js
+     v5.1.3 — ประกันรายบรรทัดบนใบเสนอราคา พิมพ์เองได้ (2026-11-12) · spec docs/specs/quote-line-warranty.md (+ .decisions.md)
+              1. ตัวแก้รายการ: dropdown "ประกัน: …" (warrantyDays) เปลี่ยนเป็นช่องพิมพ์ .jp-warranty-input (60 ตัว) + datalist
+                 #jp-warranty-list ตัวช่วยพิมพ์คงที่ (7 วัน … ไม่รับประกัน) · เก็บใน partsNeeded[i].warrantyText
+                 · ไม่แสดงในลูกชุดโปร / บรรทัดหักลบ · หัวชุดโปรแสดง
+              2. ใบเสนอราคา (renderJobQuotePage + ภาพให้ Bot): บรรทัดเล็ก <div class="qt-warranty"> ใต้ชื่ออะไหล่ ไม่เพิ่มคอลัมน์
+                 · ไม่มีคำว่า "ประกัน" ในข้อความ -> เติม "ประกัน " ข้างหน้า · ว่าง = ใบเหมือนเดิมทุกตัวอักษร
+              3. ไม่จำค่า ไม่เติมอัตโนมัติ (คำตอบเจ้าของ): ไม่เขียนลง models / masterParts / ความจำราคา · ไม่อ่าน bizWarranty
+                 · บรรทัดใหม่ช่องว่างเสมอ
+              4. ใบเก่า: บรรทัดที่มีแค่ warrantyDays (ตัวเลขหรือสตริง "180") แสดง label เดิม อ่านอย่างเดียว ไม่ migrate
+                 · cleanWarrantyText ตัวเดียว ใช้ตอนบันทึก / ตอนแสดง / ตอนคืนจาก localStorage (sanitizePartLine)
+                 · PART_LINE_STR_FIELDS + 'warrantyText' · sanitizePartLine เก็บ warrantyDays สตริง /^\d{1,4}$/ ตามชนิดเดิม
+              5. (AC-9 รอบแก้ 1) ตัดหน้าใบเสนอราคาแบบถ่วงความสูง: chunkQuoteParts ไม่เกิน 10 รายการ (เดิม) และความสูงประมาณ
+                 ไม่เกิน 375px (บรรทัดปกติ 25 + 14 ต่อบรรทัดประกันที่พับ) · ใบไม่มีประกันตัดหน้าเหมือนเดิม · เลขลำดับต่อเนื่องตามหน้าจริง
+              ไม่แตะ LINE-SHARED / ข้อความ LINE / board / firestore.rules / config/main · ประกันทั้งคัน (job.warrantyDays) เหมือนเดิม
+
+              เทสต์: tests/quote-line-warranty.guard.js
               -->
 
 
@@ -5755,6 +5771,16 @@
   .part-name-input{width:100%; font-weight:600; font-family:inherit; font-size:14px; color:var(--text); border:1px solid transparent; background:transparent; padding:4px 5px; border-radius:4px; box-sizing:border-box;}
   .part-name-input:hover{border-color:var(--border);}
   .part-name-input:focus{border-color:var(--navy); background:var(--card-bg); outline:none;}
+  /* v5.1.3 — ช่องประกันรายบรรทัด (quote-line-warranty U1) · สีจากตัวแปรเท่านั้น · ห้าม min-width เป็น px (ล้น td บน iPad) */
+  .jp-warranty{display:flex; align-items:center; gap:8px; margin-top:6px;}
+  .jp-warranty-lab{flex:0 0 auto; font-size:12.5px; font-weight:600; color:var(--text-2); white-space:nowrap;}
+  .jp-warranty-input{flex:1 1 auto; min-width:0; width:auto; box-sizing:border-box;
+    border:1px solid var(--border); border-radius:4px; background:var(--card-bg); color:var(--text);
+    font-family:inherit; font-size:13px; padding:6px 8px; line-height:1.4;}
+  .jp-warranty-input::placeholder{color:var(--text-2);}
+  @media (max-width:1100px), (pointer:coarse) and (max-width:1400px){
+    .jp-warranty-input{min-height:44px;}
+  }
   table.parts-table tbody tr:hover td{background:var(--surface);}
   table.parts-table .parts-cat-header{background:var(--surface-2); color:var(--text); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0.4px; padding:7px 10px; border-left:4px solid var(--navy);}
   table.parts-table .parts-cat-row:hover td{background:var(--surface);}
@@ -6277,6 +6303,9 @@
   table.qt-table td.right, table.qt-table th.right{ text-align:right; }
   table.qt-table tr.qt-blank td{ height:24px; }
   .qt-sub{ color:#6b7a72; font-size:11px; }
+  /* v5.1.3 — ประกันรายบรรทัดใต้ชื่ออะไหล่ (ใบพิมพ์เป็นกระดาษขาวเสมอ ใช้สีเทาเดียวกับ .qt-sub) */
+  .qt-warranty{ display:block; color:#6b7a72; font-size:10px; line-height:1.3; margin-top:1px; font-weight:400;
+    white-space:normal; word-break:break-word; }
   .qt-bottom{ display:flex; gap:0; border:1px solid #dde5e0; border-top:0; }
   .qt-words{ flex:1 1 auto; min-width:0; padding:10px 12px; border-right:1px solid #dde5e0; }
   .qt-words-label{ font-size:11px; color:#5b6b62; }
@@ -8644,6 +8673,27 @@ function warrantyOptionLabel(days){
   return o ? o.label : `${days} วัน`;
 }
 
+/* v5.1.3 quote-line-warranty — ประกันรายบรรทัดบนใบเสนอราคา เป็นข้อความที่ช่างพิมพ์เอง (warrantyText)
+   ไม่จำค่า ไม่เติมอัตโนมัติ (คำตอบเจ้าของ) · ทำความสะอาดที่เดียว ใช้ทั้งตอนบันทึกและตอนแสดง (SEC-1)
+   ไม่ใช่สตริง = '' · control/บรรทัดใหม่ -> ช่องว่าง · ลบตัวกลับทิศ/zero-width · ยุบช่องว่าง · ตัด 60 ตัวด้วย Array.from */
+const LINE_WARRANTY_MAX = 60;
+const LINE_WARRANTY_SUGGESTIONS = ['7 วัน', '15 วัน', '1 เดือน', '3 เดือน', '6 เดือน', '1 ปี', '1 ปี หรือ 20,000 กม.', 'ไม่รับประกัน'];
+function cleanWarrantyText(v){
+  if(typeof v !== 'string') return '';
+  const t = v.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, ' ')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\u061C\u180E]/g, '')
+    .replace(/\s+/g, ' ').trim();
+  return Array.from(t).slice(0, LINE_WARRANTY_MAX).join('').trim();
+}
+/* ค่าที่ใช้จริงของบรรทัด: warrantyText (แม้ '') ชนะเสมอ · ใบเก่าที่มีแค่ warrantyDays (ตัวเลขหรือสตริง "180")
+   แสดง label เดิม · อ่านอย่างเดียว ห้ามแปลง/เขียน warrantyDays กลับ (BE-1) */
+function partLineWarrantyText(p){
+  if(!p) return '';
+  if(typeof p.warrantyText === 'string') return cleanWarrantyText(p.warrantyText);
+  const d = Number(p.warrantyDays);
+  return d > 0 ? cleanWarrantyText(warrantyOptionLabel(d)) : '';
+}
+
 // ลูกค้ากลับก่อน was removed; anything still on it lands on the quote step, which is
 // where that state actually sat in the old flow.
 const LEGACY_STATUS_MAP = { customerout: 'quoted' };
@@ -8736,13 +8786,46 @@ const QUOTE_BLANK_ROWS = 3;
 /* จำนวนรายการจริงต่อหนึ่งหน้ากระดาษของใบเสนอราคา (ไม่นับแถวว่างเขียนมือ)
    10 รายการคือจำนวนที่วัดแล้วว่าใบยังพอดี A4 ขอบ 8mm พร้อมหัว/ยอดรวม/ลายเซ็นครบ */
 const QUOTE_ROWS_PER_PAGE = 10;
+/* v5.1.3 quote-line-warranty AC-9 — บรรทัดที่มีประกันสูงกว่าบรรทัดปกติ (วัดจริงในเบราว์เซอร์ A4 แนวตั้ง:
+   ปกติ 24.9px · ประกัน 1 บรรทัด 38.9px · 2 บรรทัด 51.9px · พื้นที่ตารางที่เหลือในหน้าสุดท้าย (มียอดรวม/ลายเซ็น/แถวว่าง 3)
+   ≈ 383px ก่อนเกิน 297mm − ขอบ) จึงตัดหน้าด้วย 2 เงื่อนไขพร้อมกัน: ไม่เกิน QUOTE_ROWS_PER_PAGE รายการ (เดิม)
+   และความสูงประมาณรวมไม่เกิน QUOTE_PAGE_ROWS_PX (ประมาณเผื่อขึ้นทุกตัว: 25 + 14 ต่อบรรทัดประกัน)
+   ใบที่ไม่มีประกัน: 10 × 25 = 250 < 375 → ตัดหน้าเหมือนเดิมทุกตัวอักษร
+   ใช้งบของ "หน้าสุดท้าย" กับทุกหน้า (หน้ากลางไม่มีแถวว่าง จึงเหลือที่มากกว่า ≈ 59px) */
+const QUOTE_ROW_PX = 25;
+const QUOTE_WARRANTY_LINE_PX = 14;
+const QUOTE_PAGE_ROWS_PX = 375;
+const QUOTE_WARRANTY_UNITS_PER_LINE = 36;   // ความกว้างคอลัมน์รายการ (33%) ที่ตัวอักษร 10px ≈ 40+ ตัวไทย/บรรทัด — เผื่อไว้
+// จำนวนบรรทัดที่ข้อความประกันน่าจะพับ: สระบน/ล่าง/วรรณยุกต์ไทยไม่กินความกว้าง · ตัวอังกฤษพิมพ์ใหญ่/สัญลักษณ์กว้างคิดเผื่อ
+function quoteWarrantyLines(label){
+  if(!label) return 0;
+  let units = 0;
+  Array.from(label).forEach(ch => {
+    if(/[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(ch)) return;
+    if(ch === ' ') units += 0.5;
+    else if(/[A-Z@%&#MWmw]/.test(ch)) units += 1.6;
+    else if(ch.codePointAt(0) >= 0x2E80) units += 2;   // CJK / อีโมจิ กว้างเกือบ 2 ตัว
+    else units += 1;
+  });
+  return Math.max(1, Math.ceil(units / QUOTE_WARRANTY_UNITS_PER_LINE));
+}
+function quoteRowPx(p){
+  const label = lineWarrantyLabel(p, isPromoChild(p), isDeductRow(p));
+  return QUOTE_ROW_PX + quoteWarrantyLines(label) * QUOTE_WARRANTY_LINE_PX;
+}
 function chunkQuoteParts(parts){
   const list = Array.isArray(parts) ? parts : [];
   if(list.length === 0) return [[]];
   const out = [];
-  for(let i = 0; i < list.length; i += QUOTE_ROWS_PER_PAGE){
-    out.push(list.slice(i, i + QUOTE_ROWS_PER_PAGE));
-  }
+  let cur = [], used = 0;
+  list.forEach(p => {
+    const h = quoteRowPx(p);
+    if(cur.length && (cur.length >= QUOTE_ROWS_PER_PAGE || used + h > QUOTE_PAGE_ROWS_PX)){
+      out.push(cur); cur = []; used = 0;
+    }
+    cur.push(p); used += h;
+  });
+  out.push(cur);
   return out;
 }
 
@@ -22983,6 +23066,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
      เก็บเป็นตัวเลขตรงนี้ที่เดียว ทุกหน้าจอจึงได้เลขเดียวกันโดยอัตโนมัติ */
   if(field === 'price')      row.price = parseLinePrice(value); // v4.3.6 — ติดลบได้ = บรรทัดหักลบ
   else if(field === 'qty')   row.qty   = parseQty(value);
+  else if(field === 'warrantyText') row.warrantyText = cleanWarrantyText(value);   // v5.1.3 — ว่าง = '' (ไม่ใช่ null/delete · BE-5)
   else                       row[field] = value;
   /* v3.40.0 — พิมพ์ชื่อรายการเอง (หรือเปลี่ยนแบรนด์/รุ่นย่อย) แล้วช่องราคายังว่าง
      ลองนึกราคาที่เคยคีย์ไว้ขึ้นมาให้ เดิมราคาเด้งเฉพาะตอนติ๊กชิปจากรุ่นรถเท่านั้น
@@ -24812,7 +24896,7 @@ const partsSyncToastAt = Object.create(null);
 /* v4.11.1 รอบแก้ 1 — บรรทัดจาก localStorage เชื่อไม่ได้ (เครื่อง/ส่วนขยายอื่นแก้ได้) ก่อนอ่าน/คืนเข้าใบงาน
    เก็บเฉพาะช่องที่บรรทัด partsNeeded มีจริง · สตริงตัดที่ 200 ตัว · ตัวเลขต้อง finite · ธงต้องเป็น boolean
    ช่องอื่นทิ้ง · บรรทัดที่ไม่มี id เป็นสตริงไม่ว่าง = ข้าม */
-const PART_LINE_STR_FIELDS = ['id', 'partName', 'variant', 'qty', 'unit', 'brand', 'price', 'note', 'promoId', 'promoParent'];
+const PART_LINE_STR_FIELDS = ['id', 'partName', 'variant', 'qty', 'unit', 'brand', 'price', 'note', 'promoId', 'promoParent', 'warrantyText'];
 const PART_LINE_NUM_FIELDS = ['warrantyDays', 'packSize', 'qty', 'price'];
 const PART_LINE_BOOL_FIELDS = ['priceForeign'];
 const PART_LINE_STR_MAX = 200;
@@ -24822,8 +24906,11 @@ function sanitizePartLine(l){
   const out = {};
   Object.keys(l).forEach(k => {
     const v = l[k];
-    if(PART_LINE_STR_FIELDS.indexOf(k) >= 0 && typeof v === 'string') out[k] = v.slice(0, PART_LINE_STR_MAX);
+    if(k === 'warrantyText' && typeof v === 'string') out[k] = cleanWarrantyText(v);   // v5.1.3 — ตัวเดียวกับตอนบันทึก
+    else if(PART_LINE_STR_FIELDS.indexOf(k) >= 0 && typeof v === 'string') out[k] = v.slice(0, PART_LINE_STR_MAX);
     else if(PART_LINE_NUM_FIELDS.indexOf(k) >= 0 && typeof v === 'number' && isFinite(v)) out[k] = v;
+    // v5.1.3 BE-2 — dropdown ประกันเดิมเก็บ warrantyDays เป็นสตริง ("180") · เก็บตามชนิดเดิม ไม่แปลง
+    else if(k === 'warrantyDays' && typeof v === 'string' && /^\d{1,4}$/.test(v)) out[k] = v;
     else if(PART_LINE_BOOL_FIELDS.indexOf(k) >= 0 && typeof v === 'boolean') out[k] = v;
   });
   return out;
@@ -26142,9 +26229,7 @@ function renderJobPartsEditor(job){
                 ${subOpts.map(o => `<option value="${escapeAttr(o)}" ${p.variant===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}
               </select>`
             : (p.variant ? `<div class="muted" style="font-size:12px; padding-left:5px;">(${escapeHtml(p.variant)})</div>` : '')}
-          <select class="unit-select" style="margin-top:5px; width:100%;" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'warrantyDays', this.value)">
-            ${WARRANTY_OPTIONS.map(o => `<option value="${o.value}" ${(Number(p.warrantyDays)||0)===o.value?'selected':''}>ประกัน: ${escapeHtml(o.label)}</option>`).join('')}
-          </select>
+          ${inPromo || deduct ? '' : `<label class="jp-warranty"><span class="jp-warranty-lab">ประกัน</span><input type="text" class="jp-warranty-input" maxlength="${LINE_WARRANTY_MAX}" list="jp-warranty-list" placeholder="เช่น 6 เดือน, 1 ปี" value="${escapeAttr(partLineWarrantyText(p))}" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'warrantyText', this.value)"></label>`}
           ${jobLineStockHtml(job, p)}
         </td>
         <td class="center" data-label="จำนวน">
@@ -26170,6 +26255,7 @@ function renderJobPartsEditor(job){
       </tr>`;
     });
     html += `</tbody></table></div>
+      <datalist id="jp-warranty-list">${LINE_WARRANTY_SUGGESTIONS.map(o => `<option value="${escapeAttr(o)}"></option>`).join('')}</datalist>
       <div class="job-total-row"><span>${discountAmt > 0 ? 'ยอดรวมอะไหล่' : 'รวมราคาทั้งหมด'}</span><strong class="mono">${fmtMoney(total)} บาท</strong></div>
       <div class="job-discount-row">
         <span>ส่วนลด</span>
@@ -26535,6 +26621,19 @@ function fmtQuoteDate(iso){
      printedAt  วันที่บนใบ (ISO) แทน nowIso() — พรีวิวกับภาพที่เก็บให้ Bot ได้วันเดียวกัน
      signedWord + signed{role:true}  ช่องเซ็นไม่ใส่ลายเซ็นจริง ช่องที่เซ็นแล้วขึ้นคำว่า "เซ็นแล้ว" (ภาพให้ Bot)
      asPages    คืน array ของ html ทีละหน้า (1 ภาพต่อ 1 หน้า) แทนสตริงที่คั่นด้วยตัวแบ่งหน้า */
+/* v5.1.3 quote-line-warranty — บรรทัดเล็กใต้ชื่ออะไหล่บนใบเสนอราคา (ไม่เพิ่มคอลัมน์)
+   ไม่พิมพ์ในลูกชุดโปร/บรรทัดหักลบ · ว่าง = ไม่ปล่อยอะไรเลย (ใบไม่มีประกันเหมือนเดิมทุกตัวอักษร)
+   มีคำว่า "ประกัน" อยู่แล้ว (ไม่รับประกัน / ไม่มีประกัน) พิมพ์ตามนั้น ไม่งั้นเติม "ประกัน " ข้างหน้า · text context + escapeHtml (SEC-2) */
+function lineWarrantyLabel(p, inPromo, deduct){
+  if(inPromo || deduct) return '';
+  const t = partLineWarrantyText(p);
+  if(!t) return '';
+  return t.indexOf('ประกัน') >= 0 ? t : 'ประกัน ' + t;
+}
+function lineWarrantyDiv(p, inPromo, deduct){
+  const label = lineWarrantyLabel(p, inPromo, deduct);
+  return label ? `<div class="qt-warranty">${escapeHtml(label)}</div>` : '';
+}
 function renderJobQuotePage(job, opts){
   const qo = opts || {};
   const s = state.shop || {};
@@ -26574,7 +26673,7 @@ function renderJobQuotePage(job, opts){
            คำกำกับทำให้เถียงกันทีหลังไม่ได้ว่าตกลงหักหรือไม่หัก */
         rows += `<tr class="${inPromo ? 'qt-in-promo' : ''}${deduct ? ' qt-deduct' : ''}">
           <td class="center">${startIdx + i + 1}</td>
-          <td>${name}${deduct ? ' <span class="qt-deduct-note">(หักออก)</span>' : ''}</td>
+          <td>${name}${deduct ? ' <span class="qt-deduct-note">(หักออก)</span>' : ''}${lineWarrantyDiv(p, inPromo, deduct)}</td>
           <td class="center">${escapeHtml(String(qty))} ${escapeHtml(p.unit || '')}</td>
           <td>${escapeHtml(p.brand || '-')}</td>
           <td class="right${inPromo ? ' qt-in-promo-note' : ' mono'}">${
@@ -26691,7 +26790,9 @@ function renderJobQuotePage(job, opts){
     </div>
   </div>`;
 
-  const htmls = pages.map((chunk, i) => onePage(chunk, i * QUOTE_ROWS_PER_PAGE, i + 1));
+  // v5.1.3 — หน้าอาจมีไม่ถึง 10 รายการ (บรรทัดที่มีประกันสูงกว่า) เลขลำดับต่อเนื่องจากหน้าก่อนจริง
+  let startAt = 0;
+  const htmls = pages.map((chunk, i) => { const h = onePage(chunk, startAt, i + 1); startAt += chunk.length; return h; });
   if(qo.asPages) return htmls;
   return htmls.join('<div class="brk"></div>');
 }
