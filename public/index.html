@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.3";
+  const APP_VERSION = "5.1.4";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3366,6 +3366,16 @@
               ไม่แตะ LINE-SHARED / ข้อความ LINE / board / firestore.rules / config/main · ประกันทั้งคัน (job.warrantyDays) เหมือนเดิม
 
               เทสต์: tests/quote-line-warranty.guard.js
+     v5.1.4 — ชิปอาการไม่คิดเงินชุดโปรซ้อนกัน (2026-11-12) · งาน symptom-chip-promo-overlap (known-bugs-recheck-5.1.3 ข้อ 4)
+              1. suggestForSymptom: ชุดที่ครอบอะไหล่ทั้งหมดของอีกชุดในรายการเดียวกัน = โปรรวม ไม่ใส่ให้อัตโนมัติ ไม่ว่าชื่อจะมี "+" หรือไม่
+                 (เดิมโปรรวมชื่อ "ชุดใหญ่ แร็คและช่วงล่าง" ถูกใส่ซ้อนชุดช่วงล่าง ได้ 22,500 แทน 7,500) · ตัวเลข +n บนชิปลดตาม
+                 · ไม่แก้ serviceKindOfPromo (การ์ดรุ่น / ตัวกรอง / คำเตือนรุ่นที่ทำไม่ได้ / ตำราราคาบอท เหมือนเดิม)
+              2. addSymptomItemsToJob: ชุดที่ทับอะไหล่กับชุดในใบ หรือทับกันเองในคลิกเดียวกัน ถามด้วย uiConfirm แบบเดียวกับ togglePromoOnJob (K4-c)
+                 ครั้งเดียวต่อคลิก · "ไม่ใส่" = คลิกนั้นไม่ใส่อะไรเลย · "ใส่ชุดนี้ด้วย" = ผลเหมือนเดิม/เหมือนทางชิปโปร
+                 · ตัวใส่จริงแยกเป็น applySymptomItems (เนื้อเดิม) · symptomPromoOverlap หาอะไหล่ที่ทับ
+              ไม่แตะ togglePromoOnJob / config/main / firestore.rules
+
+              เทสต์: tests/symptom-chip-promo.guard.js
               -->
 
 
@@ -10419,7 +10429,14 @@ function suggestForSymptom(job, text){
     ? (model.promotions || []).filter(p =>
         promoStatus(p) === 'active' && p.price && serviceKindOfPromo(p) !== 'combo')
     : [];
-  return { parts, promos };
+  /* v5.1.4 symptom-chip-promo-overlap — serviceKindOfPromo ดูแค่ชื่อ (แร็ค + "+") โปรรวมที่ตั้งชื่อแบบอื่น
+     (เช่น "ชุดใหญ่ แร็คและช่วงล่าง") จึงหลุดมาเป็นโปรเดี่ยว แล้วถูกใส่ซ้อนชุดช่วงล่าง = เก็บเงินช่วงล่างสองรอบ
+     ชุดที่ครอบอะไหล่ทั้งหมดของอีกชุดในรายการนี้ = โปรรวม ไม่ว่าจะชื่ออะไร ตัดออก (ให้คนขายกดจากชิปโปรเอง)
+     ไม่แก้ serviceKindOfPromo เพราะการ์ดรุ่น / ตัวกรอง / คำเตือนรุ่นที่ทำไม่ได้ ใช้ร่วม */
+  const idsOf = p => (p.itemIds || []).filter((id, i, a) => a.indexOf(id) === i);
+  const coversOther = x => promos.some(y => y !== x && idsOf(y).length > 0
+    && idsOf(y).length < idsOf(x).length && idsOf(y).every(id => idsOf(x).indexOf(id) >= 0));
+  return { parts, promos: promos.filter(x => !coversOther(x)) };
 }
 
 // อาการทั้งหมดของงานนี้ ที่มีราคารออยู่
@@ -10434,11 +10451,71 @@ function jobSymptomSuggestions(job){
 
 /* กดชื่ออาการ = ใส่ราคาทุกรายการของอาการนั้นลงใบเสนอราคาทีเดียว
    กดซ้ำไม่เพิ่มซ้ำ (เช็คด้วยชื่อ+ตัวเลือก เหมือน toggleJobPartFromModel)
-   ชุดโปรใส่เป็นบรรทัดเดียวราคาเหมา ไม่แตกเป็นอะไหล่ย่อย เพราะอะไหล่ในชุดไม่มีราคาเดี่ยว */
+   ชุดโปรใส่เป็นบรรทัดเดียวราคาเหมา ไม่แตกเป็นอะไหล่ย่อย เพราะอะไหล่ในชุดไม่มีราคาเดี่ยว
+   v5.1.4 symptom-chip-promo-overlap — ทางนี้เคยข้ามด่าน K4-c ของ togglePromoOnJob: ชุดที่ทับอะไหล่กับชุดในใบ
+   (หรือทับกันเองในคลิกเดียวกัน) ถูกใส่เงียบ ๆ = คิดเงินอะไหล่ตัวเดียวกันสองครั้ง
+   ตอนนี้ถามก่อนด้วยกล่องเดียวกัน ครั้งเดียวต่อคลิก · ไม่ใส่ = คลิกนั้นไม่ใส่อะไรเลย · ใส่ = ผลเหมือนทางชิปโปร */
 function addSymptomItemsToJob(jobId, text){
   const job = getJob(jobId);
   if(!job) return;
   const s = suggestForSymptom(job, text);
+  const overlap = symptomPromoOverlap(job, getJobModel(job), s.promos);
+  if(overlap.names.length){
+    // ข้อความแยกตามกรณี (ข้อความล้วน uiModal escape เอง) · ไม่มีชื่อชุดไหนถูกบอกว่าทับกับตัวเอง
+    const bullets = list => list.slice(0, 5).map(n => '  • ' + n).join('\n') +
+      (list.length > 5 ? `\n  • (และอีก ${list.length - 5} รายการ)` : '');
+    const parts = [];
+    if(overlap.onJob.names.length){
+      parts.push(`ชุด "${overlap.onJob.promos.join('", "')}" มีอะไหล่ซ้ำกับชุดที่อยู่ในใบแล้ว (${overlap.onJob.promoNames.join(', ')}):\n\n` +
+        bullets(overlap.onJob.names));
+    }
+    overlap.inClick.forEach(c => {
+      parts.push(`${overlap.onJob.names.length ? 'และ' : ''}ชุด "${c.a}" กับชุด "${c.b}" มีอะไหล่ซ้ำกัน:\n\n` + bullets(c.names));
+    });
+    uiConfirm(
+      parts.join('\n\n') +
+      '\n\nใส่ทั้งสองชุด = อะไหล่ที่ซ้ำถูกคิดเงินในราคาชุดทั้งสองครั้ง',
+      () => {
+        // กล่องค้างได้นาน snapshot อาจแทนวัตถุใบงานไปแล้ว — หาใหม่จาก id (เหมือน togglePromoOnJob)
+        const j = getJob(jobId);
+        if(j) applySymptomItems(j, suggestForSymptom(j, text), text);
+      },
+      'ใส่ชุดนี้ด้วย', 'ไม่ใส่');
+    return;
+  }
+  applySymptomItems(job, s, text);
+}
+
+/* v5.1.4 — อะไหล่ที่ทับกันของชุดที่ชิปอาการจะใส่ (ชุดที่อยู่ในใบแล้วข้าม เพราะไม่ใส่ซ้ำ)
+   onJob   = ทับกับชุดที่อยู่ในใบแล้ว ใช้ promoOverlapOnJob (ตัวเดียวกับ toggle) · promos = ชุดใหม่ที่ทับ
+   inClick = ชุดใหม่สองชุดในคลิกนี้ทับกันเอง เทียบ itemIds · [{ a, b, names }]
+   names   = อะไหล่ที่ทับทั้งหมด (ไม่ว่าง = ต้องถามก่อน) */
+function symptomPromoOverlap(job, model, promos){
+  const names = [], onJob = { names: [], promoNames: [], promos: [] }, inClick = [];
+  if(!model) return { names, onJob, inClick };
+  const addTo = (arr, n) => { if(n && arr.indexOf(n) < 0) arr.push(n); };
+  const fresh = (promos || []).filter(pr => !(job.partsNeeded || []).some(p => p.promoId === pr.id));
+  fresh.forEach((pr, i) => {
+    const o = promoOverlapOnJob(job, model, pr);
+    if(o.names.length){
+      addTo(onJob.promos, pr.name);
+      o.names.forEach(n => { addTo(onJob.names, n); addTo(names, n); });
+      o.promoNames.forEach(n => addTo(onJob.promoNames, n));
+    }
+    fresh.slice(0, i).forEach(q => {
+      const hit = [];
+      (pr.itemIds || []).forEach(id => {
+        if((q.itemIds || []).indexOf(id) < 0) return;
+        const mp = (model.parts || []).find(x => x.id === id);
+        if(mp){ addTo(hit, partLabelOf(mp)); addTo(names, partLabelOf(mp)); }
+      });
+      if(hit.length) inClick.push({ a: q.name, b: pr.name, names: hit });
+    });
+  });
+  return { names, onJob, inClick };
+}
+
+function applySymptomItems(job, s, text){
   job.partsNeeded = job.partsNeeded || [];
   let added = 0;
   const symModel = getJobModel(job);
