@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "4.10.1";
+  const APP_VERSION = "4.11.1";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3336,6 +3336,20 @@
               ไม่แตะ config/main / firestore.rules
 
               เทสต์: tests/line-mileage.guard.js · tests/job-revert.guard.js
+     v4.11.1 — บันทึกใบงานทีละช่อง + รวมรายการอะไหล่จากสองเครื่อง (2026-11-12) · spec docs/specs/job-revert-phase2.md
+              1. (backend-dev) flushState เขียนเฉพาะช่องที่ต่างจาก shadow: set(…, { mergeFields: [FieldPath] }) + FieldValue.delete()
+                 เครื่องที่ออฟไลน์นานแล้วต่อเน็ตไม่ทับช่องอื่นอีก (R5) · สองเครื่องแก้คนละช่องไม่ทับกัน (R6)
+                 · ลายเซ็นแยกระดับ role · createdAt ส่งทุกครั้งที่มีค่า (S9) · แถวที่ SDK ไม่รับ ข้ามเฉพาะแถวนั้น (S2)
+                 · เอกสารใหม่ / editLog ยัง set เต็มแบบเดิม
+              2. board / boardPrivate เขียนเฉพาะคีย์ที่ต่าง (diff จาก payload สาธารณะของสาขา · S1) · ที่ root + ปิดราคา ลบคีย์ลับทุกครั้ง (S3)
+                 · คิว boardPrivate รวม set/merge/delete (S4) · ใบใหม่ / กู้จากถังขยะ = set เต็ม · ไม่มีอะไรต่าง = ไม่มี op (S6)
+              3. ตอน snapshot เข้า: partsNeeded / complaints / notes รวมแบบ 3-way · statusHistory union · partsBaseIds
+                 แยก "ตั้งใจลบ" กับ "ถูกทับเพราะไม่เคยเห็น" -> คืนให้อัตโนมัติ (แถว A) · ไม่รู้ -> แถว B ให้คนตัดสิน
+                 (จำใน localStorage 24 ชม. ผูกสาขา ล้างตอนออกจากระบบ) · สถานะชนกัน = เครื่องที่บันทึกทีหลังชนะ ไม่เตือน
+              4. แถบแจ้งบนหน้าใบงาน (.job-sync-notice) + ป้าย "คืนให้" / "แก้ชนกัน" ในตารางรายการอะไหล่ · no-print
+              ไม่แตะ firestore.rules / config/main · เครื่องที่ยังเป็น 4.10.1 ยังเขียนทั้งเอกสาร ต้องอัปเดตทุกเครื่องวันเดียวกัน
+
+              เทสต์: tests/job-revert-p2.guard.js · tests/job-revert.guard.js
               -->
 
 
@@ -8343,6 +8357,19 @@ html[data-mode="dark"] .ai-book-stat b{color:#8ee5b0;}
 .stock-closed-toggle input{width:20px; height:20px; margin:0; flex:0 0 auto;}
 .stock-notice{background:var(--surface-2); color:var(--text); border-left:4px solid var(--hazard); border-radius:8px; padding:10px 12px; margin:0 0 12px; line-height:1.5;}
 .stock-notice.stock-denied{font-weight:700;}
+/* v4.11.1 — แถบแจ้งรายการอะไหล่ชนกัน (job-revert-phase2 UX U2) · สีจากตัวแปรเท่านั้น โหมดมืดใช้ชุดเดิม */
+.job-sync-notice{background:var(--surface-2); color:var(--text); border-left:4px solid var(--hazard); border-radius:8px; padding:10px 12px; margin:0 0 12px; line-height:1.6;}
+.job-sync-row{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center;}
+.job-sync-row + .job-sync-row{border-top:1px solid var(--border); padding-top:8px; margin-top:8px;}
+.job-sync-ic{color:var(--hazard); display:inline-flex;}
+.job-sync-text{flex:1 1 260px; min-width:0;}
+.job-sync-l1{font-weight:700;}
+.job-sync-l2{color:var(--text-2); font-size:13px;}
+.job-sync-btns{display:flex; gap:8px; flex-wrap:wrap;}
+.job-sync-tag{border:1px solid var(--hazard); color:var(--text); background:transparent; border-radius:5px; font-size:11px; font-weight:700; padding:0 6px; white-space:nowrap;}
+@media (pointer:coarse){ .job-sync-btns .btn{min-height:44px; min-width:44px;} }
+@media (max-width:600px){ .job-sync-btns{width:100%;} .job-sync-btns .btn{flex:1 1 0;} }
+@media print{ .job-sync-notice, .job-sync-tag{display:none !important;} }
 .stock-cat-label{font-weight:700; font-size:12.5px; color:var(--text); background:var(--surface-2); border-left:4px solid var(--navy); border-radius:6px; padding:7px 10px; margin:14px 0 8px; letter-spacing:.3px;}
 .stock-group{padding:10px 14px; margin-bottom:10px;}
 .stock-name-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
@@ -12129,7 +12156,9 @@ function queueBoardPrivate(list){
   if(boardPrivDenied || !list || !list.length) return;
   list.forEach(([id, data]) => {
     if(!id) return;
-    boardPrivQueue[id] = data ? { op: 'set', data } : { op: 'delete' };
+    // v4.11.1 S4 — รับ { op:'set'|'merge', ... } จาก planJobMirror หรือ payload เต็มแบบเดิม · รวมกับของในคิว
+    const next = !data ? { op: 'delete' } : ((data.op === 'merge' || data.op === 'set') && data.data) ? data : { op: 'set', data };
+    boardPrivQueue[id] = mergePrivEntry(id, boardPrivQueue[id], next);
   });
 }
 
@@ -12149,7 +12178,14 @@ function flushBoardPrivate(){
       const e = boardPrivQueue[id];
       if(!e) return;
       const ref = db.collection('boardPrivate').doc(id);
-      if(e.op === 'delete') batch.delete(ref); else batch.set(ref, e.data);
+      if(e.op === 'delete') batch.delete(ref);
+      else if(e.op === 'merge'){
+        // v4.11.1 S4 — merge เฉพาะคีย์ที่ต่าง (+ v ทุกครั้ง) · คีย์ที่หายใช้ delete()
+        const data = Object.assign({}, e.data);
+        const keys = Object.keys(data).map(k => [k]);
+        (e.dels || []).forEach(k => { data[k] = fsDeleteField(); keys.push([k]); });
+        mergeSet(batch, ref, data, keys);
+      } else batch.set(ref, e.data);
       sent.push([id, e]);
     });
     if(!sent.length) return step(ci + 1);
@@ -12609,19 +12645,31 @@ function replaceRowInPlace(target, src){
   return target;
 }
 
-function rebasePendingRow(local, server, prevEnc){
+/* v4.11.1 — jobs: ช่องที่แก้ทั้งในเครื่องและบนเซิร์ฟเวอร์ (partsNeeded / complaints / notes / statusHistory)
+   รวมแบบ 3-way แทน "เครื่องนี้ชนะ" · partsBaseIds ใช้ของเซิร์ฟเวอร์เสมอ (S7) · partsNeeded ที่ในเครื่องไม่ได้แตะ
+   แต่บนเซิร์ฟเวอร์หายบรรทัด -> detectLostParts · ผลที่ระบบตัดสินแทนคนจดลง note (แถบแจ้ง) */
+function rebasePendingRow(local, server, prevEnc, col, note){
   let prev = {};
   try { prev = JSON.parse(prevEnc) || {}; } catch(e){ prev = {}; }
   const base = Object.assign({}, server);
   const keys = {};
+  const jobs = col === 'jobs' && !!note;
+  let partsMine = false;
   Object.keys(local).forEach(k => { keys[k] = 1; });
   Object.keys(prev).forEach(k => { keys[k] = 1; });
   Object.keys(keys).forEach(k => {
     if(k === 'id') return;
     if(stableJson(local[k]) === stableJson(prev[k])) return;   // ไม่ได้แก้ในเครื่อง -> ใช้ของเซิร์ฟเวอร์
+    if(jobs && k === 'partsBaseIds') return;
+    if(k === 'partsNeeded') partsMine = true;
+    if(jobs && THREE_WAY_JOB_KEYS.indexOf(k) >= 0 && stableJson(server[k]) !== stableJson(prev[k])){
+      const v = merge3JobField(k, prev[k], local[k], server[k], server, note);
+      if(v !== undefined){ base[k] = v; return; }
+    }
     if(Object.prototype.hasOwnProperty.call(local, k) && local[k] !== undefined) base[k] = local[k];
     else delete base[k];                                         // ช่องที่ลบในเครื่อง ยังไม่ได้ส่ง
   });
+  if(jobs && !partsMine) detectLostParts(base, prev, note);
   return replaceRowInPlace(local, base);
 }
 
@@ -12635,10 +12683,16 @@ function mergeSnapshotRows(col, incoming, opts){
   });
   const rows = [];
   const nextShadow = {};
+  const syncNotes = [];                            // v4.11.1 — [jobId, note] ไปแถบแจ้งหลัง state พร้อม
   let kept = 0;
   (incoming || []).forEach(data => {
     if(!data || !data.id) return;
-    if(col === 'jobs') normalizeJobRow(data);      // R1 — ค่าเริ่มต้นไม่นับเป็นการแก้
+    if(col === 'jobs'){
+      const rawStatus = data.status;
+      normalizeJobRow(data);                      // R1 — ค่าเริ่มต้นไม่นับเป็นการแก้
+      // v4.11.1 — สถานะว่าง/เก่าที่ถูกแปลงในหน่วยความจำ: ส่งค่าที่แปลงแล้วไปกับการบันทึกครั้งถัดไปของใบนี้
+      if(rawStatus !== data.status) jobStatusNeedsWrite[data.id] = true; else delete jobStatusNeedsWrite[data.id];
+    }
     const enc = stableJson(data);
     const prevEnc = prevShadow[data.id];
     const local = localById[data.id];
@@ -12648,10 +12702,22 @@ function mergeSnapshotRows(col, incoming, opts){
     const pending = local && prevEnc !== undefined && localEnc !== prevEnc;
     if(pending){
       // snapshot ตรงกับของในเครื่องอยู่แล้ว (= การเขียนของเครื่องนี้เอง) -> ไม่ต้องสั่งบันทึกซ้ำ
-      if(localEnc !== enc){ rebasePendingRow(local, data, prevEnc); kept++; }
+      if(localEnc !== enc){
+        const note = col === 'jobs' ? newSyncNote() : null;
+        rebasePendingRow(local, data, prevEnc, col, note);
+        if(note) syncNotes.push([data.id, note]);
+        kept++;
+      }
       rows.push(local);
     } else if(local){
-      rows.push(replaceRowInPlace(local, data));
+      replaceRowInPlace(local, data);
+      // v4.11.1 spec 5.3 — ไม่มีของค้าง แต่ snapshot หายบรรทัดที่ shadow มี -> คืน (รู้ partsBaseIds) / แถว B (ไม่รู้)
+      if(col === 'jobs' && prevEnc !== undefined && prevEnc !== enc){
+        const note = newSyncNote();
+        if(detectLostParts(local, parseShadowRow(prevEnc), note)) kept++;
+        syncNotes.push([data.id, note]);
+      }
+      rows.push(local);
     } else {
       rows.push(data);
     }
@@ -12663,6 +12729,8 @@ function mergeSnapshotRows(col, incoming, opts){
   });
   shadow[col] = nextShadow;
   state[col] = rows;
+  // v4.11.1 — แถบแจ้ง (แถว A/B) หลัง state[col] ใหม่พร้อมแล้ว
+  syncNotes.forEach(([id, note]) => { try { applyPartsSyncNote(id, note); } catch(e){ console.warn('[partsSync]', e); } });
   // ยังมีของค้างไม่ได้บันทึก -> สั่งบันทึกอีกรอบ ไม่ปล่อยให้ค้างเงียบ ๆ
   if(kept) saveState(false);
   return kept;
@@ -12674,6 +12742,331 @@ function stableJson(v){
   return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
 }
 
+/* ---------------------------------------------------------------------------
+   v4.11.1 job-revert-phase2 — เขียนทีละช่อง (mergeFields) + รวมรายการอะไหล่สองเครื่อง
+   spec: docs/specs/job-revert-phase2.md (ข้อ 1–12 · S1–S10 · คำตอบเจ้าของ · UX U1–U10)
+
+   เดิม flushState ใช้ batch.set(ref, ทั้งแถว) เครื่องที่ออฟไลน์นานส่งทั้งเอกสารทับของใหม่ (R5)
+   และสองเครื่องแก้คนละช่องก็ทับกัน (R6) ตอนนี้ส่งเฉพาะช่องบนสุดที่ต่างจาก shadow ด้วย
+   set(..., { mergeFields: [FieldPath] }) — คิวออฟไลน์ของ Firestore จึงเก็บแค่ช่องที่เปลี่ยน
+   - ไม่ใช้ merge:true: รวม map ลึก ช่องที่ลบใน map ไม่หาย
+   - ไม่ใช้ update(): เอกสารที่ถูกลบถาวรแล้ว = not-found = batch ล้มทั้งก้อน
+   - mask เป็น FieldPath เสมอ (S2-ค) ห้ามสตริงที่มีจุด
+   - ชื่อช่องผ่าน firestoreKeyOk ตัวเดียวกับ cleanForFirestore (S2-ข)
+   --------------------------------------------------------------------------- */
+const PARTS_BASE_IDS_MAX = 300;          // S7 — เกินนี้ไม่เขียน partsBaseIds (ผู้รับ = "ไม่รู้")
+const jobStatusNeedsWrite = Object.create(null);   // jobId -> true เมื่อสถานะบนเซิร์ฟเวอร์ว่าง/เป็นค่าเก่า
+const THREE_WAY_JOB_KEYS = ['partsNeeded', 'complaints', 'notes', 'statusHistory'];
+
+function firestoreKeyOk(k){ return k !== '' && !/^__.*__$/.test(k); }
+function ownKey(o, k){ return !!o && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k); }
+function isPlainMap(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+function fsFieldPath(segs){ const FP = firebase.firestore.FieldPath; return new FP(...segs); }
+function fsDeleteField(){ return firebase.firestore.FieldValue.delete(); }
+
+/* เขียนแบบ merge เฉพาะ path ที่ระบุ · ข้อมูลผ่านตัวกรอง board สาขาตัวเดียวกับ branchBatch ก่อน
+   แล้วตัด path ที่ไม่มีในข้อมูลหลังกรองทิ้ง (S1 · กันพลาดแบบ S2-ก ทุก path) · เหลือว่าง = ไม่ส่ง op
+   คืน true เมื่อมี op ถูกใส่ลง batch */
+function mergeSet(batch, ref, data, keyPaths){
+  const d2 = branchBoardSafe(ref, data);
+  const keys = (keyPaths || []).filter(p => Array.isArray(p) && p.length && ownKey(d2, p[0]));
+  if(!keys.length) return false;
+  batch.set(ref, d2, { mergeFields: keys.map(fsFieldPath) });
+  return true;
+}
+
+function parseShadowRow(enc){
+  let o = null;
+  try { o = JSON.parse(enc); } catch(e){ o = null; }
+  return isPlainMap(o) ? o : {};
+}
+
+/* ช่องที่ต่างระหว่างแถวในเครื่องกับ shadow (ทั้งสองฝั่ง clean แล้ว ไม่มี id) -> { data, keys }
+   jobs: partsBaseIds ไม่นับ (ตามไปกับ partsNeeded เท่านั้น · S7) · signatures แยกระดับ role
+   createdAt ส่งทุกครั้งที่มีการเขียนและเป็นสตริงไม่ว่าง ห้าม null/delete() (S9 · ข้อตัดสิน PM) */
+function rowMergeDiff(col, cur, prev, id){
+  const data = {}, keys = [];
+  const all = {};
+  Object.keys(cur).forEach(k => { all[k] = 1; });
+  Object.keys(prev).forEach(k => { all[k] = 1; });
+  Object.keys(all).sort().forEach(k => {
+    if(k === 'id' || !firestoreKeyOk(k)) return;
+    if(col === 'jobs' && (k === 'partsBaseIds' || k === 'createdAt')) return;
+    const inCur = ownKey(cur, k), inPrev = ownKey(prev, k);
+    if(inCur && inPrev && stableJson(cur[k]) === stableJson(prev[k])) return;
+    if(!inCur && !inPrev) return;
+    if(col === 'jobs' && k === 'signatures' && isPlainMap(cur[k]) && isPlainMap(prev[k])){
+      const roles = {};
+      Object.keys(cur[k]).forEach(r => { roles[r] = 1; });
+      Object.keys(prev[k]).forEach(r => { roles[r] = 1; });
+      Object.keys(roles).sort().forEach(r => {
+        if(!firestoreKeyOk(r)) return;
+        const a = ownKey(cur[k], r), b = ownKey(prev[k], r);
+        if(a && b && stableJson(cur[k][r]) === stableJson(prev[k][r])) return;
+        data.signatures = data.signatures || {};
+        data.signatures[r] = a ? cur[k][r] : fsDeleteField();
+        keys.push(['signatures', r]);
+      });
+      return;
+    }
+    data[k] = inCur ? cur[k] : fsDeleteField();
+    keys.push([k]);
+  });
+  /* v4.11.1 — 4.10.1 เขียนทั้งเอกสาร สถานะว่าง/เก่า (LEGACY_STATUS_MAP) จึงถูกแก้บนเซิร์ฟเวอร์ตอนบันทึกครั้งถัดไป
+     shadow เก็บค่าที่แปลงแล้ว diff จึงไม่เห็น -> ส่ง status ไปด้วยเฉพาะเมื่อมีการเขียนช่องอื่นอยู่แล้ว (ไม่เขียนเอง) */
+  if(col === 'jobs' && keys.length && jobStatusNeedsWrite[id] && typeof cur.status === 'string' && cur.status
+     && !keys.some(p => p[0] === 'status')){
+    data.status = cur.status;
+    keys.push(['status']);
+  }
+  if(col === 'jobs'){
+    const c = cur.createdAt;
+    if(typeof c === 'string' && c !== '' && (keys.length || stableJson(c) !== stableJson(prev.createdAt))){
+      data.createdAt = c;
+      keys.push(['createdAt']);
+    }
+  }
+  return { data, keys };
+}
+
+/* S7 — id ของบรรทัดที่เครื่องนี้ "เห็นแล้ว" ตอนเขียน = id ใน shadow ∪ id ในเครื่อง เท่านั้น
+   (ไม่รวม partsBaseIds เดิม) · สตริงไม่ว่าง ตัดซ้ำ · เกินเพดานคืน null = ไม่เขียน */
+function partsBaseIdsFor(prevParts, curParts){
+  const out = [], seen = {};
+  [prevParts, curParts].forEach(list => (Array.isArray(list) ? list : []).forEach(p => {
+    const id = p && p.id;
+    if(typeof id === 'string' && id && !seen[id]){ seen[id] = 1; out.push(id); }
+  }));
+  return out.length <= PARTS_BASE_IDS_MAX ? out : null;
+}
+// ฝั่งรับ: รูปผิด / ไม่มี = null ("ไม่รู้")
+function validPartsBaseIds(x){
+  return (Array.isArray(x) && x.length <= PARTS_BASE_IDS_MAX && x.every(s => typeof s === 'string')) ? x : null;
+}
+
+/* ---------------- v4.11.1 — กระจก board / boardPrivate แบบเขียนเฉพาะคีย์ที่ต่าง (S1 S3 S4 S6) ----------------
+   ตัดสินต่อใบ (spec ข้อ 3.3):
+     ในเครื่องมี deletedAt                         -> ลบ board + private (เดิม)
+     ไม่มี shadow / shadow มี deletedAt (กู้ใบ) /
+       boardStripOn() เปลี่ยนตั้งแต่ครั้งก่อนที่เครื่องนี้เขียน -> set เต็มทั้งคู่ (S6)
+     นอกนั้น -> diff จาก payload สาธารณะของสาขาที่เปิดอยู่ (S1) · ว่าง = ไม่มี op
+   updatedAt (nowIso ทุกครั้ง) ไม่นับเป็นความต่าง แต่ส่งไปด้วยเมื่อมีอย่างอื่นต่าง
+   ที่ root + ปิดราคา: ทุก op merge ของ board ลบ BOARD_SECRET_KEYS ไปด้วย (S3) · ที่สาขาห้าม */
+let boardStripWritten = null;     // ค่า boardStripOn() ตอนที่เครื่องนี้เขียน board ล่าสุด (ต่อการโหลดหน้า)
+
+function boardMirrorPub(full){
+  if(!isRootBranch()) return pickBoardBranch(full);
+  return boardStripOn() ? pickBoardPublic(full) : full;
+}
+
+function mirrorDiff(a, b, ignore){
+  const data = {}, dels = [];
+  const all = {};
+  Object.keys(a || {}).forEach(k => { all[k] = 1; });
+  Object.keys(b || {}).forEach(k => { all[k] = 1; });
+  Object.keys(all).sort().forEach(k => {
+    if(ignore.indexOf(k) >= 0 || !firestoreKeyOk(k)) return;
+    if(ownKey(b, k)){
+      if(!ownKey(a, k) || stableJson(a[k]) !== stableJson(b[k])) data[k] = b[k];
+    } else if(ownKey(a, k)) dels.push(k);
+  });
+  return { data, dels };
+}
+
+function planJobMirror(row, prevEnc){
+  if(row.deletedAt) return { remove: true };
+  const full = cleanForFirestore(boardPayloadFull(row));
+  const strip = boardStripOn();
+  const prevRow = prevEnc === undefined ? null : parseShadowRow(prevEnc);
+  const stripChanged = boardStripWritten !== null && boardStripWritten !== strip;
+  if(!prevRow || prevRow.deletedAt || stripChanged){
+    return { board: { kind: 'set', data: strip ? pickBoardPublic(full) : full },
+             priv: { op: 'set', data: boardPrivatePayloadFromFull(full) } };
+  }
+  const prevFull = cleanForFirestore(boardPayloadFull(prevRow));
+  // ใบที่ไม่มี createdAt ทั้งคู่: boardPayloadFull เติม nowIso() คนละเวลา ไม่ใช่ความต่างจริง
+  if(!row.createdAt && !prevRow.createdAt && ownKey(full, 'createdAt')) prevFull.createdAt = full.createdAt;
+
+  let board = null;
+  const bd = mirrorDiff(boardMirrorPub(prevFull), boardMirrorPub(full), ['updatedAt']);
+  if(Object.keys(bd.data).length || bd.dels.length){
+    /* v4.11.1 รอบแก้ 2 — board ห้ามเป็นครึ่งใบ (แบบเดียวกับ private): ถ้า board/ หายจากเซิร์ฟเวอร์
+       merge เฉพาะคีย์ที่ต่างจะสร้างเอกสารที่มีแค่ bay/bayAt/updatedAt · diff ใช้แค่ตัดสินว่า ต้องเขียนไหม
+       แต่ส่งทุกคีย์สาธารณะของ payload (root = boardMirrorPub · สาขา = pickBoardBranch ผ่าน mergeSet/branchBoardSafe)
+       + delete() ของคีย์ที่หาย · ไม่อ่านเพิ่ม */
+    const data = Object.assign({}, boardMirrorPub(full));
+    const keys = Object.keys(data).filter(firestoreKeyOk).map(k => [k]);
+    bd.dels.forEach(k => { if(!ownKey(data, k)){ data[k] = fsDeleteField(); keys.push([k]); } });
+    if(isRootBranch() && strip){
+      BOARD_SECRET_KEYS.forEach(k => { if(!ownKey(data, k)){ data[k] = fsDeleteField(); keys.push([k]); } });
+    }
+    board = { kind: 'merge', data, keys };
+  }
+
+  let priv = null;
+  const pPrev = boardPrivatePayloadFromFull(prevFull), pCur = boardPrivatePayloadFromFull(full);
+  const pd = mirrorDiff(pPrev, pCur, ['updatedAt', 'v']);
+  if(Object.keys(pd.data).length || pd.dels.length){
+    /* v4.11.1 รอบแก้ 1 — private ห้ามเป็นครึ่งใบ: ถ้าเอกสารยังไม่เคยถูกเขียนสำเร็จ (private ล้ม/กฎยังไม่ publish)
+       merge เฉพาะคีย์ที่ต่างจะสร้างเอกสารที่ไม่มี phoneLast4 ฯลฯ แล้ว lookupMyCar หาไม่เจอตลอด
+       จึงใช้ diff แค่ตัดสินว่า ต้องเขียนไหม แต่ส่งทุกคีย์ของ payload (+ v + delete() ของคีย์ที่หาย)
+       ทุกครั้งที่เขียน = เอกสารครบเสมอ ไม่ต้องอ่านก่อน และคิว S4 ยังรวม set/merge ได้ตามเดิม */
+    priv = { op: 'merge', data: Object.assign({}, pCur), dels: pd.dels };
+  }
+  return { board, priv };
+}
+
+/* S4 — รวมคิว boardPrivate ของ id เดียวกัน (แทน "ค่าใหม่ทับค่าเก่า")
+   set+merge = set ทาบค่า · merge+merge = merge รวม data + union คีย์ · delete+merge = set เต็มจากแถวปัจจุบัน
+   set/delete ใหม่ชนะเสมอ · private ห้ามเป็นครึ่งใบ (lookupMyCar ให้ private ชนะ board) */
+function mergePrivEntry(id, prev, next){
+  if(!next || next.op !== 'merge' || !prev) return next;
+  if(prev.op === 'set'){
+    const data = Object.assign({}, prev.data, next.data);
+    (next.dels || []).forEach(k => { delete data[k]; });
+    return { op: 'set', data };
+  }
+  if(prev.op === 'merge'){
+    const data = Object.assign({}, prev.data, next.data);
+    const dels = (prev.dels || []).filter(k => !ownKey(next.data, k));
+    (next.dels || []).forEach(k => { delete data[k]; if(dels.indexOf(k) < 0) dels.push(k); });
+    return { op: 'merge', data, dels };
+  }
+  const job = getJob(id);
+  return (job && !job.deletedAt) ? { op: 'set', data: boardPrivatePayload(job) } : prev;
+}
+
+/* ---------------- v4.11.1 — 3-way merge ตอน snapshot เข้า (spec ข้อ 4 / 5) ----------------
+   ใช้เมื่อ "ทั้งในเครื่องและเซิร์ฟเวอร์ต่างจาก shadow ในช่องเดียวกัน" · base = shadow, mine = ในเครื่อง, theirs = เซิร์ฟเวอร์
+   ผลที่ระบบตัดสินแทนคนถูกจดลง note = { restored:[id], conflict:[id], lostUnknown:[บรรทัด] } แล้วขึ้นแถบแจ้ง */
+function newSyncNote(){ return { restored: [], conflict: [], lostUnknown: [] }; }
+const sameJson = (a, b) => stableJson(a) === stableJson(b);
+function listByKey(list, keyOf){
+  const m = {};
+  (Array.isArray(list) ? list : []).forEach(x => { const k = keyOf(x); if(k !== null && m[k] === undefined) m[k] = x; });
+  return m;
+}
+
+/* complaints / notes (S5): ฝั่งที่ลบชนะถ้าอีกฝั่งไม่ได้แตะ · ใหม่ทั้งสองฝั่งเก็บ · แก้ทั้งคู่ = ของในเครื่อง · ห้าม union เฉย ๆ */
+function merge3List(base, mine, theirs, keyOf){
+  const B = listByKey(base, keyOf), M = listByKey(mine, keyOf), T = listByKey(theirs, keyOf);
+  const out = [], used = {};
+  (Array.isArray(theirs) ? theirs : []).forEach(t => {
+    const k = keyOf(t);
+    if(k === null){ out.push(t); return; }
+    if(used[k]) return;
+    used[k] = 1;
+    const b = B[k], m = M[k];
+    if(m === undefined){
+      if(b !== undefined && sameJson(b, t)) return;      // ในเครื่องลบ อีกฝั่งไม่แตะ -> ลบ
+      out.push(t);
+      return;
+    }
+    const mineChanged = b === undefined || !sameJson(m, b);
+    out.push(mineChanged ? m : t);
+  });
+  (Array.isArray(mine) ? mine : []).forEach(m => {
+    const k = keyOf(m);
+    if(k === null || used[k] || T[k] !== undefined) return;
+    const b = B[k];
+    if(b !== undefined && sameJson(b, m)) return;        // อีกฝั่งลบ ในเครื่องไม่แตะ -> ลบ
+    used[k] = 1;
+    out.push(m);                                         // ใหม่ในเครื่อง หรือในเครื่องแก้บรรทัดที่อีกฝั่งลบ
+  });
+  return out;
+}
+const complaintKey = c => (typeof c === 'string') ? ('t:' + c)
+  : (c && typeof c === 'object') ? ((typeof c.id === 'string' && c.id) ? ('i:' + c.id) : ('t:' + String(c.text || ''))) : null;
+const noteKey = n => (n && typeof n === 'object') ? [n.at || '', n.by || '', n.text || ''].join('|') : null;
+
+// statusHistory: ไม่มีทางลบในแอป -> union เรียงตาม changedAt (เรียงแบบคงลำดับเดิมเมื่อเวลาเท่ากัน)
+function unionStatusHistory(mine, theirs){
+  const out = [], seen = {};
+  [theirs, mine].forEach(list => (Array.isArray(list) ? list : []).forEach(h => {
+    const k = stableJson(h && typeof h === 'object' ? [h.status, h.changedAt] : h);
+    if(seen[k]) return;
+    seen[k] = 1;
+    out.push(h);
+  }));
+  return out.map((h, i) => [h, i])
+    .sort((a, b) => {
+      const x = String((a[0] && a[0].changedAt) || ''), y = String((b[0] && b[0].changedAt) || '');
+      return x < y ? -1 : x > y ? 1 : a[1] - b[1];
+    })
+    .map(p => p[0]);
+}
+
+/* partsNeeded (spec ข้อ 5.2 + 5.3) · pbi = partsBaseIds ของผู้เขียนฝั่งเซิร์ฟเวอร์ (ผ่าน validPartsBaseIds แล้ว หรือ null)
+   ลำดับ: ตาม theirs -> บรรทัดที่คืน/เก็บไว้ -> บรรทัดใหม่ของเครื่องนี้ */
+function merge3Parts(base, mine, theirs, pbi, note){
+  const idOf = r => (r && typeof r.id === 'string' && r.id) ? r.id : null;
+  const B = listByKey(base, idOf), M = listByKey(mine, idOf), T = listByKey(theirs, idOf);
+  const out = [], tail = [], used = {};
+  (Array.isArray(theirs) ? theirs : []).forEach(t => {
+    const id = idOf(t);
+    if(id === null){ out.push(t); return; }
+    if(used[id]) return;
+    used[id] = 1;
+    const b = B[id], m = M[id];
+    if(m === undefined){
+      if(b !== undefined && sameJson(b, t)) return;      // ในเครื่องลบ อีกฝั่งไม่แตะ -> ลบ
+      if(b !== undefined) note.conflict.push(id);         // ในเครื่องลบ แต่อีกฝั่งแก้ -> เก็บของอีกฝั่ง + บอก
+      out.push(t);
+      return;
+    }
+    const mineChanged = b === undefined || !sameJson(m, b);
+    const theirsChanged = b === undefined || !sameJson(t, b);
+    if(mineChanged && theirsChanged && !sameJson(m, t)){ out.push(m); note.conflict.push(id); return; }
+    out.push(mineChanged ? m : t);
+  });
+  (Array.isArray(base) ? base : []).forEach(b => {
+    const id = idOf(b);
+    if(id === null || T[id] !== undefined || used[id]) return;
+    const m = M[id];
+    if(m === undefined) return;                           // ลบทั้งสองฝั่ง
+    if(pbi && pbi.indexOf(id) < 0){ used[id] = 1; tail.push(m); note.restored.push(id); return; }   // ผู้เขียนไม่เคยเห็น
+    if(!sameJson(m, b)){ used[id] = 1; tail.push(m); note.conflict.push(id); return; }             // อีกฝั่งลบ ในเครื่องแก้
+    if(!pbi) note.lostUnknown.push(b);                    // ไม่รู้ว่าตั้งใจลบไหม -> แถว B
+  });
+  (Array.isArray(mine) ? mine : []).forEach(m => {
+    const id = idOf(m);
+    if(id === null){ if(!(Array.isArray(theirs) ? theirs : []).some(t => sameJson(t, m))) tail.push(m); return; }
+    if(used[id] || B[id] !== undefined || T[id] !== undefined) return;
+    used[id] = 1;
+    tail.push(m);                                         // บรรทัดใหม่ของเครื่องนี้
+  });
+  return out.concat(tail);
+}
+
+/* แถวไม่มีของค้างในช่อง partsNeeded แต่ snapshot ใหม่ "หาย" บรรทัดที่ shadow มี (spec ข้อ 5.3)
+   รู้ partsBaseIds: บรรทัดที่ผู้เขียนไม่เคยเห็น -> คืนเข้าแถว (กลายเป็นของค้าง) คืน true
+   ไม่รู้: จดลง note.lostUnknown (แถว B) ไม่แตะข้อมูล */
+function detectLostParts(jobRow, prevObj, note){
+  if(!jobRow || jobRow.deletedAt) return false;
+  const prevParts = Array.isArray(prevObj.partsNeeded) ? prevObj.partsNeeded : [];
+  const cur = Array.isArray(jobRow.partsNeeded) ? jobRow.partsNeeded : [];
+  const have = {};
+  cur.forEach(p => { if(p && typeof p.id === 'string') have[p.id] = 1; });
+  const lost = prevParts.filter(p => p && typeof p.id === 'string' && p.id && !have[p.id]);
+  if(!lost.length) return false;
+  const pbi = validPartsBaseIds(jobRow.partsBaseIds);
+  if(!pbi){ lost.forEach(p => note.lostUnknown.push(p)); return false; }
+  const back = lost.filter(p => pbi.indexOf(p.id) < 0);
+  if(!back.length) return false;
+  jobRow.partsNeeded = cur.concat(back.map(p => JSON.parse(JSON.stringify(p))));
+  back.forEach(p => note.restored.push(p.id));
+  return true;
+}
+
+/* rebase ของช่องที่แก้ทั้งคู่ใน jobs (คืนค่าที่ควรใช้ หรือ undefined = ใช้ของในเครื่องตามกติกาเดิม) */
+function merge3JobField(k, base, mine, theirs, server, note){
+  if(k === 'partsNeeded') return merge3Parts(base, mine, theirs, validPartsBaseIds(server.partsBaseIds), note);
+  if(k === 'complaints') return merge3List(base, mine, theirs, complaintKey);
+  if(k === 'notes') return merge3List(base, mine, theirs, noteKey);
+  if(k === 'statusHistory') return unionStatusHistory(mine, theirs);
+  return undefined;
+}
+
 function cleanForFirestore(value){
   if(value === undefined || typeof value === 'function') return null;
   if(value === null || typeof value !== 'object') return value;
@@ -12683,7 +13076,7 @@ function cleanForFirestore(value){
     /* v4.3.3 — ชื่อช่องที่ Firestore ไม่รับ (ว่าง หรือ __แบบนี้__) ทำให้ batch.set
        โยน error ทันทีและ flushState หยุดทั้งรอบ ตัดทิ้งที่ทางออกเดียวนี้
        ช่องแบบนี้ช่องเดียวต้องไม่ทำให้ใบงานทั้งวันบันทึกไม่ขึ้น */
-    if(k === '' || /^__.*__$/.test(k)) return;
+    if(!firestoreKeyOk(k)) return;                 // v4.11.1 — กติกาเดียวกับ diff/mask (S2-ข)
     const v = cleanForFirestore(value[k]);
     if(v !== undefined) out[k] = v;
   });
@@ -12850,6 +13243,7 @@ function clearBranchLocalKeys(){
     });
     localStorage.removeItem('gsms-admin-contact');
   } catch(e){}
+  clearPartsLostKeys();   // v4.11.1 — แถว B (gsms.partsLost.*) ไม่ค้างให้บัญชีถัดไป
 }
 /* โหลดหน้าใหม่ที่ระบบสั่งเอง: ถ้าผู้ใช้ผ่านหน้าเลือกมาแล้ว ไม่พากลับไปหน้าเลือก
    (ออกจากระบบแล้วต้องเห็นหน้าล็อกอินเหมือน 4.7.0) */
@@ -13896,6 +14290,7 @@ async function logoutSequence(){
     if(cleared) clearBranchLocalKeys();
     else console.warn('logout: clear cache failed');
   }
+  clearPartsLostKeys();   // v4.11.1 — แถว B (gsms.partsLost.*) ล้างทุกครั้งที่ออกจากระบบ ไม่ขึ้นกับเงื่อนไขล้างแคชข้างบน
   const go = () => reloadKeepingScreen();
   Promise.resolve(auth.signOut()).catch(go);
 }
@@ -15975,28 +16370,63 @@ function flushState(showToast){
     rows.forEach(row => {
       if(!row || !row.id) return;
       seen[row.id] = true;
-      const payload = Object.assign({}, row);
       // stableJson: เรียงคีย์เสมอ ไม่งั้นวัตถุเดียวกันที่คีย์สลับลำดับจะถูกมองว่า
       // "เปลี่ยนแล้ว" ทั้งที่ค่าเท่ากันเป๊ะ — ซึ่งจะทำให้ตัวกันข้อมูลหายข้างบนเข้าใจผิด
-      const encoded = stableJson(Object.assign({}, payload, { id: row.id }));
-      if(shadow[col][row.id] === encoded) return;   // unchanged — skip
-      delete payload.id;                            // id lives in the doc path
-      batch.set(db.collection(col).doc(row.id), cleanForFirestore(payload));
+      const prevEnc = shadow[col][row.id];
+      if(prevEnc === stableJson(Object.assign({}, row, { id: row.id }))) return;   // unchanged — skip
+      /* v4.11.1 job-revert-phase2 — เอกสารใหม่ (ไม่มี shadow) และ editLog (สร้างอย่างเดียว) = set เต็มแบบเดิม
+         นอกนั้นส่งเฉพาะช่องที่ต่างจาก shadow ด้วย mergeFields (R5/R6) · แถวที่สร้าง op ไม่ได้ (SDK โยน)
+         ข้ามเฉพาะแถวนั้น ไม่จด marks = ยังเป็นของค้าง ไม่ลาก batch ทั้งก้อน (S2) */
+      let encoded;
+      try {
+        const ref = db.collection(col).doc(row.id);
+        if(prevEnc === undefined || col === 'editLog'){
+          const payload = Object.assign({}, row);
+          delete payload.id;                        // id lives in the doc path
+          encoded = stableJson(Object.assign({}, row, { id: row.id }));
+          batch.set(ref, cleanForFirestore(payload));
+        } else {
+          const prev = cleanForFirestore(parseShadowRow(prevEnc));
+          const curRaw = Object.assign({}, row);
+          delete curRaw.id;
+          const diff = rowMergeDiff(col, cleanForFirestore(curRaw), prev, row.id);
+          if(col === 'jobs' && diff.keys.some(p => p[0] === 'partsNeeded')){
+            const pbi = partsBaseIdsFor(prev.partsNeeded, row.partsNeeded);   // S7
+            if(pbi){ row.partsBaseIds = pbi; diff.data.partsBaseIds = pbi.slice(); diff.keys.push(['partsBaseIds']); }
+          }
+          if(!diff.keys.length) return;             // ต่างแค่ช่องที่ไม่ส่ง (partsBaseIds / ชื่อช่องต้องห้าม)
+          encoded = stableJson(Object.assign({}, row, { id: row.id }));
+          if(!mergeSet(batch, ref, diff.data, diff.keys)) return;
+        }
+      } catch(e){
+        console.warn('[flushState] ข้ามแถวที่เขียนไม่ได้ — รอบหน้าลองใหม่', col, row.id, (e && e.message) || e);
+        return;
+      }
       marks.push([col, row.id, encoded]);           // v4.2.9 — จดไว้ก่อน ยังไม่แตะ shadow
       bump();
       // Keep the public waiting-room board in step with any job that changed.
       if(col === 'jobs'){
-        // Trashed jobs are pulled off the customer board, but the job record itself stays
-        if(row.deletedAt){
-          batch.delete(db.collection('board').doc(row.id));
-          privs.push([row.id, null]);
-        } else {
-          // v4.6.9 S2 — payload เต็มคำนวณครั้งเดียว: board = allowlist ถ้าปิดราคาอยู่ · private = เต็มเสมอ
-          const full = cleanForFirestore(boardPayloadFull(row));
-          batch.set(db.collection('board').doc(row.id), boardStripOn() ? pickBoardPublic(full) : full);
-          privs.push([row.id, boardPrivatePayloadFromFull(full)]);
-        }
-        bump();
+        // v4.11.1 — ตัดสินต่อใบที่ planJobMirror (S1 S3 S4 S6) · board ล้ม = เก็บ jobs ไว้ ให้ reconcileBoard ซ่อม
+        try {
+          const plan = planJobMirror(row, prevEnc);
+          const bref = db.collection('board').doc(row.id);
+          if(plan.remove){
+            // Trashed jobs are pulled off the customer board, but the job record itself stays
+            batch.delete(bref);
+            privs.push([row.id, null]);
+            bump();
+          } else {
+            if(plan.board && plan.board.kind === 'set'){
+              batch.set(bref, plan.board.data);
+              boardStripWritten = boardStripOn();
+              bump();
+            } else if(plan.board && mergeSet(batch, bref, plan.board.data, plan.board.keys)){
+              boardStripWritten = boardStripOn();
+              bump();
+            }
+            if(plan.priv) privs.push([row.id, plan.priv]);
+          }
+        } catch(e){ console.warn('[flushState] board', row.id, (e && e.message) || e); }
       }
     });
     Object.keys(shadow[col]).forEach(id => {
@@ -24367,6 +24797,235 @@ function renderReceiptImage(job){
   });
 }
 
+
+/* ---------------- v4.11.1 — แถบแจ้งบนหน้าใบงาน (UX U1–U10) ----------------
+   แถว A = ระบบคืน/ตัดสินให้แล้ว -> view.partsSyncNotice[jobId] = { restored:[id], conflict:[id] } (หายเมื่อรีเฟรช)
+   แถว B = ไม่รู้ว่าตั้งใจลบไหม -> localStorage 'gsms.partsLost.<branch>.<jobId>' = { at, lines } 24 ชม. (คำตอบเจ้าของ)
+     ไม่ลง Firestore · ผูกสาขา · เพดาน 50 บรรทัด/ใบ 30 ใบ/เครื่อง · หมดอายุ/เสีย = ลบตอนอ่าน · ออกจากระบบล้าง */
+const PARTS_LOST_PREFIX = 'gsms.partsLost.';
+const PARTS_LOST_INDEX = 'gsms.partsLostIndex';
+const PARTS_LOST_TTL_MS = 24 * 3600 * 1000;
+const PARTS_LOST_MAX_LINES = 50;
+const PARTS_LOST_MAX_JOBS = 30;
+const partsSyncToastAt = Object.create(null);
+
+/* v4.11.1 รอบแก้ 1 — บรรทัดจาก localStorage เชื่อไม่ได้ (เครื่อง/ส่วนขยายอื่นแก้ได้) ก่อนอ่าน/คืนเข้าใบงาน
+   เก็บเฉพาะช่องที่บรรทัด partsNeeded มีจริง · สตริงตัดที่ 200 ตัว · ตัวเลขต้อง finite · ธงต้องเป็น boolean
+   ช่องอื่นทิ้ง · บรรทัดที่ไม่มี id เป็นสตริงไม่ว่าง = ข้าม */
+const PART_LINE_STR_FIELDS = ['id', 'partName', 'variant', 'qty', 'unit', 'brand', 'price', 'note', 'promoId', 'promoParent'];
+const PART_LINE_NUM_FIELDS = ['warrantyDays', 'packSize', 'qty', 'price'];
+const PART_LINE_BOOL_FIELDS = ['priceForeign'];
+const PART_LINE_STR_MAX = 200;
+function sanitizePartLine(l){
+  if(!l || typeof l !== 'object' || Array.isArray(l)) return null;
+  if(typeof l.id !== 'string' || !l.id || l.id.length > PART_LINE_STR_MAX) return null;
+  const out = {};
+  Object.keys(l).forEach(k => {
+    const v = l[k];
+    if(PART_LINE_STR_FIELDS.indexOf(k) >= 0 && typeof v === 'string') out[k] = v.slice(0, PART_LINE_STR_MAX);
+    else if(PART_LINE_NUM_FIELDS.indexOf(k) >= 0 && typeof v === 'number' && isFinite(v)) out[k] = v;
+    else if(PART_LINE_BOOL_FIELDS.indexOf(k) >= 0 && typeof v === 'boolean') out[k] = v;
+  });
+  return out;
+}
+function sanitizePartLines(list){
+  return (Array.isArray(list) ? list : []).map(sanitizePartLine).filter(Boolean);
+}
+// v4.11.1 — ตัดบรรทัด id ซ้ำ (เก็บตัวแรก) แล้วจำกัดจำนวน · ค่าจาก localStorage อาจถูกแก้ให้ซ้ำ/ยาวเกิน
+function dedupePartLines(lines){
+  const seen = {};
+  return lines.filter(l => { if(seen[l.id]) return false; seen[l.id] = 1; return true; }).slice(0, PARTS_LOST_MAX_LINES);
+}
+
+function partsLostKey(jobId){ return PARTS_LOST_PREFIX + (activeBranch || BRANCH_ROOT) + '.' + jobId; }
+function partsLostIndex(){
+  try { const a = JSON.parse(localStorage.getItem(PARTS_LOST_INDEX) || '[]'); return Array.isArray(a) ? a.filter(k => typeof k === 'string') : []; }
+  catch(e){ return []; }
+}
+function removePartsLost(jobId){
+  const key = partsLostKey(jobId);
+  try {
+    localStorage.removeItem(key);
+    localStorage.setItem(PARTS_LOST_INDEX, JSON.stringify(partsLostIndex().filter(k => k !== key)));
+  } catch(e){}
+}
+// อ่านแถว B ของใบนี้ · รูปผิด/หมดอายุ = ลบทิ้งเงียบ ๆ · บรรทัดที่กลับมาอยู่ในใบแล้วตัดออก
+function readPartsLost(jobId, job){
+  const key = partsLostKey(jobId);
+  let raw = null;
+  try { raw = localStorage.getItem(key); } catch(e){ return null; }
+  if(raw === null || raw === undefined) return null;
+  let rec = null;
+  try { rec = JSON.parse(raw); } catch(e){ rec = null; }
+  const ok = rec && typeof rec === 'object' && typeof rec.at === 'number' && isFinite(rec.at) && Array.isArray(rec.lines);
+  if(!ok || Date.now() - rec.at > PARTS_LOST_TTL_MS || Date.now() - rec.at < -60000){ removePartsLost(jobId); return null; }
+  const have = {};
+  ((job && job.partsNeeded) || []).forEach(p => { if(p && typeof p.id === 'string') have[p.id] = 1; });
+  const lines = dedupePartLines(sanitizePartLines(rec.lines)).filter(l => !have[l.id]);   // บรรทัดรูปผิดถูกข้าม · id ซ้ำตัด · ไม่เกินเพดาน
+  if(!lines.length){ removePartsLost(jobId); return null; }
+  if(lines.length !== rec.lines.length){ try { localStorage.setItem(key, JSON.stringify({ at: rec.at, lines })); } catch(e){} }
+  return { at: rec.at, lines };
+}
+function rememberPartsLost(jobId, lines){
+  const key = partsLostKey(jobId);
+  const cur = readPartsLost(jobId, getJob(jobId));
+  const at = cur ? cur.at : Date.now();              // เหตุการณ์ใหม่ไม่ต่ออายุบรรทัดเก่า (U5)
+  const out = cur ? cur.lines.slice() : [];
+  const seen = {};
+  out.forEach(l => { seen[l.id] = 1; });
+  lines.forEach(l => {
+    if(!l || typeof l.id !== 'string' || !l.id || seen[l.id]) return;
+    seen[l.id] = 1;
+    const s = sanitizePartLine(l);
+    if(s) out.push(s);
+  });
+  try {
+    localStorage.setItem(key, JSON.stringify({ at, lines: out.slice(0, PARTS_LOST_MAX_LINES) }));
+    const idx = partsLostIndex().filter(k => k !== key);
+    idx.push(key);
+    while(idx.length > PARTS_LOST_MAX_JOBS){ localStorage.removeItem(idx.shift()); }
+    localStorage.setItem(PARTS_LOST_INDEX, JSON.stringify(idx));
+  } catch(e){}
+}
+// ล้างแถว B ทุกคีย์ของเครื่อง (ออกจากระบบ) — เบราว์เซอร์จริงไล่คีย์ได้ · สำรองด้วยดัชนี + สาขาที่รู้จัก × ใบงานในเครื่อง
+function clearPartsLostKeys(){
+  try {
+    const keys = {};
+    partsLostIndex().forEach(k => { keys[k] = 1; });
+    if(typeof localStorage.length === 'number' && typeof localStorage.key === 'function'){
+      for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if(k && k.indexOf(PARTS_LOST_PREFIX) === 0) keys[k] = 1; }
+    }
+    const branches = {};
+    cachedBranches().forEach(b => { branches[b] = 1; });
+    branches[BRANCH_ROOT] = 1;
+    if(activeBranch) branches[activeBranch] = 1;
+    ((state && state.jobs) || []).forEach(j => {
+      if(j && j.id) Object.keys(branches).forEach(b => { keys[PARTS_LOST_PREFIX + b + '.' + j.id] = 1; });
+    });
+    Object.keys(keys).forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem(PARTS_LOST_INDEX);
+  } catch(e){}
+}
+
+// ผลการรวมของใบหนึ่ง -> แถว A (view) / แถว B (localStorage) / toast ของใบที่ไม่ได้เปิด (U3 · U5)
+function applyPartsSyncNote(jobId, note){
+  if(!note) return;
+  if(note.restored.length || note.conflict.length){
+    view.partsSyncNotice = view.partsSyncNotice || {};
+    const cur = view.partsSyncNotice[jobId] || { restored: [], conflict: [] };
+    note.restored.forEach(id => { if(cur.restored.indexOf(id) < 0) cur.restored.push(id); });
+    note.conflict.forEach(id => { if(cur.conflict.indexOf(id) < 0) cur.conflict.push(id); });
+    view.partsSyncNotice[jobId] = cur;
+    const open = view.tab === 'detail' && view.jobId === jobId;
+    if(note.restored.length && !open && !(partsSyncToastAt[jobId] > Date.now() - 30000)){
+      partsSyncToastAt[jobId] = Date.now();
+      const j = getJob(jobId) || {};
+      const q = String(j.queueNo || '').trim();
+      flashToast((q ? 'ใบคิว ' + q : 'ใบงาน ' + (j.jobNumber || '')) + ': คืนรายการที่หายไปให้แล้ว ' + Number(note.restored.length) + ' บรรทัด');
+    }
+  }
+  if(note.lostUnknown.length) rememberPartsLost(jobId, note.lostUnknown);
+}
+
+function partsSyncTagHtml(jobId, rowId){
+  const n = view.partsSyncNotice && view.partsSyncNotice[jobId];
+  if(!n) return '';
+  if(n.conflict.indexOf(rowId) >= 0) return ' <span class="job-sync-tag no-print">แก้ชนกัน</span>';
+  if(n.restored.indexOf(rowId) >= 0) return ' <span class="job-sync-tag no-print">คืนให้</span>';
+  return '';
+}
+
+function jobSyncNoticeHtml(job){
+  if(!job) return '';
+  if(job.deletedAt){ if(view.partsSyncNotice) delete view.partsSyncNotice[job.id]; return ''; }
+  const bell = `<span class="job-sync-ic">${icon('bell',15)}</span>`;
+  let rows = '';
+  const rec = readPartsLost(job.id, job);
+  if(rec){
+    const N = Number(rec.lines.length);
+    const label = l => escapeHtml(String(l.partName || '') + (l.variant ? ' (' + l.variant + ')' : ''));
+    const more = rec.lines.length > 3 ? ` และอีก ${Number(rec.lines.length - 3)} รายการ` : '';
+    rows += `<div class="job-sync-row" role="alert">${bell}
+      <div class="job-sync-text">
+        <div class="job-sync-l1">รายการหายไป ${N} บรรทัด — มีเครื่องที่ยังไม่อัปเดตแอปบันทึกใบนี้</div>
+        <div class="job-sync-l2">อาจมีคนลบโดยตั้งใจ ถามคนที่แก้ใบนี้ก่อนกดคืน</div>
+        <div class="job-sync-l2">${rec.lines.slice(0, 3).map(label).join(', ')}${more}</div>
+      </div>
+      <div class="job-sync-btns">
+        <button type="button" class="btn hazard small" onclick="restorePartsLost(${escapeAttr(JSON.stringify(String(job.id)))})">คืน ${N} รายการ</button>
+        <button type="button" class="btn secondary small" onclick="dismissPartsLost(${escapeAttr(JSON.stringify(String(job.id)))})">ไม่ต้องคืน</button>
+      </div>
+    </div>`;
+  }
+  const n = view.partsSyncNotice && view.partsSyncNotice[job.id];
+  if(n && (n.restored.length || n.conflict.length)){
+    const N = Number(n.restored.length), M = Number(n.conflict.length);
+    let l1;
+    if(n.manual && !M) l1 = `คืนรายการให้แล้ว ${N} บรรทัด`;
+    else if(N && M) l1 = `มีเครื่องอื่นบันทึกใบนี้พร้อมกัน — คืนรายการให้แล้ว ${N} บรรทัด · ใช้ค่าจากเครื่องนี้ ${M} บรรทัด`;
+    else if(M) l1 = `มีเครื่องอื่นแก้รายการเดียวกันพร้อมกัน — ใช้ค่าจากเครื่องนี้ ${M} บรรทัด`;
+    else l1 = `มีเครื่องอื่นบันทึกใบนี้พร้อมกัน — คืนรายการที่หายไปให้แล้ว ${N} บรรทัด`;
+    const l2 = M ? 'ตรวจราคาและจำนวนอีกครั้ง บรรทัดที่ชนกันมีป้าย "แก้ชนกัน"'
+                 : 'ตรวจรายการอะไหล่อีกครั้ง บรรทัดที่คืนมีป้าย "คืนให้"';
+    rows += `<div class="job-sync-row" role="status">${bell}
+      <div class="job-sync-text">
+        <div class="job-sync-l1">${escapeHtml(l1)}</div>
+        <div class="job-sync-l2">${escapeHtml(l2)}</div>
+      </div>
+      <div class="job-sync-btns">
+        <button type="button" class="btn secondary small" onclick="scrollToJobParts()">ดูรายการ</button>
+        <button type="button" class="btn secondary small" onclick="dismissPartsSyncNotice(${escapeAttr(JSON.stringify(String(job.id)))})">ตรวจแล้ว</button>
+      </div>
+    </div>`;
+  }
+  return rows ? `<div class="job-sync-notice no-print">${rows}</div>` : '';
+}
+
+function restorePartsLost(jobId){
+  const job = getJob(jobId);
+  if(!job) return;
+  const rec = readPartsLost(jobId, job);
+  if(!rec){ render(); return; }
+  if(!Array.isArray(job.partsNeeded)) job.partsNeeded = [];
+  const have = {};
+  job.partsNeeded.forEach(p => { if(p && typeof p.id === 'string') have[p.id] = 1; });
+  // ผ่าน whitelist + ตัด id ซ้ำ + เพดาน อีกชั้นก่อนลง Firestore · id ที่มีในใบอยู่แล้วข้าม
+  const add = dedupePartLines(sanitizePartLines(rec.lines)).filter(l => !have[l.id]);
+  job.partsNeeded = job.partsNeeded.concat(add);
+  removePartsLost(jobId);
+  view.partsSyncNotice = view.partsSyncNotice || {};
+  const cur = view.partsSyncNotice[jobId] || { restored: [], conflict: [] };
+  add.forEach(l => { if(cur.restored.indexOf(l.id) < 0) cur.restored.push(l.id); });
+  cur.manual = true;
+  view.partsSyncNotice[jobId] = cur;
+  saveState(true);
+  flashToast('คืน ' + Number(add.length) + ' รายการแล้ว');
+  render();
+}
+function dismissPartsLost(jobId){
+  const rec = readPartsLost(jobId, getJob(jobId));
+  if(!rec){ render(); return; }
+  uiConfirm(`ไม่คืน ${Number(rec.lines.length)} รายการนี้? รายการจะหายจากใบนี้ และกดคืนภายหลังไม่ได้`, () => {
+    removePartsLost(jobId);
+    render();
+  }, 'ไม่คืน ปิดแถบ', 'กลับไปดู');
+}
+function dismissPartsSyncNotice(jobId){
+  if(view.partsSyncNotice) delete view.partsSyncNotice[jobId];
+  render();
+}
+// การ์ด 'รายการอะไหล่ / เสนอราคา' หาโดยหัวการ์ด (ไม่เพิ่ม id ให้ HTML ของหน้าใบงานเปลี่ยน)
+function scrollToJobParts(){
+  const hs = document.querySelectorAll ? document.querySelectorAll('.card > h3') : [];
+  for(let i = 0; i < hs.length; i++){
+    if(String(hs[i].textContent || '').indexOf('รายการอะไหล่ / เสนอราคา') >= 0){
+      const el = hs[i].parentNode;
+      if(el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+  }
+}
+
 function renderJobDetail(jobId){
   const job = getJob(jobId);
   if(!job){ view.tab = 'joblist'; view.jobId = null; return renderJobList(); }
@@ -24382,7 +25041,7 @@ function renderJobDetail(jobId){
       <button class="btn secondary small" onclick="printJobCheckin(${escapeAttr(JSON.stringify(String(job.id)))})">${icon('printer',13)} พิมพ์ใบรับรถ</button>
       <button class="btn secondary small" onclick="printJobQuote(${escapeAttr(JSON.stringify(String(job.id)))})">${icon('printer',13)} พิมพ์ใบเสนอราคา</button>
     </div>
-  </div>${printCaptureWarnHtml(job.id)}`;
+  </div>${printCaptureWarnHtml(job.id)}${jobSyncNoticeHtml(job)}`;
 
   if(view.je_editing && view.je_jobId === jobId){
     html += renderJobEditForm(job);
@@ -25476,7 +26135,7 @@ function renderJobPartsEditor(job){
       html += `<tr class="${inPromo ? 'promo-child-row' : ''}${deduct ? ' deduct-row' : ''}${view.jpFlashId === p.id ? ' jp-flash' : ''}" data-row-id="${escapeAttr(p.id)}">
         <td class="center">${idx+1}</td>
         <td data-label="รายการ">
-          ${inPromo ? `<span class="promo-child-dash">└</span>` : ''}<input type="text" class="part-name-input${inPromo ? ' promo-child-name' : ''}" value="${escapeAttr(p.partName)}" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'partName', this.value)">
+          ${inPromo ? `<span class="promo-child-dash">└</span>` : ''}<input type="text" class="part-name-input${inPromo ? ' promo-child-name' : ''}" value="${escapeAttr(p.partName)}" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'partName', this.value)">${partsSyncTagHtml(job.id, p.id)}
           ${subOpts
             ? `<select class="unit-select" style="margin-top:5px; width:100%;" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'variant', this.value)">
                 <option value="" ${!p.variant?'selected':''}>— เลือกชนิด —</option>
