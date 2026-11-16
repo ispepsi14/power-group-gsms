@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.4";
+  const APP_VERSION = "5.1.6";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3376,6 +3376,35 @@
               ไม่แตะ togglePromoOnJob / config/main / firestore.rules
 
               เทสต์: tests/symptom-chip-promo.guard.js
+     v5.1.5 — กดอนุมัติแล้วใบงานเด้งกลับ "รับรถ" ที่สาขา (2026-11-13) · งาน branch-board-batch
+              1. (backend-dev) flushState: board ไม่อยู่ใน batch เดียวกับใบงานแล้ว — ส่งเป็น batch ที่สองหลัง commit หลักผ่าน
+                 (flushBoardMirror) แบบเดียวกับ boardPrivate · กระดานถูกปฏิเสธ = ใบงานบันทึกไปแล้ว ไม่ค้าง ไม่ส่งซ้ำ
+                 ล้มแล้วให้ reconcileBoard ซ่อม 1 ครั้งในรอบเปิดหน้า + ครั้งหน้าที่เปิดแอป (markBoardForReconcile) ไม่วนซ้ำ
+                 เดิม (4.11.1–5.1.4) board สาขาเขียนแบบ merge ช่องเกินในเอกสารเดิมค้างอยู่ กฎ hasOnly ปฏิเสธ
+                 แล้วลากใบงานใน batch เดียวกันล้มทุกครั้ง = กดอะไรก็ไม่ขึ้นเซิร์ฟเวอร์ เปิดใหม่เห็น "รับรถ"
+              2. board กลับเป็น set ทั้งเอกสาร (root ปิดราคา = pickBoardPublic · เปิดราคา = payload เต็ม · สาขากรองที่ branchBoardSafe)
+                 diff ใช้แค่ตัดสินว่าต้องเขียนไหม · ลงถังขยะ = ลบ (S6 เดิม) · ไม่ต้อง delete คีย์ลับ (S3) แล้ว
+              3. presence เก็บ appVersion (ไว้ดูว่าเครื่องไหนรันเวอร์ชันอะไร)
+              ไม่แตะ firestore.rules / config/main / การเขียนใบงานทีละช่อง (mergeFields) / boardPrivate
+
+              เทสต์: tests/branch-board-batch.guard.js
+     v5.1.6 — แตะสองครั้งบนการ์ดแล้วสถานะถอยกลับ (2026-11-16) · งาน card-doubletap · รวมของ 5.1.5 (board batch) ที่ยังไม่ publish
+              เคสจริง WY261113-007: ตรวจเช็ค แล้วมีประวัติ "รับรถ" ใหม่ตามมา = ปุ่ม "‹ รับรถ" โผล่ใต้นิ้วหลังการ์ดวาดใหม่
+              1. ล็อกต่อใบ 700ms หลังเปลี่ยนสถานะ (statusTapLocked) — นับเฉพาะการแตะที่มี event (setJobStatusFromList /
+                 setJobStatus(…, e)) · ทางที่โค้ดเรียกเอง (e = null) ไม่ล็อก · ล็อกหมดผลถ้าสถานะถูกเปลี่ยนจากทางอื่น
+                 ปุ่มขั้นในหน้าใบงาน (stepper) ยังไม่ส่ง event — HTML ต้องตรง 4.7.0 ตาม branch.guard O1
+              2. ถอยขั้นจากการ์ด (isBackwardStatusMove) ต้องกดยืนยันก่อน · ยกเลิก = ไม่เปลี่ยน
+              3. ปุ่มถอยย้ายไปชิดขวา กว้างไม่เกิน 40% ป้าย "‹ ถอยเป็น <สถานะ>" (ไม่สับสนกับปุ่ม "รับรถ" แถบล่าง)
+                 ทำด้วย CSS ล้วน (order + ::before) HTML การ์ดคงเดิม (branch.guard M1 เทียบกับ 4.7.0)
+                 ขั้นต่อไปอยู่ซ้ายตำแหน่งเดิม · touch-action:manipulation ที่ปุ่มในการ์ดและแถบล่าง
+              4. version.json รับ minVersion (ไม่บังคับ · parseMinVersion: สตริง ≤20 ตัว รูป d.d.d และไม่สูงกว่า version)
+                 APP_VERSION ต่ำกว่า = รอเครื่องว่าง (ไม่มีกล่อง/ลายเซ็น/พิมพ์/ร่างหรือรูปรับรถ/แก้ใบงาน/lineDraft/สต็อกค้าง/logout)
+                 และ (หน้าถูกซ่อน หรือไม่มีใครแตะ ≥10 วิ) -> flushState -> waitForPendingWrites ต้องจบใน 8 วิ -> updateAppNow
+                 ส่งไม่ครบ (ออฟไลน์) = ไม่โหลด ขึ้นแถบ "ต้องอัปเดต" + ปุ่ม แล้วโหลดเมื่อการเขียนนั้นจบจริง ไม่วนส่งซ้ำ
+                 โหลดเองได้ครั้งเดียวต่อค่า minVersion ต่อเครื่อง (localStorage gsms.forcedReloadFor) ยังเก่า = แถบ + ปุ่ม
+                 ตรวจตอนเปิด (8 วิ) / ทุก 30 นาที / visibilitychange / focus · รอบนี้ยังไม่ใส่ minVersion ใน version.json
+              ไม่แตะ firestore.rules / config/main / flushState / ความจำราคา
+              เทสต์: tests/card-doubletap.guard.js · tests/min-version.guard.js
               -->
 
 
@@ -4165,6 +4194,19 @@
   .btn.back-step:hover{background:var(--navy); color:#fff;}
   .jc-steprow{display:flex; gap:8px; width:100%;}
   .jc-steprow .btn{flex:1 1 0; justify-content:center;}
+  /* v5.1.6 card-doubletap — ปุ่มถอยขั้นเป็นปุ่มเล็กชิดขวา (ขั้นต่อไปอยู่ซ้ายเต็มที่ที่เหลือ)
+     เดิมแบ่งครึ่ง ถอยอยู่ซ้าย = ตรงกับครึ่งซ้ายของปุ่ม "ขั้นต่อไป" เต็มแถวรอบก่อน แตะซ้ำแล้วสถานะถอย
+     กว้างไม่เกิน 40% ของแถว = ไม่ทับจุด 25% / 50% ของปุ่มเดิม */
+  .jc-steprow .btn.back-step{order:2; flex:0 1 auto; max-width:40%; margin-left:auto; white-space:normal; line-height:1.25; font-size:12px; text-align:center;}
+  /* ป้าย "‹ ถอยเป็น <สถานะ>" ใส่ทาง CSS (HTML ของการ์ดคงเดิม — branch.guard เทียบกับ 4.7.0) */
+  .jc-steprow .btn.back-step::before{content:'ถอยเป็น'; order:0; margin-right:4px;}
+  .jc-steprow .btn.back-step .ic{order:-1;}
+  .jc-actions .btn, .bn-btn{touch-action:manipulation;}
+  /* v5.1.6 — แถบ "ต้องอัปเดต" (minVersion) อยู่ใต้กล่อง (z 120) เหนือแถบล่าง */
+  .force-update-banner{position:sticky; top:0; z-index:110; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; padding:calc(10px + env(safe-area-inset-top)) 14px 10px; background:#B3261E; color:#fff; font-weight:700; font-size:14px; box-shadow:0 4px 14px rgba(0,0,0,.25);}
+  .force-update-banner .btn{background:#fff; color:#B3261E; border-color:#fff;}
+  body > .force-update-banner{position:fixed; left:0; right:0; top:0;}   /* หน้า ?board / ?reception */
+  html[data-mode="dark"] .force-update-banner .btn{background:#fff; color:#B3261E; border-color:#fff;}
 
   input[type=text],input[type=number],input[type=tel],input[type=password],textarea,select{
     font-family:inherit; border:1px solid var(--border); border-radius:9px; padding:11px 12px;
@@ -12312,6 +12354,40 @@ let boardPrivQueue = Object.create(null);
 let boardPrivDenied = false;     // กฎยังไม่ publish — หยุดลองทั้ง session ไม่เสียค่าเขียนทุก flush
 let boardPrivBusy = false;
 
+/* v5.1.5 branch-board-batch — ส่ง board เป็น batch แยกหลัง commit หลักผ่าน (เรียกจาก flushState .then)
+   ล้ม (เช่นกฎ hasOnly ของสาขา / เน็ตหลุด) = ใบงานบันทึกไปแล้ว ไม่ค้าง ไม่ส่งซ้ำเอง
+   ให้ reconcileBoard ซ่อม: ลบเวลาซ่อมล่าสุด (เปิดแอปครั้งหน้าซ่อม) + ซ่อม 1 ครั้งในรอบเปิดหน้านี้ ไม่วนซ้ำ */
+let boardReconcileQueued = false;
+function markBoardForReconcile(){
+  try { localStorage.removeItem(branchKey('gsms-board-reconciled-at')); } catch(e){}
+  if(boardReconcileQueued) return;
+  boardReconcileQueued = true;
+  setTimeout(() => {
+    try { Promise.resolve(reconcileBoard(false)).catch(e => console.warn('[board] reconcile', (e && e.code) || e)); }
+    catch(e){ console.warn('[board] reconcile', e); }
+  }, 5000);
+}
+function flushBoardMirror(list){
+  if(!db || !list || !list.length) return Promise.resolve();
+  const chunks = [];
+  for(let i = 0; i < list.length; i += 400) chunks.push(list.slice(i, i + 400));
+  // ก้อนแรกส่งทันที (ลำดับเดียวกับเดิม: board ก่อน boardPrivate) ก้อนถัดไปส่งเมื่อก้อนก่อนผ่าน
+  const run = i => {
+    const b = db.batch();
+    chunks[i].forEach(([id, data]) => {
+      const ref = db.collection('board').doc(id);
+      if(data) b.set(ref, data); else b.delete(ref);
+    });
+    return b.commit().then(() => (i + 1 < chunks.length ? run(i + 1) : null));
+  };
+  let first;
+  try { first = run(0); } catch(e){ first = Promise.reject(e); }
+  return first.catch(err => {
+    console.warn('[board] เขียนกระดานไม่สำเร็จ — ใบงานบันทึกแล้ว รอ reconcileBoard ซ่อม', (err && (err.code || err.message)) || err);
+    markBoardForReconcile();
+  });
+}
+
 function queueBoardPrivate(list){
   if(boardPrivDenied || !list || !list.length) return;
   list.forEach(([id, data]) => {
@@ -13050,17 +13126,11 @@ function planJobMirror(row, prevEnc){
   let board = null;
   const bd = mirrorDiff(boardMirrorPub(prevFull), boardMirrorPub(full), ['updatedAt']);
   if(Object.keys(bd.data).length || bd.dels.length){
-    /* v4.11.1 รอบแก้ 2 — board ห้ามเป็นครึ่งใบ (แบบเดียวกับ private): ถ้า board/ หายจากเซิร์ฟเวอร์
-       merge เฉพาะคีย์ที่ต่างจะสร้างเอกสารที่มีแค่ bay/bayAt/updatedAt · diff ใช้แค่ตัดสินว่า ต้องเขียนไหม
-       แต่ส่งทุกคีย์สาธารณะของ payload (root = boardMirrorPub · สาขา = pickBoardBranch ผ่าน mergeSet/branchBoardSafe)
-       + delete() ของคีย์ที่หาย · ไม่อ่านเพิ่ม */
-    const data = Object.assign({}, boardMirrorPub(full));
-    const keys = Object.keys(data).filter(firestoreKeyOk).map(k => [k]);
-    bd.dels.forEach(k => { if(!ownKey(data, k)){ data[k] = fsDeleteField(); keys.push([k]); } });
-    if(isRootBranch() && strip){
-      BOARD_SECRET_KEYS.forEach(k => { if(!ownKey(data, k)){ data[k] = fsDeleteField(); keys.push([k]); } });
-    }
-    board = { kind: 'merge', data, keys };
+    /* v5.1.5 — board กลับเป็น set ทั้งเอกสาร (diff ใช้แค่ตัดสินว่าต้องเขียนไหม · S6 คงเดิม)
+       กระดานเป็นข้อมูลที่คิดจากใบงานล้วน set ทั้งเอกสารจึงถูกเสมอ ช่องเกินที่ค้างในเอกสารเดิมถูกล้างเอง
+       (merge ทิ้งช่องเกินไว้ แล้วกฎ hasOnly ของ board สาขาปฏิเสธ) · ไม่ต้อง delete คีย์ลับ (S3) แล้ว
+       สาขา: branchBatch -> branchBoardSafe กรองเหลือ BOARD_BRANCH_KEYS (S1) */
+    board = { kind: 'set', data: strip ? pickBoardPublic(full) : full };
   }
 
   let priv = null;
@@ -14261,7 +14331,8 @@ let presenceHeartbeatTimer = null;
 function writePresenceOnce(){
   if(!currentUser || !db) return;
   db.collection('presence').doc(currentUser.uid).set({
-    name: currentUser.name, lastSeen: nowIso()
+    name: currentUser.name, lastSeen: nowIso(),
+    appVersion: APP_VERSION        // v5.1.5 — ไว้ดูว่าเครื่องไหนรันเวอร์ชันอะไร (วินิจฉัยย้อนหลัง)
   }, { merge:true }).catch(() => {});   // ล้มเงียบ ๆ พอ (เช่นยังไม่ได้เพิ่มกฎ) ไม่ใช่ข้อมูลสำคัญ
 }
 
@@ -16519,6 +16590,7 @@ function flushState(showToast){
   // v4.6.9 S2 — [jobId, payload|null] ของ boardPrivate · ไม่อยู่ใน batch นี้ (กฎยังไม่ publish = ห้ามลาก
   // ทั้งก้อนล้ม) ใส่คิวแล้วส่งแยก batch หลัง commit หลักผ่านเท่านั้น · ไม่เกี่ยวกับ shadow
   const privs = [];
+  const boards = [];  // v5.1.5 — [jobId, payload|null] ของ board · batch ที่สองหลัง commit หลักผ่าน (ไม่ลากใบงานล้ม)
   const bump = () => {
     ops++;
     if(ops >= 400){ commits.push(batch.commit()); batch = db.batch(); ops = 0; }
@@ -16566,24 +16638,17 @@ function flushState(showToast){
       bump();
       // Keep the public waiting-room board in step with any job that changed.
       if(col === 'jobs'){
-        // v4.11.1 — ตัดสินต่อใบที่ planJobMirror (S1 S3 S4 S6) · board ล้ม = เก็บ jobs ไว้ ให้ reconcileBoard ซ่อม
+        /* v5.1.5 branch-board-batch — กระดานไม่อยู่ใน batch ของใบงานอีกต่อไป (เดิมกฎ hasOnly ของ board
+           สาขาปฏิเสธ op เดียว = ใบงานใน batch เดียวกันล้มทั้งหมด และค้างส่งซ้ำทุกรอบ) · จดไว้ใน boards[]
+           แล้วส่งเป็น batch ที่สองหลัง commit หลักผ่าน (แบบเดียวกับ boardPrivate) · ล้ม = ให้ reconcileBoard ซ่อม */
         try {
           const plan = planJobMirror(row, prevEnc);
-          const bref = db.collection('board').doc(row.id);
           if(plan.remove){
             // Trashed jobs are pulled off the customer board, but the job record itself stays
-            batch.delete(bref);
+            boards.push([row.id, null]);
             privs.push([row.id, null]);
-            bump();
           } else {
-            if(plan.board && plan.board.kind === 'set'){
-              batch.set(bref, plan.board.data);
-              boardStripWritten = boardStripOn();
-              bump();
-            } else if(plan.board && mergeSet(batch, bref, plan.board.data, plan.board.keys)){
-              boardStripWritten = boardStripOn();
-              bump();
-            }
+            if(plan.board){ boards.push([row.id, plan.board.data]); boardStripWritten = boardStripOn(); }
             if(plan.priv) privs.push([row.id, plan.priv]);
           }
         } catch(e){ console.warn('[flushState] board', row.id, (e && e.message) || e); }
@@ -16595,9 +16660,8 @@ function flushState(showToast){
       drops.push([col, id]);                        // v4.2.9 — จดไว้ก่อนเช่นกัน
       bump();
       if(col === 'jobs'){
-        batch.delete(db.collection('board').doc(id));
+        boards.push([id, null]);                    // v5.1.5 — batch ที่สอง
         privs.push([id, null]);
-        bump();
       }
     });
   });
@@ -16668,6 +16732,7 @@ function flushState(showToast){
       if(cfgPending !== null) shadowConfig = cfgPending;
       if(showToast) flashToast('บันทึกแล้ว');
       // v4.6.9 S2 — หลัง shadow แล้วเท่านั้น · ล้มเองเงียบ ๆ ไม่แตะ marks/drops/shadow
+      try { flushBoardMirror(boards); } catch(e){ console.warn('[board]', e); }
       try { queueBoardPrivate(privs); flushBoardPrivate(); } catch(e){ console.warn('[boardPrivate]', e); }
     })
     .catch(err => {
@@ -18787,9 +18852,35 @@ function freeBayIfLeaving(job, statusKey){
   }
 }
 
-function setJobStatus(jobId, statusKey){
+/* v5.1.6 card-doubletap — ล็อกต่อใบ ~700ms หลังเปลี่ยนสถานะ
+   แถวปุ่มบนการ์ดวาดใหม่ใต้นิ้วทันทีที่เปลี่ยนสถานะ แตะซ้ำ (double tap / นิ้วสั่นบนไอแพด) เคยไปโดน
+   ปุ่มที่เพิ่งโผล่ใต้นิ้ว (เคสจริง WY261113-007: ตรวจเช็ค แล้วเด้งกลับ "รับรถ")
+   ล็อกเฉพาะ "การแตะ" (มี event มาด้วย / มาจากการ์ด) ทางที่โค้ดเรียกต่อกันเอง (ทดสอบ, ส่งมอบ, โปร) ไม่โดน
+   ใช้ Date.now() ให้นาฬิกาปลอมในเทสต์คุมได้ · ค่าของหน้านี้ในหน่วยความจำ ไม่ใช่ state ไม่ขึ้น Firestore */
+const STATUS_TAP_LOCK_MS = 700;
+const statusTapLockAt = Object.create(null);   // jobId -> { at: Date.now(), status: สถานะที่เพิ่งตั้ง }
+// ล็อกนับเฉพาะตอนใบยังอยู่ในสถานะที่เราเพิ่งตั้ง — ถ้าเปลี่ยนจากทางอื่น (snapshot เครื่องอื่น) ล็อกนี้ไม่เกี่ยวแล้ว
+function statusTapLocked(jobId){
+  const t = statusTapLockAt[jobId];
+  if(!t || typeof t.at !== 'number') return false;
+  const job = getJob(jobId);
+  if(!job || job.status !== t.status) return false;
+  const dt = Date.now() - t.at;
+  return dt >= 0 && dt < STATUS_TAP_LOCK_MS;
+}
+// ถอยหลังในสายงาน = ไปขั้นก่อนหน้า (ตาม prevStatusOf หรือ index ต่ำกว่าใน MAIN_PATH)
+function isBackwardStatusMove(job, statusKey){
+  if(!job) return false;
+  const prev = prevStatusOf(job);
+  if(prev && prev.key === statusKey) return true;
+  const a = MAIN_PATH.indexOf(job.status), b = MAIN_PATH.indexOf(statusKey);
+  return a > -1 && b > -1 && b < a;
+}
+
+function setJobStatus(jobId, statusKey, e){
   const job = getJob(jobId);
   if(!job || job.status === statusKey) return;
+  if(e && statusTapLocked(jobId)) return;   // แตะซ้ำบนปุ่มที่เพิ่งวาดใหม่ใต้นิ้ว — เมิน
   /* รถค้าง: จำขั้นที่ค้างไว้ก่อนเปลี่ยน เพื่อให้ปุ่มเอากลับเข้าคิวพากลับที่เดิมได้จริง
      และเคลียร์ทิ้งทันทีที่ออกจากสถานะนี้ ไม่งั้นรอบหน้าจะพากลับไปที่เก่าของรอบก่อน */
   if(statusKey === 'held'){
@@ -18800,6 +18891,7 @@ function setJobStatus(jobId, statusKey){
   }
   job.status = statusKey;
   job.statusHistory.push({ status: statusKey, changedAt: nowIso() });
+  statusTapLockAt[jobId] = { at: Date.now(), status: statusKey };   // v5.1.6 ล็อกต่อใบ
   freeBayIfLeaving(job, statusKey);
   saveState(true);
   render();
@@ -18842,7 +18934,23 @@ function resumeHeldJob(jobId, e){
 // the click bubble up and open the job.
 function setJobStatusFromList(jobId, statusKey, e){
   if(e) e.stopPropagation();
-  setJobStatus(jobId, statusKey);
+  const job = getJob(jobId);
+  if(!job || job.status === statusKey) return;
+  // v5.1.6 — การ์ดเพิ่งเปลี่ยนสถานะไม่ถึง 700ms = แตะซ้ำ ไม่ใช่ตั้งใจ (ไม่ถาม ไม่เปลี่ยน)
+  // นับเฉพาะการแตะจริง (มี event) · โค้ดที่เรียกต่อกันเองส่ง null มา ไม่ล็อก
+  if(e && statusTapLocked(jobId)) return;
+  // v5.1.6 — ถอยขั้นจากการ์ดต้องถามก่อน (ยกเลิก = ไม่เปลี่ยนอะไร)
+  if(isBackwardStatusMove(job, statusKey)){
+    const v = getVehicle(job.vehicleId) || {};
+    uiConfirm(`ถอยสถานะ ${v.plate || job.jobNumber} จาก "${statusOf(job.status).label}" กลับเป็น "${statusOf(statusKey).label}"?\n\n(ถ้าตั้งใจกดไปขั้นต่อไป ให้กด "ไม่ถอย")`, () => {
+      const j2 = getJob(jobId);
+      if(!j2 || j2.status === statusKey) return;
+      setJobStatus(jobId, statusKey);
+      flashToast('ถอยเป็น "' + statusOf(statusKey).label + '" แล้ว');
+    }, 'ถอยกลับ', 'ไม่ถอย');
+    return;
+  }
+  setJobStatus(jobId, statusKey, e);
   // Marking a car delivered removes it from this list, so say where it went.
   flashToast(statusKey === 'delivered'
     ? 'ส่งมอบแล้ว — ย้ายไปหน้า "ส่งมอบแล้ว"'
@@ -21560,6 +21668,7 @@ function render(){
     </div>
   </div>
   <div class="hazard-edge no-print"></div>`;
+  html += forceUpdateBannerHtml();   // v5.1.6 — minVersion: แถบ "ต้องอัปเดต" ค้างจนกว่าจะโหลดใหม่ได้
 
   // Thumb-reachable bottom tab bar — the primary navigation on phones (the top
   // .main-nav strip is hidden at the same breakpoint so they never both show).
@@ -29320,6 +29429,9 @@ function checkAppUpdate(manual){
         appUpdate.latest  = String(info.version);
         appUpdate.newer   = verGreater(appUpdate.latest, APP_VERSION);
         appUpdate.changed = false;
+        // v5.1.6 — minVersion (ไม่บังคับ): เครื่องที่เก่ากว่านี้ต้องโหลดใหม่เอง (ดู maybeForceReload)
+        appUpdate.minVersion = parseMinVersion(info);   // รูปผิด / สูงกว่า version = null (เมิน)
+        appUpdate.mustReload = !!(appUpdate.minVersion && verGreater(appUpdate.minVersion, APP_VERSION));
         return;
       }
       // ยังไม่ได้วาง version.json ไว้บนโฮสต์ — ถามตรง ๆ ว่าไฟล์เปลี่ยนหรือยัง
@@ -29333,12 +29445,147 @@ function checkAppUpdate(manual){
     .then(() => {
       appUpdate.checking = false;
       appUpdate.checkedAt = nowIso();
+      if(appUpdate.mustReload){
+        safeRender();
+        maybeForceReload();
+        return;
+      }
       if((appUpdate.newer || appUpdate.changed) && !appUpdate.notified){
         appUpdate.notified = true;
         flashToast('มีเวอร์ชันใหม่' + (appUpdate.latest ? ' v' + appUpdate.latest : '') + ' — ไปที่ ตั้งค่า แล้วกดโหลดเวอร์ชันล่าสุด');
       }
       safeRender();
     });
+}
+
+/* v5.1.6 — minVersion ใน version.json (เจ้าของอนุมัติ · เงื่อนไขความปลอดภัย SEC-4/5/6)
+   เครื่องที่ APP_VERSION ต่ำกว่า minVersion = รุ่นที่รู้ว่ามีบั๊กทำข้อมูลหาย ต้องโหลดใหม่เอง ไม่รอคนกด
+   - รับเฉพาะสตริง <= 20 ตัว รูป ^\d{1,4}\.\d{1,4}\.\d{1,4}$ และไม่สูงกว่า version ในไฟล์เดียวกัน (ไม่งั้นเมิน)
+   - โหลดเองได้ "ครั้งเดียว" ต่อค่า minVersion ต่อเครื่อง (localStorage gsms.forcedReloadFor) โหลดแล้วยังเก่าอยู่
+     (CDN ส่งไฟล์เก่า / ตั้ง minVersion สูงกว่าที่ deploy) = ไม่โหลดซ้ำ ขึ้นแถบ "ต้องอัปเดต" พร้อมปุ่มแทน
+   - ลำดับ: เครื่องว่าง (ไม่มีกล่อง / ไม่ได้พิมพ์ / ไม่มีร่างรับรถหรือรูป / ไม่แก้ใบงาน / ไม่มีข้อความ LINE ค้าง /
+     ไม่มีงานสต็อกค้าง / ไม่ได้ออกจากระบบ-สลับสาขา) และ (หน้าถูกซ่อน หรือไม่มีใครแตะเครื่อง >= 10 วิ)
+     -> flushState -> waitForPendingWrites ต้องจบภายใน 8 วิ -> updateAppNow (ล้างแคช + ?_v=)
+   - waitForPendingWrites ไม่จบ (ออฟไลน์) = ไม่โหลด ขึ้นแถบพร้อมปุ่ม แล้วโหลดเองเมื่อการเขียนชุดนั้นจบจริงเท่านั้น ไม่วนส่งซ้ำ
+   - ใช้กับหน้า ?board / ?reception ด้วย (กฎครั้งเดียวเหมือนกัน) · ไม่เขียนอะไรลง state / config/main */
+const MIN_VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
+const FORCED_RELOAD_KEY = 'gsms.forcedReloadFor';
+const FORCE_RELOAD_RETRY_MS = 5000;
+const FORCE_RELOAD_WAIT_MS = 8000;
+const FORCE_RELOAD_IDLE_MS = 10000;
+let forceReloadPhase = 'idle';      // idle | waiting | stuck (รอการเขียนจบ) | done (สั่งโหลดแล้ว / ห้ามโหลดซ้ำ)
+let forceReloadPhaseFor = null;     // ค่า minVersion ที่ phase นี้เป็นของ (ค่าใหม่ = เริ่มใหม่ ได้อีกหนึ่งครั้ง)
+let forceReloadTimer = null;
+let forceReloadBanner = null;
+let lastUserInputAt = 0;            // 0 = ยังไม่มีใครแตะตั้งแต่เปิดหน้า
+try {
+  // จดเวลาอย่างเดียว (passive) ไม่ preventDefault ไม่ปิดกล่อง = ไม่สร้าง ghost click
+  ['pointerdown', 'touchstart', 'keydown'].forEach(t => document.addEventListener(t, () => { lastUserInputAt = Date.now(); }, { passive: true, capture: true }));
+} catch(e){}
+// คืนค่า minVersion ที่ใช้ได้ หรือ null
+function parseMinVersion(info){
+  const mv = info && info.minVersion;
+  if(typeof mv !== 'string' || mv.length > 20 || !MIN_VERSION_RE.test(mv)) return null;
+  if(info.version && verGreater(mv, String(info.version))) return null;   // สูงกว่า version ในไฟล์เดียวกัน = ตั้งผิด
+  return mv;
+}
+function forcedReloadDoneFor(mv){
+  try { return !!mv && localStorage.getItem(FORCED_RELOAD_KEY) === mv; } catch(e){ return false; }
+}
+function appIsIdleForReload(){
+  try {
+    if(logoutBusy || view.branchSwitch) return false;
+    if(document.getElementById('ui-modal-root')) return false;          // รวมแผ่นลายเซ็น / uiPrompt / uiModal / กล่องสต็อก
+    if(document.querySelector('.ui-modal-overlay')) return false;
+    const el = document.activeElement;
+    if(el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || '')) return false;
+    if(view.je_editing) return false;
+    if((view.ci_photos || []).length) return false;
+    if(view.tab === 'checkin' && hasCheckinDraft()) return false;
+    if(view.lineDraft) return false;
+    if(view.stockAdj || view.stockRcv || view.stockPick || view.stockRet || view.stockEdit) return false;
+  } catch(e){ return false; }
+  return true;
+}
+function deviceQuietForReload(){
+  return !!document.hidden || !lastUserInputAt || (Date.now() - lastUserInputAt >= FORCE_RELOAD_IDLE_MS);
+}
+function forceUpdateMsg(){
+  const v = 'v' + (appUpdate.minVersion || appUpdate.latest || '');
+  if(forceReloadPhase === 'stuck') return 'ต้องอัปเดตเป็น ' + v + ' — ยังส่งข้อมูลขึ้นไม่ครบ (เน็ตหลุด?) จะโหลดใหม่เองเมื่อส่งครบ';
+  if(forceReloadPhase === 'done') return 'ต้องอัปเดตเป็น ' + v + ' — โหลดใหม่แล้วยังได้รุ่นเก่า กดปุ่มนี้อีกครั้ง หรือแจ้งเจ้าของ';
+  return 'ต้องอัปเดตเป็น ' + v + ' — แอปจะโหลดใหม่เองเมื่อว่าง (บันทึกงานให้เสร็จก่อน)';
+}
+// แถบ "ต้องอัปเดต": แอปพนักงานวาดใน render() (forceUpdateBannerHtml) · หน้า ?board / ?reception ใช้ element ของตัวเอง
+function forceUpdateBannerHtml(){
+  if(!appUpdate.mustReload) return '';
+  return `<div class="force-update-banner no-print" role="alert"><span class="fub-text">${escapeHtml(forceUpdateMsg())}</span><button type="button" class="btn small" onclick="forceUpdateNowTap()">โหลดเวอร์ชันใหม่ตอนนี้</button></div>`;
+}
+function showForceUpdateBanner(){
+  try {
+    if(!(isReceptionMode() || isBoardMode() || isHomeMode() || isFeedbackMode())){ safeRender(); return; }
+    if(!forceReloadBanner){
+      const b = document.createElement('div');
+      b.className = 'force-update-banner no-print';
+      b.setAttribute('role', 'alert');
+      const t = document.createElement('span'); t.className = 'fub-text';
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn small'; btn.textContent = 'โหลดเวอร์ชันใหม่ตอนนี้';
+      btn.onclick = forceUpdateNowTap;
+      b.appendChild(t); b.appendChild(btn);
+      document.body.appendChild(b);
+      forceReloadBanner = { root: b, text: t };
+    }
+    forceReloadBanner.text.textContent = forceUpdateMsg();   // textContent เท่านั้น (เลขเวอร์ชันมาจากเซิร์ฟเวอร์)
+  } catch(e){}
+}
+function scheduleForceReloadRetry(){
+  clearTimeout(forceReloadTimer);
+  forceReloadTimer = setTimeout(maybeForceReload, FORCE_RELOAD_RETRY_MS);
+}
+function doForcedReload(){
+  try { localStorage.setItem(FORCED_RELOAD_KEY, appUpdate.minVersion); } catch(e){}
+  forceReloadPhase = 'done';
+  try { if(view.hubDismissed) sessionStorage.setItem(HUB_DISMISSED_ONCE_KEY, '1'); } catch(e){}
+  updateAppNow();
+}
+function maybeForceReload(){
+  if(!appUpdate.mustReload) return false;
+  if(forceReloadPhaseFor !== appUpdate.minVersion){
+    if(forceReloadPhase !== 'waiting' && forceReloadPhase !== 'stuck') forceReloadPhase = 'idle';
+    forceReloadPhaseFor = appUpdate.minVersion;
+  }
+  if(forceReloadPhase === 'idle' && forcedReloadDoneFor(appUpdate.minVersion)) forceReloadPhase = 'done';   // SEC-4: โหลดเองไปแล้วรอบหนึ่ง ห้ามวน
+  showForceUpdateBanner();
+  if(forceReloadPhase !== 'idle') return false;
+  if(!appIsIdleForReload() || !deviceQuietForReload()){ scheduleForceReloadRetry(); return false; }
+  forceReloadPhase = 'waiting';
+  try { clearTimeout(saveTimer); if(db && dataReady) flushState(false); } catch(e){}
+  let pending;
+  try { pending = (db && typeof db.waitForPendingWrites === 'function') ? Promise.resolve(db.waitForPendingWrites()) : Promise.resolve(); }
+  catch(e){ pending = Promise.reject(e); }
+  settledWithin(pending, FORCE_RELOAD_WAIT_MS).then(synced => {
+    if(!synced){
+      // SEC-5: ยังไม่ยืนยันว่าส่งครบ = ห้ามโหลด · รอการเขียนชุดนี้จบจริงครั้งเดียว ไม่ flush/wait วนซ้ำ
+      forceReloadPhase = 'stuck';
+      showForceUpdateBanner();
+      pending.then(() => { if(forceReloadPhase === 'stuck'){ forceReloadPhase = 'idle'; maybeForceReload(); } }, () => {});
+      return;
+    }
+    if(!appIsIdleForReload()){ forceReloadPhase = 'idle'; scheduleForceReloadRetry(); return; }
+    doForcedReload();
+  });
+  return true;
+}
+// ปุ่มบนแถบ: คนกดเอง = ยอมโหลด · แต่ยังส่งไม่ครบให้ถามก่อน (ข้อมูลที่ยังไม่ขึ้นอาจหาย)
+function forceUpdateNowTap(){
+  try { clearTimeout(saveTimer); if(db && dataReady) flushState(false); } catch(e){}
+  let pending;
+  try { pending = (db && typeof db.waitForPendingWrites === 'function') ? db.waitForPendingWrites() : Promise.resolve(); } catch(e){ pending = Promise.reject(e); }
+  settledWithin(pending, 3000).then(synced => {
+    const go = () => { try { if(view.hubDismissed) sessionStorage.setItem(HUB_DISMISSED_ONCE_KEY, '1'); } catch(e){} forceReloadPhase = 'done'; updateAppNow(); };
+    if(synced) go();
+    else uiConfirm('ยังส่งข้อมูลขึ้นเซิร์ฟเวอร์ไม่ครบ\n\nโหลดใหม่ตอนนี้ งานที่ยังไม่ขึ้นอาจหาย — ต่อเน็ตแล้วรอสักครู่ดีกว่า', go, 'โหลดใหม่เลย', 'รอก่อน');
+  });
 }
 
 /* ล้างแคชและถอน service worker เก่า — ยกเว้นตัวของการแจ้งเตือน
@@ -35239,7 +35486,17 @@ function boot(){
   setTimeout(() => checkAppUpdate(false), 8000);
   setInterval(() => checkAppUpdate(false), 30 * 60 * 1000);
   document.addEventListener('visibilitychange', () => {
-    if(!document.hidden && appUpdate.checkedAt && Date.now() - new Date(appUpdate.checkedAt).getTime() > 10 * 60 * 1000){
+    // v5.1.6 — minVersion: หน้าถูกซ่อน = จังหวะปลอดภัยที่สุด (ยังต้องผ่านด่านเครื่องว่าง + ส่งครบ) · กลับมาที่แอปก็ลองอีกครั้ง
+    if(appUpdate.mustReload){ maybeForceReload(); return; }
+    if(document.hidden) return;
+    if(appUpdate.checkedAt && Date.now() - new Date(appUpdate.checkedAt).getTime() > 10 * 60 * 1000){
+      checkAppUpdate(false);
+    }
+  });
+  // v5.1.6 — focus ด้วย (iPad สลับแอปบางทีไม่ยิง visibilitychange)
+  window.addEventListener('focus', () => {
+    if(appUpdate.mustReload){ maybeForceReload(); return; }
+    if(appUpdate.checkedAt && Date.now() - new Date(appUpdate.checkedAt).getTime() > 10 * 60 * 1000){
       checkAppUpdate(false);
     }
   });
