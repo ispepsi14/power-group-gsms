@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.7";
+  const APP_VERSION = "5.1.8";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3422,6 +3422,17 @@
                  ชื่อร้าน รายชื่อช่าง ฯลฯ ของทั้งร้าน (cfgMainUnconfirmed) · สาขาใหม่ที่เซิร์ฟเวอร์ยืนยันว่าไม่มีเอกสาร ยังสร้างได้
               ไม่แตะ firestore.rules
               เทสต์: tests/price-unit-memory.guard.js · tests/sync-safety.guard.js
+     v5.1.8 — เมนูผู้ใช้เลื่อนขึ้นลงได้บนจอเล็ก (2026-11-17) · งาน user-menu-scroll
+              ภาพจากมือถือเจ้าของ: เมนูมุมขวาบนสูงเกินจอ ปุ่มออกจากระบบอยู่นอกจอ เลื่อนไม่ได้
+              1. .user-menu มีความสูงสูงสุดตามจอ calc(100vh - 88px) (+ แบบ 100dvh สำหรับ iOS Safari)
+                 เป็น flex column · หัวเมนู (.um-head) อยู่กับที่ · .um-list เลื่อนเอง (overflow-y:auto,
+                 min-height:0, overscroll-behavior:contain) · มุมโค้ง 16px / overflow:hidden คงเดิม
+              2. จอสัมผัส (เงื่อนไขเดียวกับแถบล่าง) หักความสูงแถบล่าง + safe-area ล่างด้วย
+                 calc(100dvh - 144px - env(safe-area-inset-bottom)) เพราะแถบล่าง z-index สูงกว่าเมนู
+              3. รายชื่อ "กำลังใช้งานตอนนี้" (.um-presence) อยู่กับที่ เพดาน 30vh เลื่อนในตัวเองถ้าคนเยอะ
+              CSS ล้วน ไม่มีตัวฟัง scroll/touch ไม่แตะ render() · สีใช้ตัวแปรเดิม โหมดมืดไม่เปลี่ยน
+              ไม่แตะ firestore.rules / config/main / flushState
+              เทสต์: tests/user-menu-scroll.guard.js
               -->
 
 
@@ -3690,10 +3701,23 @@
     position:absolute; top:calc(100% + 10px); right:0; z-index:40; min-width:252px;
     background:var(--card-bg); border:1px solid var(--border); border-radius:16px; overflow:hidden;
     box-shadow:0 16px 40px rgba(20,24,29,.20), 0 2px 8px rgba(20,24,29,.10);
+    /* v5.1.8 user-menu-scroll — เมนูเคยสูงตามเนื้อหาล้วน ๆ บนมือถือรายการล่าง (ออกจากระบบ) ล้นจอ
+       และเลื่อนไม่ได้ เพราะเมนู position:absolute อยู่ในแถบบนที่ sticky (หน้าเลื่อนไปก็ตามไปด้วย)
+       จึงจำกัดความสูงตามจอ แล้วให้เฉพาะ .um-list เลื่อน หัวเมนู (ชื่อผู้ใช้) อยู่กับที่
+       72px = ระยะจากขอบบนจอถึงขอบบนเมนู (แถบบน padding 9-11px + ของสูงสุดในแถบ ~48px ครึ่งบน/ชิป ~44px
+       + ช่องว่าง 10px) ปัดขึ้นเผื่อชิปสองบรรทัดเมื่อโชว์สาขา · 16px = ขอบล่างให้เห็นมุมโค้ง
+       แถบบนไม่ใช้ env(safe-area-inset-top) (status-bar-style "black" = เนื้อหาเริ่มใต้แถบสถานะ) จึงไม่ต้องลบ
+       บรรทัด 100dvh ต้องอยู่หลัง 100vh: เบราว์เซอร์ที่ไม่รู้จัก dvh จะทิ้งบรรทัดนั้นแล้วใช้ vh
+       ส่วน iOS Safari 100vh = จอตอนแถบที่อยู่หดแล้ว (สูงกว่าที่เห็นจริง) dvh จึงกันปุ่มล่างจมใต้แถบที่อยู่
+       overflow:hidden เดิมคงไว้ให้มุมโค้ง 16px ตัดพื้นหัวเมนู/แถบเลื่อน · ความสูงบนจอสัมผัสดู @media ด้านล่าง */
+    max-height:calc(100vh - 88px);
+    max-height:calc(100dvh - 88px);
+    display:flex; flex-direction:column;
   }
   .um-head{
     padding:15px 16px; background:linear-gradient(135deg, var(--dark), #2c333c);
     display:flex; align-items:center; gap:11px;
+    flex-shrink:0;   /* v5.1.8 user-menu-scroll — หัวไม่หด ชื่อผู้ใช้เห็นตลอด รายการข้างล่างเลื่อนแทน */
   }
   .um-avatar{
     flex-shrink:0; width:38px; height:38px; border-radius:50%;
@@ -3703,7 +3727,15 @@
   }
   .um-name{font-weight:700; font-size:14px; color:#fff;}
   .um-mail{font-size:11px; color:rgba(255,255,255,.62); margin-top:1px; word-break:break-all;}
-  .um-list{padding:7px;}
+  .um-list{
+    padding:7px;
+    /* v5.1.8 user-menu-scroll — ตัวที่เลื่อนจริง: min-height:0 ให้ flex หดต่ำกว่าความสูงเนื้อหาได้
+       (ค่าเริ่มต้น min-height:auto ทำให้มันไม่ยอมหด แล้วล้นออกนอกเมนูเหมือนเดิม)
+       overscroll-behavior:contain = เลื่อนสุดรายการแล้วหน้าข้างหลังไม่เลื่อนตาม / ไม่ดึงรีเฟรช
+       ห้ามผูกตัวฟัง scroll/touch ที่เรียก render() ตรงนี้ — วาดใหม่ทั้งแอพ = เมนูกระตุกกลับบนสุด */
+    flex:1 1 auto; min-height:0;
+    overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
+  }
   .um-item{
     display:flex; align-items:center; gap:10px; width:100%; text-align:left;
     background:none; border:none; border-radius:10px;
@@ -3737,6 +3769,20 @@
   .presence-strip .presence-dot:first-child{margin-left:0;}
   .presence-dot.presence-more{background:rgba(255,255,255,0.14) !important; color:#dfe3e7;}
   .um-presence{padding:10px 16px; border-bottom:1px solid var(--border);}
+  /* v5.1.8 user-menu-scroll — รายชื่อคนออนไลน์อยู่กับที่ (ไม่หด) แต่ถ้าคนเยอะ (~10 คน = ~340px)
+     จะกินที่จนรายการเมนูเหลือแถบเดียวบนมือถือจอเตี้ย จึงเพดาน 30vh แล้วให้มันเลื่อนในตัวเอง
+     (ปกติ 2-4 คน ไม่ถึงเพดาน ไม่มีแถบเลื่อนโผล่) */
+  .um-presence{flex-shrink:0; max-height:30vh; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;}
+  /* v5.1.8 user-menu-scroll — จอสัมผัส (เงื่อนไขเดียวกับ Tier 1 ที่โชว์แถบล่าง .bottom-nav)
+     แถบล่าง position:fixed z-index:30 อยู่ "เหนือ" เมนู เพราะเมนูอยู่ใน stacking context ของ .app-bar (z-index:20)
+     ถ้าไม่หักความสูงแถบล่าง (ปุ่ม 56px + เส้นขอบ ~ 60px + safe-area ล่างของ iPhone) ปุ่มออกจากระบบ
+     จะไปจมใต้แถบล่างพอดีแม้เลื่อนสุดแล้ว · 144px = 72 (บน) + 60 (แถบล่าง) + 12 (ช่องว่าง) */
+  @media (max-width:1100px), (pointer:coarse) and (max-width:1400px){
+    .user-menu{
+      max-height:calc(100vh - 144px - env(safe-area-inset-bottom, 0px));
+      max-height:calc(100dvh - 144px - env(safe-area-inset-bottom, 0px));
+    }
+  }
   .um-presence-lab{font-size:11px; font-weight:700; color:var(--text-2); margin-bottom:7px;}
   .um-presence-row{display:flex; align-items:center; gap:9px; font-size:13px; color:var(--text); padding:3px 0;}
   .um-presence-row .presence-dot{width:24px; height:24px; font-size:10.5px; margin-left:0; border-color:var(--card-bg);}
