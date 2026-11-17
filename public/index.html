@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.6";
+  const APP_VERSION = "5.1.7";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3405,6 +3405,23 @@
                  ตรวจตอนเปิด (8 วิ) / ทุก 30 นาที / visibilitychange / focus · รอบนี้ยังไม่ใส่ minVersion ใน version.json
               ไม่แตะ firestore.rules / config/main / flushState / ความจำราคา
               เทสต์: tests/card-doubletap.guard.js · tests/min-version.guard.js
+     v5.1.7 — แก้ราคาที่จำไว้ผิดหน่วย + กันงานหายตอนบันทึกไม่ผ่าน (2026-11-17) · งาน fix-p1-5.1.7 (bug-audit-5.1.6)
+              1. B1/B2 ราคาที่ระบบจำไว้ใช้หน่วยผิด -> ใบเสนอราคาเบิ้ลเป็นสองเท่า ตอนนี้ใช้หน่วยของแบรนด์ที่จำราคาไว้เอง
+                 และแปลง คู่ <-> ชิ้น ให้ตรงหน่วยของบรรทัด (recallPartPrice / fillRecalledPrice / onJobPartFieldChange)
+              2. B6 บรรทัดที่มาจากปุ่มอาการ (applySymptomItems) ติดแบรนด์มาด้วย ราคาที่เติมจึงเป็นของแบรนด์นั้น
+              3. BA-1 (backend-dev) รับรถ/ลูกค้า/รถใหม่ ไม่หายเงียบเมื่อเซิร์ฟเวอร์ไม่รับ: ใบใหม่ที่ยังรอผลไม่เข้า shadow
+                 (mergeSnapshotRows) · flushState จำใบที่กำลังสร้าง (inflightCreates) ไม่ส่ง editLog ซ้ำระหว่างรอ
+                 config/main แบบเดียวกัน (applyConfigSnapshot คงค่า shadow ของคีย์ที่กำลังส่ง)
+              4. BA-2 บังคับโหลดใหม่ / ปุ่ม "โหลดเวอร์ชันใหม่ตอนนี้" / ออกจากระบบ ไม่ทิ้งงานที่เซิร์ฟเวอร์ไม่รับอีกแล้ว
+                 (waitForPendingWrites จบทั้งที่ถูกปฏิเสธ) โหลดเอง = ไม่โหลด แถบขึ้นว่ายังมีงานค้าง · ปุ่ม/ออกจากระบบ = ถามก่อน
+                 นับด้วย unsavedLocalCount({savableOnly}) — คีย์ตั้งค่าที่พนักงานไม่มีสิทธิ์ (ไม่มีวันขึ้น) ไม่นับ
+                 ถอน push token ย้ายไปต้น logoutFinish (ทางที่ออกจริงเท่านั้น) กด "รอก่อน" แล้วยังได้แจ้งเตือน (security ข้อ 5)
+              5. BA-4 สถานะ/ช่อง/ช่างที่อีกเครื่องเพิ่งแก้ ไม่ถูกเด้งกลับเป็นค่าเก่า: commit ผ่านแล้วเลื่อน shadow
+                 เฉพาะช่องที่ไม่มี snapshot ใหม่กว่ามาก่อน (mergeShadowAfterCommit) ทั้งใบงานและ config/main
+              6. BA-5 เครื่องแอดมินที่ยังไม่เคยได้ config/main จากเซิร์ฟเวอร์ (ตัวฟังล้ม / cache ว่าง) ไม่เขียนค่าเริ่มต้นทับ
+                 ชื่อร้าน รายชื่อช่าง ฯลฯ ของทั้งร้าน (cfgMainUnconfirmed) · สาขาใหม่ที่เซิร์ฟเวอร์ยืนยันว่าไม่มีเอกสาร ยังสร้างได้
+              ไม่แตะ firestore.rules
+              เทสต์: tests/price-unit-memory.guard.js · tests/sync-safety.guard.js
               -->
 
 
@@ -10187,6 +10204,11 @@ function recallPartPrice(job, name, variant, wantBrand){
     if(part){
       const lp = part.lastPrice;
       const base = { qty: part.qty || '', unit: part.unit || '', same: true, from: '' };
+      /* v5.1.7 fix-p1 B1 — part.qty/part.unit เป็นช่องรวม ถูกเขียนทับโดย "แบรนด์ที่คีย์ล่าสุด"
+         ราคา OEM 1,800 ที่จำไว้ต่อ "คู่" จึงถูกส่งออกไปพร้อมหน่วย "ชิ้น" ของรีบิ้ว แล้วกลายเป็น
+         1,800 ต่อชิ้น (ลูกค้าโดนเก็บ 3,600) — stamp แต่ละอันเก็บ qty/unit ของตัวเองไว้แล้ว (rememberJobPartPrice)
+         ใช้ของ stamp ก่อน · stamp เก่าที่ไม่มี unit ค่อยถอยไปใช้ช่องรวมเหมือนเดิม */
+      const own = st => (st && st.unit) ? { qty: st.qty || '', unit: st.unit } : {};
       // ช่างเลือกแบรนด์ไว้แล้ว ต้องได้ราคาของแบรนด์นั้น ไม่ใช่ราคาแบรนด์อื่นที่บังเอิญมาก่อน
       if(wantBrand){
         const b = (part.brands || []).find(x => x.price && mmNorm(x.brand) === mmNorm(wantBrand));
@@ -10194,18 +10216,18 @@ function recallPartPrice(job, name, variant, wantBrand){
         // v4.2.8 — ราคาที่ช่างเคยคีย์ไว้ "ของแบรนด์นี้" โดยเฉพาะ
         const mine = (part.lastPriceByBrand || {})[brandKeyOf(wantBrand)];
         if(mine && mine.price)
-          return Object.assign({ price: mine.price, brand: mine.brand || '', at: mine.at || '' }, base);
+          return Object.assign({ price: mine.price, brand: mine.brand || '', at: mine.at || '' }, base, own(mine));
         if(lp && lp.price && mmNorm(lp.brand) === mmNorm(wantBrand))
-          return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base);
+          return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base, own(lp));
         /* เลือกแบรนด์ไว้แล้วแต่ไม่มีราคาของแบรนด์นั้นเลย — เสนอของแบรนด์อื่นได้
            แต่ห้ามเติมให้เอง (same:false) เพราะ OEM กับรีบิ้วต่างกันเป็นพัน
            เดิมตรงนี้ตกไปถึงบรรทัดล่างแล้วเติมราคาแบรนด์อื่นให้เงียบ ๆ */
         if(lp && lp.price)
           return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' },
-                               base, { same: false, otherBrand: true });
+                               base, own(lp), { same: false, otherBrand: true });
       }
       if(lp && lp.price)
-        return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base);
+        return Object.assign({ price: lp.price, brand: lp.brand || '', at: lp.at || '' }, base, own(lp));
       const b2 = (part.brands || []).find(x => x.price);
       if(b2) return Object.assign({ price: b2.price, brand: b2.brand || '', at: '' }, base);
     }
@@ -10271,6 +10293,35 @@ function priceHintHtml(job, row){
   </div>`;
 }
 
+/* v5.1.7 fix-p1 B1/B2 — ราคาที่จำไว้ "ผูกกับหน่วยที่จำ" ใส่ลงบรรทัดที่หน่วยต่างกันตรง ๆ ไม่ได้
+   ใช้กติกาเดียวกับการเปลี่ยนหน่วยด้วยมือ (pairUnitPriceShift: คู่ ↔ หน่วยเดี่ยว) แปลงเป็นราคาต่อหน่วยของบรรทัด
+   คืน { price, unit, fits } · fits === false = หน่วยต่างกันแบบแปลงไม่ได้ (เช่น ชุด กับ ชิ้น) */
+function recalledPriceForRow(row, hit){
+  const price = parseMoney(hit.price);
+  const ru = row.unit || '', hu = hit.unit || '';
+  if(!hu || !ru || hu === ru) return { price: price, unit: hu || ru, fits: true };
+  const tmp = { price: price };
+  if(pairUnitPriceShift(tmp, hu, ru)) return { price: parseMoney(tmp.price), unit: ru, fits: true };
+  return { price: price, unit: hu, fits: false };
+}
+/* v5.1.7 fix-p1 B1 — เติมราคาที่จำไว้ลงบรรทัดที่ราคายังว่าง
+   เดิม: row.unit = hit.unit แต่ row.qty ของช่างค้างไว้ → 2 (ชิ้น) × 1,800 (ต่อคู่) แปะหน่วย "คู่" = 3,600
+   ถ้าบรรทัดยังไม่มีจำนวน หรือจำนวนตรงกับที่จำไว้ = รับทั้งชุด (จำนวน+หน่วย+ราคา) เหมือนเดิม
+   ไม่งั้นเคารพจำนวน/หน่วยที่ช่างใส่ แล้วแปลงราคาให้เป็นต่อหน่วยของบรรทัด
+   แปลงไม่ได้ (ชุด/ชิ้น) ถอยไปพฤติกรรมเดิม — ไม่มีกติกาแปลงให้ยึด */
+function fillRecalledPrice(row, hit){
+  if(!row.brand && hit.brand) row.brand = hit.brand;
+  if(!row.qty || parseQty(hit.qty) === parseQty(row.qty)){
+    row.price = parseMoney(hit.price);
+    if(!row.qty && hit.qty) row.qty  = hit.qty;
+    if(hit.unit)            row.unit = hit.unit;
+    return;
+  }
+  const fit = recalledPriceForRow(row, hit);
+  row.price = fit.price;
+  if(fit.unit) row.unit = fit.unit;
+}
+
 function usePriceHint(jobId, rowId){
   const job = getJob(jobId);
   if(!job) return;
@@ -10278,20 +10329,17 @@ function usePriceHint(jobId, rowId){
   if(!row) return;
   const h = recallPartPrice(job, row.partName, row.variant, row.brand);
   if(!h) return;
-  row.price = parseMoney(h.price);
-  if(!row.brand && h.brand) row.brand = h.brand;
-  if(!row.qty && h.qty)     row.qty   = h.qty;
-  if(h.unit)                row.unit  = h.unit;
+  fillRecalledPrice(row, h);   // v5.1.7 fix-p1 B1 — ทางเดียวกับการเติมอัตโนมัติ
   /* v4.3.2 — ข้อ M5: v4.2.10 ปิดรูทาง onJobPartFieldChange ด้วยธง brandPriceIsForeign
      แต่ปุ่มนี้เรียก rememberJobPartPrice ตรง ๆ โดยไม่มีธงนั้น กดปุ่มเดียวแล้ว
      ราคาของแบรนด์อื่นถูกจำเป็นราคาของแบรนด์ที่เลือกลงตำราถาวร
      ใส่เลขบนใบให้ช่างเห็นและแก้ได้ แต่ไม่จำลงตำรา และเตือนให้ตรวจก่อนออกใบ */
   if(h.otherBrand){
     row.priceForeign = true;      // v4.3.3 — ธงติดบรรทัด จนกว่าช่างจะคีย์ราคาเอง
-    flashToast(`ใส่ ฿${fmtMoney(parseMoney(h.price))} แล้ว — เลขนี้เป็นราคาของ ${h.brand || 'แบรนด์อื่น'} ยังไม่จำเป็นราคาของ ${row.brand} ตรวจก่อนออกใบ`);
+    flashToast(`ใส่ ฿${fmtMoney(parseMoney(row.price))} แล้ว — เลขนี้เป็นราคาของ ${h.brand || 'แบรนด์อื่น'} ยังไม่จำเป็นราคาของ ${row.brand} ตรวจก่อนออกใบ`);
   } else {
     rememberJobPartPrice(job, row);
-    flashToast(`ใส่ราคา ฿${fmtMoney(parseMoney(h.price))} แล้ว`);
+    flashToast(`ใส่ราคา ฿${fmtMoney(parseMoney(row.price))} แล้ว`);   // v5.1.7 fix-p1 B1 — เลขบนบรรทัดจริง (อาจแปลงหน่วยแล้ว)
   }
   saveState(true);
   render();
@@ -10577,9 +10625,13 @@ function applySymptomItems(job, s, text){
   s.parts.forEach(mp => {
     if(inAddedPromo[mp.id]) return;
     if(job.partsNeeded.some(p => samePartLine(p, mp.partName, mp.variant))) return;   // v4.6.8 K4-a
+    /* v5.1.7 fix-p1 B6 — เดิม brand: '' แต่ราคามาจากแบรนด์ล่าสุด (เช่น OEM 14,500) ใบพิมพ์แบรนด์ "-"
+       และพอแก้จำนวน ราคา OEM ถูกจำเข้าช่อง "ไม่ระบุแบรนด์" — ใช้ partPriceAndBrand แบบเดียวกับชิปอะไหล่
+       (v4.3.2) ราคากับแบรนด์จึงมาจากที่เดียวกันเสมอ */
+    const pb = partPriceAndBrand(mp);
     job.partsNeeded.push({ id: uid(), partName: mp.partName, variant: mp.variant || '',
                            qty: mp.qty || '', unit: mp.unit || 'ชิ้น',
-                           brand: '', price: partPriceOf(mp), note: '' });
+                           brand: pb.brand, price: pb.price, note: '' });
     added++;
   });
   if(added === 0){ flashToast('รายการของอาการนี้อยู่ในใบเสนอราคาแล้ว'); return; }
@@ -12909,6 +12961,46 @@ function rebasePendingRow(local, server, prevEnc, col, note){
   return replaceRowInPlace(local, base);
 }
 
+/* v5.1.7 fix-p1 BA-1 / BA-4 — ตัวช่วยของ shadow ทีละช่องบนสุด (rows ใช้ stableJson ที่มี id · config ใช้ buildConfigPayload)
+   parseEncObj: '' / undefined = {} · พัง = null (ผู้เรียกถอยไปพฤติกรรมเดิม) */
+function parseEncObj(enc){
+  if(enc === undefined || enc === null || enc === '') return {};
+  try { const o = JSON.parse(enc); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null; } catch(e){ return null; }
+}
+/* BA-1 — snapshot ที่มีของที่เครื่องนี้เขียนค้าง (hasPendingWrites): ช่องที่ "ตรงกับในเครื่อง แต่ต่างจาก shadow"
+   คือของที่กำลังส่ง -> คงค่า shadow เดิมไว้ (ถ้าถูกปฏิเสธ ยังนับเป็นของค้าง ส่งซ้ำได้) · ช่องอื่น (เครื่องอื่นแก้) เลื่อนตามเซิร์ฟเวอร์
+   เดิม R4 ทำแบบทั้งแถวเฉพาะตอนในเครื่อง = snapshot เป๊ะ พอมีเครื่องอื่นแก้ช่องอื่นพร้อมกัน ช่องที่ยังไม่ยืนยันก็เข้า shadow ไปด้วย */
+function pendingSnapshotShadow(enc, prevEnc, local){
+  const s = parseEncObj(enc), p = parseEncObj(prevEnc);
+  if(!s || !p || !local) return enc;
+  const out = {};
+  let moved = false;
+  Object.keys(Object.assign({}, s, p)).forEach(k => {
+    const sv = stableJson(s[k]), pv = stableJson(p[k]);
+    const mine = sv !== pv && sv === stableJson(local[k]);
+    if(!mine && sv !== pv) moved = true;
+    const src = mine ? p : s;
+    if(Object.prototype.hasOwnProperty.call(src, k)) out[k] = src[k];
+  });
+  return moved ? stableJson(out) : prevEnc;          // ไม่มีช่องไหนเลื่อน = shadow เดิมเป๊ะ (R4 เดิม)
+}
+/* BA-4 — commit ผ่านแล้ว: ช่องที่ shadow ยังเท่ากับตอนเริ่ม flush -> ค่าที่เพิ่งส่ง · ช่องที่ snapshot เลื่อนไประหว่างรอ
+   (เครื่องอื่นแก้ เซิร์ฟเวอร์รู้ค่าที่ใหม่กว่า) -> คงไว้ · เดิมเขียนทับทั้งแถวด้วยค่าที่จับไว้ตอนเริ่ม flush
+   shadow จึงถอยเป็นของเก่า แล้วรอบถัดไปเข้าใจว่า "เครื่องนี้แก้เอง" ส่งค่าเก่ากลับไปทับเครื่องอื่น */
+function mergeShadowAfterCommit(cur, start, committed){
+  if(cur === start) return committed;
+  if(start === undefined) return committed;                              // เอกสารใหม่ = set ทั้งเอกสาร ค่าที่ส่งคือทั้งเอกสาร
+  if(cur === undefined || cur === null || cur === '') return committed;   // แถวหลุดจาก shadow ระหว่างรอ = พฤติกรรมเดิม
+  const c = parseEncObj(cur), s = parseEncObj(start), m = parseEncObj(committed);
+  if(!c || !s || !m) return committed;
+  const out = {};
+  Object.keys(Object.assign({}, c, s, m)).forEach(k => {
+    const src = stableJson(c[k]) === stableJson(s[k]) ? m : c;
+    if(Object.prototype.hasOwnProperty.call(src, k)) out[k] = src[k];
+  });
+  return stableJson(out);
+}
+
 function mergeSnapshotRows(col, incoming, opts){
   __unitAuditCache = null;   // v4.3.9 — snapshot เข้ามา ราคาอาจเปลี่ยนโดยที่จำนวนใบเท่าเดิม
   const prevShadow = shadow[col] || {};
@@ -12933,10 +13025,23 @@ function mergeSnapshotRows(col, incoming, opts){
     const prevEnc = prevShadow[data.id];
     const local = localById[data.id];
     const localEnc = local ? stableJson(local) : null;
-    nextShadow[data.id] = (pendingWriteIds && pendingWriteIds[data.id] && prevEnc !== undefined && localEnc === enc)
-      ? prevEnc : enc;                             // R4
+    const pw = !!(pendingWriteIds && pendingWriteIds[data.id]);
+    /* v5.1.7 fix-p1 BA-1 — เอกสารใหม่ของเครื่องนี้ที่ยังรอเซิร์ฟเวอร์ตอบ (pw + ไม่มี prevEnc + มีในเครื่อง)
+       ห้ามเข้า shadow · เดิม R4 ใช้ได้เฉพาะ prevEnc !== undefined ใบใหม่จึงได้ shadow = enc ทันที
+       แล้วถ้า commit ถูกปฏิเสธ snapshot ถัดไปที่ไม่มีใบนั้นจะลบทิ้ง (prevShadow มีค่าแล้ว) และไม่ส่งซ้ำอีก
+       = ใบรับรถหายทั้งใบ · ตัวกันการส่งซ้ำระหว่างรอ (editLog update:false) อยู่ที่ inflightCreates ใน flushState
+       เอกสารเดิมที่ pw: เลื่อน shadow เฉพาะช่องที่ไม่ใช่ของที่เครื่องนี้กำลังส่ง (pendingSnapshotShadow) */
+    const pendingCreate = pw && prevEnc === undefined && !!local;
+    if(!pendingCreate){
+      nextShadow[data.id] = (pw && prevEnc !== undefined && local)
+        ? pendingSnapshotShadow(enc, prevEnc, local) : enc;   // R4 (+ BA-1 ทีละช่อง)
+    }
     const pending = local && prevEnc !== undefined && localEnc !== prevEnc;
-    if(pending){
+    if(pendingCreate && localEnc !== enc){
+      // v5.1.7 fix-p1 BA-1 — ใบใหม่ที่แก้ต่อหลังสั่งส่ง: ของในเครื่องใหม่กว่า snapshot ของที่ค้าง -> เก็บไว้
+      rows.push(local);
+      kept++;
+    } else if(pending){
       // snapshot ตรงกับของในเครื่องอยู่แล้ว (= การเขียนของเครื่องนี้เอง) -> ไม่ต้องสั่งบันทึกซ้ำ
       if(localEnc !== enc){
         const note = col === 'jobs' ? newSyncNote() : null;
@@ -13802,7 +13907,12 @@ function confirmSwitchBranch(targetId){
   });
 }
 // ของในเครื่องที่ยังไม่เข้า shadow (สูตรเดียวกับ flushState) · อ่านอย่างเดียว ไม่แตะ shadow
-function unsavedLocalCount(){
+/* v5.1.7 fix-p1 BA-2 — opts.savableOnly: ไม่นับ config ที่ "ไม่มีวันขึ้นได้" (คีย์ต้องห้ามของพนักงาน ด่าน configWriteAllowed /
+   BA-5 ยังไม่รู้สภาพเซิร์ฟเวอร์) ใช้กับด่านโหลดใหม่/ออกจากระบบ ไม่งั้นเครื่องพนักงานที่เผลอแก้ชื่อร้านจะไม่โหลดใหม่ตลอดไป
+   (ของพวกนั้นถูก snapshot ทับกลับอยู่แล้ว ไม่ใช่งานที่หาย) · ไม่ส่ง opts = นับแบบเดิม (switchBranch) */
+function unsavedLocalCount(opts){
+  const savableOnly = !!(opts && opts.savableOnly);
+  if(savableOnly && !dataReady) return 0;   // ยังไม่โหลดข้อมูล (หน้า ?board / ?reception / ก่อนล็อกอิน) flushState ไม่ส่งอะไรอยู่แล้ว
   let n = 0;
   SYNC_COLLECTIONS.forEach(col => {
     const rows = Array.isArray(state[col]) ? state[col] : [];
@@ -13816,9 +13926,15 @@ function unsavedLocalCount(){
     Object.keys(have).forEach(id => { if(!seen[id]) n++; });
   });
   const enc = stableJson(buildConfigPayload());
-  if(enc !== shadowConfig && (!shadowConfig || changedConfigKeys(enc).length)) n++;
+  if(enc !== shadowConfig && (!shadowConfig || changedConfigKeys(enc).length)){
+    if(!savableOnly) n++;
+    else if(!shadowConfig){ if(!cfgMainUnconfirmed && configWriteAllowed(enc).ok) n++; }   // ทางเดียวกับ flushState
+    else if(isAdmin() || changedConfigKeys(enc).some(k => CONFIG_KEYS_STAFF_MAY_CHANGE.indexOf(k) >= 0)) n++;
+  }
   return n;
 }
+// v5.1.7 fix-p1 BA-2 — ให้ .then/.catch ของ commit ใน flushState ทำงานก่อนนับ (แบบเดียวกับ switchBranch)
+async function settleFlushCallbacks(){ for(let i = 0; i < 20; i++) await Promise.resolve(); }
 async function switchBranch(targetId){
   if(!isAllBranchAccount() || !db || !dataReady || view.branchSwitch || logoutBusy) return;
   if(branchRegistry.state === 'error'){ flashToast('โหลดรายชื่อสาขาไม่สำเร็จ ลองอีกครั้ง'); return; }
@@ -14494,15 +14610,46 @@ async function logoutSequence(){
   logoutBusy = true;
   const who = currentUser && currentUser.uid;
   try { clearTimeout(saveTimer); flushState(false); } catch(e){ console.warn('logout flush', e); }
-  if(pushLocallyOn()){
-    try {
-      const fp = new firebase.firestore.FieldPath('devices', pushDeviceId());
-      pushTokensRef().update(fp, firebase.firestore.FieldValue.delete()).catch(() => {});
-    } catch(e){ console.warn('logout push', e); }
-  }
+  // v5.1.7 fix-p1 BA-2 (security ข้อ 5) — ถอน push token ย้ายไปไว้ต้น logoutFinish (ทางที่ออกจริงเท่านั้น) กด "รอก่อน" แล้วเครื่องยังได้แจ้งเตือน
   // ออฟไลน์รอได้ถึง 5 วิ ต้องมีข้อความบนจอ · ไม่เปลี่ยนลำดับขั้นตอน · safeRender ไม่วาดทับระหว่าง logoutBusy
   renderAuthStatus('กำลังบันทึกงานแล้วออกจากระบบ รอสักครู่...');
   const synced = await settledWithin(db.waitForPendingWrites(), 5000);
+  if(synced){
+    /* v5.1.7 fix-p1 BA-2 — waitForPendingWrites จบ "รวมที่ถูกปฏิเสธ" ด้วย · งานที่เซิร์ฟเวอร์ไม่รับอยู่แค่ในหน่วยความจำ
+       (ไม่อยู่ในคิวของ SDK แล้ว) signOut = โหลดหน้าใหม่ = หายทันที จึงหยุดถามก่อน (ด่านเดียวกับ switchBranch)
+       uiConfirm ไม่มีทางกดยกเลิก -> ปล่อย logoutBusy ก่อนถาม ให้แอปใช้งานต่อได้ · กดออกเลย = ทำขั้นตอนเดิมต่อ */
+    await settleFlushCallbacks();
+    const unsaved = unsavedLocalCount({ savableOnly: true });
+    if(unsaved > 0){
+      logoutBusy = false;
+      try { safeRender(); } catch(e){}
+      uiConfirm('ยังมีงาน ' + unsaved + ' รายการที่ยังไม่ขึ้นเซิร์ฟเวอร์ (ระบบไม่รับ)\n\n' +
+                'ถ้าออกตอนนี้งานจะหาย — แจ้งผู้ดูแลระบบก่อนดีกว่า',
+        () => {
+          if(logoutBusy) return;
+          logoutBusy = true;
+          renderAuthStatus('กำลังออกจากระบบ รอสักครู่...');
+          logoutFinish(who, synced);
+        }, 'ออกเลย (งานจะหาย)', 'รอก่อน');
+      return;
+    }
+  }
+  await logoutFinish(who, synced);
+}
+// ส่วนหลังของ logoutSequence (แยกออกมาใน v5.1.7 fix-p1 BA-2 ให้ทางกด "ออกเลย" ใช้ขั้นตอนเดิมทุกอย่าง)
+async function logoutFinish(who, synced){
+  /* v5.1.7 fix-p1 BA-2 (security ข้อ 5) — ถอน push token ของเครื่องนี้ (เดิมอยู่ใน logoutSequence ก่อนถาม "งานยังไม่ขึ้น"
+     ทำให้กด "รอก่อน" แล้วยังล็อกอินอยู่แต่ไม่ได้รับแจ้งเตือน) ตอนนี้ทุกทางที่ออกจริงผ่านตรงนี้ รวมทาง !synced ที่ออกโดยไม่ถาม
+     เดิม token ถูกถอนก่อน waitForPendingWrites จึงถูกรอไปด้วย -> ออนไลน์ (synced) รอให้ถึงเซิร์ฟเวอร์ไม่เกิน 3 วิ ก่อน terminate/signOut
+     ออฟไลน์ (!synced) ส่งแบบไม่รอเหมือนเดิม (ค้างในคิวของ SDK) */
+  if(pushLocallyOn()){
+    try {
+      const fp = new firebase.firestore.FieldPath('devices', pushDeviceId());
+      const tp = pushTokensRef().update(fp, firebase.firestore.FieldValue.delete());
+      if(synced) await settledWithin(tp, 3000);
+      else Promise.resolve(tp).catch(() => {});
+    } catch(e){ console.warn('logout push', e); }
+  }
   /* P2-1 marker ต่อ uid: ส่งไม่ทัน = จดของตัวเองเพิ่ม · ส่งครบ = ลบของตัวเอง (สาขาไหนก็ได้ คิวแยกตามผู้ใช้ · รอบแก้ 1)
      ของบัญชีอื่นไม่แตะ (waitForPendingWrites เห็นแค่ผู้ใช้ปัจจุบัน คิวของเขายังอยู่ใน IndexedDB นี้) */
   const marks = readUnsyncedMap();
@@ -14560,6 +14707,7 @@ function startSync(){
   state = emptyState();
   shadow = {};
   shadowConfig = '';
+  inflightCreates = {};   // v5.1.7 fix-p1 BA-1 — ของรอบล็อกอินก่อนไม่เกี่ยวกับ state ชุดใหม่
   dataReady = false;
   /* v4.3.8 — ล้างแคชประวัติรถด้วย ทุกอย่างรอบ ๆ ถูกรีเซ็ตที่นี่หมดแล้ว ยกเว้นตัวนี้
      มันถือเอกสารใบงานที่ดึงมาเองจาก Firestore ไม่ได้ผ่านตัวฟัง ถ้าไม่ล้าง การล็อกอิน
@@ -14665,9 +14813,13 @@ function startSync(){
 
 
   let firstCfg = true;
+  cfgMainUnconfirmed = true;   // v5.1.7 fix-p1 BA-5 — จนกว่าเซิร์ฟเวอร์ตอบ (ดู flushState)
   const unsubCfg = db.collection('config').doc('main').onSnapshot(doc => {
+    // v5.1.7 fix-p1 BA-5 — ไม่มี metadata = ถือเป็นคำตอบจริง (SDK มีเสมอ) · fromCache = ยังไม่รู้
+    const cfgMeta = (doc && doc.metadata) || {};
+    if(!cfgMeta.fromCache) cfgMainUnconfirmed = false;
     if(doc.exists){
-      applyConfigSnapshot(doc.data() || {});
+      applyConfigSnapshot(doc.data() || {}, cfgMeta);
       if(cfgBlockPresetForEmptyBranch){ cfgBlockPresetForEmptyBranch = false; cfgBlockedShown = false; }
     } else if(!isRootBranch() && !isAdmin()){
       /* AC-22 สาขาใหม่ที่แอดมินยังไม่ตั้งค่า: พนักงานยังเขียน config/main ไม่ได้ (ไม่มีเอกสาร) ซึ่งถูกต้องอยู่แล้ว
@@ -16474,7 +16626,7 @@ function buildConfigPayload(src){
    v4.2.11 สัญญาไว้) · shadowConfig = สภาพของเซิร์ฟเวอร์เสมอ ไม่ใช่ของที่รวมของค้างแล้ว */
 const CONFIG_TOP_KEYS = ['shop', 'settings', 'deletedMasterPartNames', 'technicians', 'unitOptions'];
 
-function applyConfigSnapshot(d){
+function applyConfigSnapshot(d, meta){
   d = d || {};
   let prev = null;
   if(shadowConfig){ try { prev = JSON.parse(shadowConfig) || null; } catch(e){ prev = null; } }
@@ -16505,7 +16657,19 @@ function applyConfigSnapshot(d){
     if(pending[k]){ kept++; return; }
     state[k] = server[k];
   });
-  shadowConfig = stableJson(buildConfigPayload(server));
+  const next = buildConfigPayload(server);
+  if(meta && meta.hasPendingWrites && prev){
+    /* v5.1.7 fix-p1 BA-1 — snapshot นี้รวมของที่เครื่องนี้เพิ่งเขียนแต่เซิร์ฟเวอร์ยังไม่ตอบ (R4 ของ config/main)
+       คีย์ที่ "ตรงกับในเครื่อง แต่ต่างจาก shadow" = ของที่กำลังส่ง -> คง shadow เดิม ไม่งั้นถ้า commit ถูกปฏิเสธ
+       snapshot ถัดไปจะเห็นว่าไม่มีของค้าง แล้วทับการแก้ของแอดมินทิ้งเงียบ ๆ · commit ผ่าน = flushState เลื่อนให้เอง */
+    CONFIG_TOP_KEYS.forEach(k => {
+      const sv = stableJson(next[k]);
+      if(sv !== stableJson(prev[k]) && sv === stableJson(local[k])){
+        if(prev[k] === undefined) delete next[k]; else next[k] = prev[k];
+      }
+    });
+  }
+  shadowConfig = stableJson(next);
   if(kept) saveState(false);
   return kept;
 }
@@ -16579,14 +16743,26 @@ function configWriteAllowed(cfgEncoded){
    (กติกาเดียวกับที่ flushStock ของหน้าสต็อกเขียนไว้ตั้งแต่ต้น)
    --------------------------------------------------------------------------- */
 let saveDeniedShown = false;    // กล่องเตือนสิทธิ์ ขึ้นครั้งเดียวพอ ไม่ตามรังควาน
+/* v5.1.7 fix-p1 BA-1 — 'col/id' -> encoded ของเอกสารใหม่ที่ส่งไปแล้วแต่ commit ยังไม่ตอบ
+   ใบใหม่ไม่เข้า shadow จนกว่า commit ผ่าน (กันใบหายตอนถูกปฏิเสธ) รอบบันทึกที่เกิดระหว่างรอจึงเห็น prevEnc ว่าง
+   ถ้าไม่จำไว้ จะ set ซ้ำ ซึ่งสำหรับ editLog (กฎ update: false) = batch ที่สองล้มทั้งก้อน
+   ไม่ใช่ shadow: ลบเมื่อ commit จบ (ผ่านหรือล้ม) ล้ม = รอบหน้าส่งใหม่ */
+let inflightCreates = {};
+/* v5.1.7 fix-p1 BA-5 — true ระหว่างที่ตัวฟัง config/main ยังไม่เคยได้คำตอบจากเซิร์ฟเวอร์ (startSync ตั้ง)
+   shadowConfig ว่างในสภาพนี้ = "ไม่รู้" ไม่ใช่ "ไม่มีเอกสาร" (ตัวฟังล้ม / cache ว่างหลัง clearPersistence)
+   ถ้าแอดมิน set config/main ทั้งก้อนจาก emptyState() ตอนนี้ = ชื่อร้าน รายชื่อช่าง ฯลฯ ทั้งร้านหาย
+   ค่าเริ่ม false = นอก startSync (เทสต์ session) ทำงานแบบเดิม */
+let cfgMainUnconfirmed = false;
 
 function flushState(showToast){
   if(!db || !dataReady) return;
   let batch = db.batch();
   let ops = 0;
   const commits = [];
-  const marks = [];   // [col, id, encoded] รอเขียนลง shadow เมื่อ commit ผ่าน
+  const marks = [];   // [col, id, encoded, prevEnc] รอเขียนลง shadow เมื่อ commit ผ่าน (prevEnc = BA-4)
   const drops = [];   // [col, id] รอลบออกจาก shadow เมื่อ commit ผ่าน
+  const creates = []; // v5.1.7 fix-p1 BA-1 — [key, encoded] ที่จดใน inflightCreates รอบนี้
+  const cfgStart = shadowConfig;   // v5.1.7 fix-p1 BA-4 — shadowConfig ตอนเริ่ม (เทียบตอน commit ผ่าน)
   // v4.6.9 S2 — [jobId, payload|null] ของ boardPrivate · ไม่อยู่ใน batch นี้ (กฎยังไม่ publish = ห้ามลาก
   // ทั้งก้อนล้ม) ใส่คิวแล้วส่งแยก batch หลัง commit หลักผ่านเท่านั้น · ไม่เกี่ยวกับ shadow
   const privs = [];
@@ -16606,6 +16782,11 @@ function flushState(showToast){
       // "เปลี่ยนแล้ว" ทั้งที่ค่าเท่ากันเป๊ะ — ซึ่งจะทำให้ตัวกันข้อมูลหายข้างบนเข้าใจผิด
       const prevEnc = shadow[col][row.id];
       if(prevEnc === stableJson(Object.assign({}, row, { id: row.id }))) return;   // unchanged — skip
+      if(prevEnc === undefined){
+        // v5.1.7 fix-p1 BA-1 — สร้างใบนี้ไปแล้ว commit ยังไม่ตอบ: ไม่ส่งซ้ำ (editLog ห้ามเด็ดขาด = กลายเป็น update)
+        const fl = inflightCreates[col + '/' + row.id];
+        if(fl !== undefined && (col === 'editLog' || fl === stableJson(Object.assign({}, row, { id: row.id })))) return;
+      }
       /* v4.11.1 job-revert-phase2 — เอกสารใหม่ (ไม่มี shadow) และ editLog (สร้างอย่างเดียว) = set เต็มแบบเดิม
          นอกนั้นส่งเฉพาะช่องที่ต่างจาก shadow ด้วย mergeFields (R5/R6) · แถวที่สร้าง op ไม่ได้ (SDK โยน)
          ข้ามเฉพาะแถวนั้น ไม่จด marks = ยังเป็นของค้าง ไม่ลาก batch ทั้งก้อน (S2) */
@@ -16634,7 +16815,11 @@ function flushState(showToast){
         console.warn('[flushState] ข้ามแถวที่เขียนไม่ได้ — รอบหน้าลองใหม่', col, row.id, (e && e.message) || e);
         return;
       }
-      marks.push([col, row.id, encoded]);           // v4.2.9 — จดไว้ก่อน ยังไม่แตะ shadow
+      marks.push([col, row.id, encoded, prevEnc]);  // v4.2.9 — จดไว้ก่อน ยังไม่แตะ shadow
+      if(prevEnc === undefined){                    // v5.1.7 fix-p1 BA-1
+        creates.push([col + '/' + row.id, encoded]);
+        inflightCreates[col + '/' + row.id] = encoded;
+      }
       bump();
       // Keep the public waiting-room board in step with any job that changed.
       if(col === 'jobs'){
@@ -16671,7 +16856,11 @@ function flushState(showToast){
   const cfgEncoded = stableJson(cfg);
   let cfgPending = null;
   // เทียบทีละคีย์ด้วย stableJson — สตริงต่างแค่ลำดับคีย์ไม่นับว่าเปลี่ยน (ไม่ส่งซ้ำทุกรอบ)
-  if(cfgEncoded !== shadowConfig && (!shadowConfig || changedConfigKeys(cfgEncoded).length)){
+  if(!shadowConfig && cfgMainUnconfirmed){
+    /* v5.1.7 fix-p1 BA-5 — ยังไม่รู้ว่าเซิร์ฟเวอร์มี config/main อะไร (ตัวฟังล้ม / มีแต่ cache ว่าง) -> ไม่เขียน
+       ส่วนอื่นของ batch (ใบงาน ฯลฯ) ยังขึ้นตามปกติ · ได้ snapshot จากเซิร์ฟเวอร์เมื่อไหร่ค่อยเทียบตามเดิม */
+    if(cfgEncoded !== shadowConfig) console.warn('[flushState] ยังไม่ได้ config/main จากเซิร์ฟเวอร์ — ไม่เขียนทับ');
+  } else if(cfgEncoded !== shadowConfig && (!shadowConfig || changedConfigKeys(cfgEncoded).length)){
     /* v4.2.11 — ด่านเดียวที่กัน config/main ไม่ให้ลาก batch ทั้งก้อนล้ม
        ดูคำอธิบายเต็มที่ configWriteAllowed ข้างบน */
     const cfgGate = configWriteAllowed(cfgEncoded);
@@ -16724,12 +16913,14 @@ function flushState(showToast){
   Promise.all(commits)
     .then(() => {
       // ถึงตรงนี้แปลว่าเซิร์ฟเวอร์รับครบแล้วจริง ค่อยบอก shadow ได้
-      marks.forEach(([col, id, encoded]) => {
+      // v5.1.7 fix-p1 BA-4 — ช่องที่ snapshot เลื่อนไประหว่างรอ (เครื่องอื่นแก้) ไม่ถูกค่าตอนเริ่ม flush ทับ
+      marks.forEach(([col, id, encoded, startEnc]) => {
         shadow[col] = shadow[col] || {};
-        shadow[col][id] = encoded;
+        shadow[col][id] = mergeShadowAfterCommit(shadow[col][id], startEnc, encoded);
       });
       drops.forEach(([col, id]) => { if(shadow[col]) delete shadow[col][id]; });
-      if(cfgPending !== null) shadowConfig = cfgPending;
+      if(cfgPending !== null) shadowConfig = mergeShadowAfterCommit(shadowConfig, cfgStart, cfgPending);
+      creates.forEach(([k, enc]) => { if(inflightCreates[k] === enc) delete inflightCreates[k]; });   // BA-1 หลัง shadow แล้ว
       if(showToast) flashToast('บันทึกแล้ว');
       // v4.6.9 S2 — หลัง shadow แล้วเท่านั้น · ล้มเองเงียบ ๆ ไม่แตะ marks/drops/shadow
       try { flushBoardMirror(boards); } catch(e){ console.warn('[board]', e); }
@@ -16737,6 +16928,8 @@ function flushState(showToast){
     })
     .catch(err => {
       console.error('save', err);
+      // v5.1.7 fix-p1 BA-1 — ใบใหม่ที่ถูกปฏิเสธ ไม่ใช่ "กำลังส่ง" แล้ว รอบหน้าต้องส่งใหม่
+      creates.forEach(([k, enc]) => { if(inflightCreates[k] === enc) delete inflightCreates[k]; });
       /* shadow ไม่ถูกแตะเลยโดยตั้งใจ — ของในเครื่องยังนับเป็น "ค้างยังไม่ได้บันทึก"
          จึงถูกส่งซ้ำรอบหน้า และไม่ถูก snapshot จากเซิร์ฟเวอร์ทับทิ้ง */
       if(err && err.code === 'permission-denied'){
@@ -23277,11 +23470,21 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   let brandPriceIsForeign = false;
   if(field === 'brand' && row.brand && parseMoney(row.price)){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
-    const want = hit && hit.same ? parseMoney(hit.price) : 0;
-    if(want && want !== parseMoney(row.price)){
+    /* v5.1.7 fix-p1 B2 — ราคาที่จำไว้ผูกกับหน่วยของมัน (OEM 1,800 ต่อ "คู่") เดิมยกเลขมาวางบนบรรทัด
+       "2 ชิ้น" ตรง ๆ = 3,600 แล้วยังจำ 1,800/ชิ้น กลับเข้าช่อง OEM ทำให้คันหน้าผิดต่อ
+       แปลงเป็นราคาต่อหน่วยของบรรทัดด้วยกติกาเดียวกับ pairUnitPriceShift (จำนวน/หน่วยของช่างไม่ถูกแตะ)
+       หน่วยต่างกันแบบแปลงไม่ได้ = ไม่เปลี่ยนเลข ติดธง priceForeign + เตือน (เลขบนจอยังเป็นของแบรนด์เก่า) */
+    const fit = hit && hit.same ? recalledPriceForRow(row, hit) : null;
+    const want = fit && fit.fits ? fit.price : 0;
+    if(fit && !fit.fits){
+      brandPriceIsForeign = true;
+      row.priceForeign = true;
+      flashToast(`ราคาของ ${row.brand} จำไว้ ฿${fmtMoney(parseMoney(hit.price))} ต่อ${hit.unit} — บรรทัดนี้เป็น${row.unit} ยังไม่เปลี่ยนราคาให้ ตรวจก่อนออกใบ`);
+    } else if(want && want !== parseMoney(row.price)){
       const before = parseMoney(row.price);
       row.price = want;
-      flashToast(`ราคาของ ${row.brand}: ฿${fmtMoney(before)} → ฿${fmtMoney(want)}`);
+      const conv = parseMoney(hit.price) !== want ? ` (จำไว้ ฿${fmtMoney(parseMoney(hit.price))}/${hit.unit})` : '';
+      flashToast(`ราคาของ ${row.brand}: ฿${fmtMoney(before)} → ฿${fmtMoney(want)}${conv}`);
     } else if(!want){
       brandPriceIsForeign = true;
       row.priceForeign = true;
@@ -23291,11 +23494,8 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   if((field === 'partName' || field === 'brand' || field === 'variant') && !parseMoney(row.price)){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
     if(hit && hit.same){
-      row.price = parseMoney(hit.price);
-      if(!row.brand && hit.brand) row.brand = hit.brand;
-      if(!row.qty  && hit.qty)    row.qty   = hit.qty;
-      if(hit.unit)                row.unit  = hit.unit;
-      flashToast(`เติมราคาที่เคยคีย์ไว้ ฿${fmtMoney(parseMoney(hit.price))} ให้แล้ว`);
+      fillRecalledPrice(row, hit);   // v5.1.7 fix-p1 B1 — จำนวน/หน่วยกับราคาต้องสอดคล้องกัน (ดู fillRecalledPrice)
+      flashToast(`เติมราคาที่เคยคีย์ไว้ ฿${fmtMoney(parseMoney(row.price))} ให้แล้ว`);
     }
   }
   // v3.38.0 — คีย์ราคา/แบรนด์/จำนวนเสร็จ เก็บกลับเข้ารุ่นรถทันที
@@ -29477,6 +29677,10 @@ let forceReloadPhase = 'idle';      // idle | waiting | stuck (รอการ�
 let forceReloadPhaseFor = null;     // ค่า minVersion ที่ phase นี้เป็นของ (ค่าใหม่ = เริ่มใหม่ ได้อีกหนึ่งครั้ง)
 let forceReloadTimer = null;
 let forceReloadBanner = null;
+/* v5.1.7 fix-p1 BA-2 — > 0 = phase 'stuck' เพราะมีงานที่เซิร์ฟเวอร์ไม่รับค้างในเครื่อง (ไม่ใช่เน็ตหลุด)
+   ลองใหม่เองทุก FORCE_RELOAD_UNSAVED_RETRY_MS (flush อีกรอบ ถ้าขึ้นครบค่อยโหลด) */
+let forceReloadUnsaved = 0;
+const FORCE_RELOAD_UNSAVED_RETRY_MS = 60000;
 let lastUserInputAt = 0;            // 0 = ยังไม่มีใครแตะตั้งแต่เปิดหน้า
 try {
   // จดเวลาอย่างเดียว (passive) ไม่ preventDefault ไม่ปิดกล่อง = ไม่สร้าง ghost click
@@ -29512,6 +29716,7 @@ function deviceQuietForReload(){
 }
 function forceUpdateMsg(){
   const v = 'v' + (appUpdate.minVersion || appUpdate.latest || '');
+  if(forceReloadPhase === 'stuck' && forceReloadUnsaved > 0) return 'ต้องอัปเดตเป็น ' + v + ' — ยังมีงาน ' + forceReloadUnsaved + ' รายการที่ระบบยังไม่รับ จึงยังไม่โหลดใหม่ (กันงานหาย) แจ้งผู้ดูแลระบบ';
   if(forceReloadPhase === 'stuck') return 'ต้องอัปเดตเป็น ' + v + ' — ยังส่งข้อมูลขึ้นไม่ครบ (เน็ตหลุด?) จะโหลดใหม่เองเมื่อส่งครบ';
   if(forceReloadPhase === 'done') return 'ต้องอัปเดตเป็น ' + v + ' — โหลดใหม่แล้วยังได้รุ่นเก่า กดปุ่มนี้อีกครั้ง หรือแจ้งเจ้าของ';
   return 'ต้องอัปเดตเป็น ' + v + ' — แอปจะโหลดใหม่เองเมื่อว่าง (บันทึกงานให้เสร็จก่อน)';
@@ -29559,16 +29764,32 @@ function maybeForceReload(){
   if(forceReloadPhase !== 'idle') return false;
   if(!appIsIdleForReload() || !deviceQuietForReload()){ scheduleForceReloadRetry(); return false; }
   forceReloadPhase = 'waiting';
+  forceReloadUnsaved = 0;
   try { clearTimeout(saveTimer); if(db && dataReady) flushState(false); } catch(e){}
   let pending;
   try { pending = (db && typeof db.waitForPendingWrites === 'function') ? Promise.resolve(db.waitForPendingWrites()) : Promise.resolve(); }
   catch(e){ pending = Promise.reject(e); }
-  settledWithin(pending, FORCE_RELOAD_WAIT_MS).then(synced => {
+  settledWithin(pending, FORCE_RELOAD_WAIT_MS).then(async synced => {
     if(!synced){
       // SEC-5: ยังไม่ยืนยันว่าส่งครบ = ห้ามโหลด · รอการเขียนชุดนี้จบจริงครั้งเดียว ไม่ flush/wait วนซ้ำ
       forceReloadPhase = 'stuck';
       showForceUpdateBanner();
-      pending.then(() => { if(forceReloadPhase === 'stuck'){ forceReloadPhase = 'idle'; maybeForceReload(); } }, () => {});
+      pending.then(() => { if(forceReloadPhase === 'stuck' && !forceReloadUnsaved){ forceReloadPhase = 'idle'; maybeForceReload(); } }, () => {});
+      return;
+    }
+    /* v5.1.7 fix-p1 BA-2 — waitForPendingWrites จบ "รวมที่ถูกปฏิเสธ" ด้วย = synced ไม่ได้แปลว่าขึ้นครบ
+       งานที่ถูกปฏิเสธอยู่แค่ในหน่วยความจำ โหลดใหม่ = หาย -> ไม่โหลด ขึ้นแถบ stuck แล้วลองใหม่เป็นระยะ
+       นับแบบ savableOnly: คีย์ config ที่พนักงานไม่มีสิทธิ์ (ไม่มีวันขึ้น) ต้องไม่ทำให้ไม่โหลดตลอดไป */
+    await settleFlushCallbacks();
+    const unsaved = unsavedLocalCount({ savableOnly: true });
+    if(unsaved > 0){
+      forceReloadPhase = 'stuck';
+      forceReloadUnsaved = unsaved;
+      showForceUpdateBanner();
+      clearTimeout(forceReloadTimer);
+      forceReloadTimer = setTimeout(() => {
+        if(forceReloadPhase === 'stuck' && forceReloadUnsaved){ forceReloadPhase = 'idle'; forceReloadUnsaved = 0; maybeForceReload(); }
+      }, FORCE_RELOAD_UNSAVED_RETRY_MS);
       return;
     }
     if(!appIsIdleForReload()){ forceReloadPhase = 'idle'; scheduleForceReloadRetry(); return; }
@@ -29581,10 +29802,18 @@ function forceUpdateNowTap(){
   try { clearTimeout(saveTimer); if(db && dataReady) flushState(false); } catch(e){}
   let pending;
   try { pending = (db && typeof db.waitForPendingWrites === 'function') ? db.waitForPendingWrites() : Promise.resolve(); } catch(e){ pending = Promise.reject(e); }
-  settledWithin(pending, 3000).then(synced => {
+  settledWithin(pending, 3000).then(async synced => {
     const go = () => { try { if(view.hubDismissed) sessionStorage.setItem(HUB_DISMISSED_ONCE_KEY, '1'); } catch(e){} forceReloadPhase = 'done'; updateAppNow(); };
-    if(synced) go();
-    else uiConfirm('ยังส่งข้อมูลขึ้นเซิร์ฟเวอร์ไม่ครบ\n\nโหลดใหม่ตอนนี้ งานที่ยังไม่ขึ้นอาจหาย — ต่อเน็ตแล้วรอสักครู่ดีกว่า', go, 'โหลดใหม่เลย', 'รอก่อน');
+    if(!synced){
+      uiConfirm('ยังส่งข้อมูลขึ้นเซิร์ฟเวอร์ไม่ครบ\n\nโหลดใหม่ตอนนี้ งานที่ยังไม่ขึ้นอาจหาย — ต่อเน็ตแล้วรอสักครู่ดีกว่า', go, 'โหลดใหม่เลย', 'รอก่อน');
+      return;
+    }
+    // v5.1.7 fix-p1 BA-2 — synced รวมการเขียนที่ถูกปฏิเสธ · ยังมีงานที่ระบบไม่รับ = ถามก่อน (กด "รอก่อน" = ไม่โหลด)
+    await settleFlushCallbacks();
+    const unsaved = unsavedLocalCount({ savableOnly: true });
+    if(!unsaved){ go(); return; }
+    uiConfirm('ยังมีงาน ' + unsaved + ' รายการที่ยังไม่ขึ้นเซิร์ฟเวอร์ (ระบบไม่รับ)\n\n' +
+              'ถ้าโหลดใหม่ตอนนี้งานจะหาย — แจ้งผู้ดูแลระบบก่อนดีกว่า', go, 'โหลดใหม่เลย (งานจะหาย)', 'รอก่อน');
   });
 }
 
