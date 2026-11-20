@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.8";
+  const APP_VERSION = "5.1.9";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3433,6 +3433,24 @@
               CSS ล้วน ไม่มีตัวฟัง scroll/touch ไม่แตะ render() · สีใช้ตัวแปรเดิม โหมดมืดไม่เปลี่ยน
               ไม่แตะ firestore.rules / config/main / flushState
               เทสต์: tests/user-menu-scroll.guard.js
+     v5.1.9 — ช่องประกันเป็น dropdown พิมพ์เองได้ + แอดมินเพิ่มตัวเลือกได้ (2026-11-20) · งาน warranty-combo
+              datalist ของ v5.1.3 บน iPad/มือถือแทบไม่โผล่ ช่างไม่รู้ว่ามีตัวเลือก
+              1. ช่องประกันใต้ชื่ออะไหล่ = กรอบเดียว [ช่องพิมพ์ | ▾] (div.jp-warranty-box · ไม่ใช่ <label> แล้ว แตะ ▾ คีย์บอร์ดไม่เด้ง)
+                 ▾ บนจอสัมผัส 44×44 · ลบ <datalist id="jp-warranty-list"> · พิมพ์เองแล้วออกจากช่อง = บันทึกเหมือนเดิม
+              2. รายการของแอพเอง #jp-warranty-pop ต่อท้าย body (position:fixed ไม่ถูก .table-wrap ตัด) ลงใต้ช่อง/พลิกขึ้นเมื่อที่ไม่พอ
+                 คิดตำแหน่งด้วย visualViewport (คีย์บอร์ด iOS) หักแถบล่าง · แตะ ▾ = ทุกตัวเลือก + ✓ ค่าปัจจุบัน + "ล้างช่องนี้"
+                 พิมพ์ = กรอง (ไม่สนตัวพิมพ์/ช่องว่าง · includes ไม่ใช่ RegExp) ไม่เรียก render() · ปิดเมื่อเลือก/Esc/Tab/แตะนอก/เลื่อนหน้า
+                 (ยกเว้น 600ms แรกหลังเปิด/โฟกัส — iOS เลื่อนหน้าเองตอนคีย์บอร์ดขึ้น) · คีย์บอร์ดคอม ↓/↑/Enter/Esc
+                 ล้างช่อง / แตะตัวเลือกทับข้อความที่พิมพ์เอง = มีปุ่มเลิกทำ 6 วินาที
+              3. ตัวเลือกของร้าน config/main.warrantyOptions (string[] · สูงสุด 30 · ตัวละ ≤60) ต่อท้าย 8 ค่ามาตรฐาน
+                 แอดมินเท่านั้นที่เพิ่ม (แถว "+ เพิ่ม "…" เป็นตัวเลือก" / "+ เพิ่มตัวเลือก…") แก้ชื่อ/ลบ (การ์ด สินค้า > ตัวเลือกประกัน)
+                 พนักงานเลือก/พิมพ์ได้ทุกอย่าง เห็นแถวเพิ่มแบบล็อก — ทุกฟังก์ชันเช็ก canManageCatalog() ก่อนแตะ state
+                 state เก็บค่าเซิร์ฟเวอร์ตรงตัว ทำความสะอาดเฉพาะตอนอ่าน (allWarrantyOptions) และตอนเขียน · ไม่จำค่าลงรุ่นรถ/อะไหล่
+                 emptyState / CONFIG_TOP_KEYS / buildConfigPayload (omit ตอนว่าง) / applyConfigSnapshot / ก็อปแค็ตตาล็อกไปสาขาใหม่
+              4. version.json minVersion 5.1.9 — เครื่องพนักงานรุ่นเก่าที่แก้ชื่อช่างหลังแอดมินเพิ่มตัวเลือก จะส่ง config/main
+                 ที่ไม่มี warrantyOptions (ลบคีย์ = แตะคีย์ต้องห้าม) แล้วทั้ง batch ถูกปฏิเสธ จึงบังคับอัปเดต (รอเครื่องว่างตาม v5.1.7)
+              ใบพิมพ์ไม่เปลี่ยน · ไม่แตะ firestore.rules / flushState / configWriteAllowed / CONFIG_KEYS_STAFF_MAY_CHANGE
+              เทสต์: tests/warranty-combo.guard.js
               -->
 
 
@@ -5889,13 +5907,57 @@
   /* v5.1.3 — ช่องประกันรายบรรทัด (quote-line-warranty U1) · สีจากตัวแปรเท่านั้น · ห้าม min-width เป็น px (ล้น td บน iPad) */
   .jp-warranty{display:flex; align-items:center; gap:8px; margin-top:6px;}
   .jp-warranty-lab{flex:0 0 auto; font-size:12.5px; font-weight:600; color:var(--text-2); white-space:nowrap;}
-  .jp-warranty-input{flex:1 1 auto; min-width:0; width:auto; box-sizing:border-box;
-    border:1px solid var(--border); border-radius:4px; background:var(--card-bg); color:var(--text);
-    font-family:inherit; font-size:13px; padding:6px 8px; line-height:1.4;}
+  /* v5.1.9 warranty-combo — ช่อง + ปุ่ม ▾ อยู่ในกรอบเดียว (.jp-warranty-box) กรอบเป็นตัวมีเส้น/พื้น ช่องข้างในโปร่ง
+     ตัวเลือก ".jp-warranty-box .jp-warranty-input" ต้องเฉพาะเจาะจงกว่า input[type=text] ของทั้งแอพ (0,1,1)
+     ไม่งั้นช่องได้เส้น/มุม 9px/padding 11px ของกลางทับ และ :focus ได้เงาแดงซ้อนในกรอบ */
+  .jp-warranty-box{display:flex; align-items:stretch; flex:1 1 auto; min-width:0; box-sizing:border-box; min-height:32px;
+    border:1px solid var(--border); border-radius:4px; background:var(--card-bg);}
+  .jp-warranty-box:focus-within{border-color:var(--navy);}
+  .jp-warranty-box .jp-warranty-input{flex:1 1 auto; min-width:0; width:auto; box-sizing:border-box;
+    border:none; border-radius:4px 0 0 4px; background:transparent; color:var(--text); box-shadow:none;
+    font-family:inherit; font-size:14px; padding:6px 8px; line-height:1.4;}
+  .jp-warranty-box .jp-warranty-input:focus{border:none; box-shadow:none; outline:none;}
   .jp-warranty-input::placeholder{color:var(--text-2);}
+  .jp-warranty-caret{flex:0 0 32px; width:32px; padding:0; margin:0; display:inline-flex; align-items:center; justify-content:center;
+    background:transparent; border:none; border-left:1px solid var(--border); border-radius:0 4px 4px 0;
+    color:var(--text-2); cursor:pointer; font-family:inherit;}
+  .jp-warranty-caret:hover{background:var(--surface); color:var(--text);}
+  .jp-warranty-caret svg{transition:transform .15s;}
+  .jp-warranty-caret.open{color:var(--text);}
+  .jp-warranty-caret.open svg{transform:rotate(180deg);}
+  .jp-warranty-caret:disabled{opacity:.45; cursor:default;}
+  /* รายการ: กรอบ/เงาแบบ .user-menu · แถวแบบ .ui-pick-row · สีจากตัวแปรล้วน (โหมดมืดพลิกเอง ห้าม #fff)
+     z-index 50 = เหนือแถบล่าง (30) / เมนูผู้ใช้ (40) แต่ใต้กล่อง uiModal (120) ที่ "+ เพิ่มตัวเลือก…" เปิดทับ
+     แถว "+ เพิ่ม" อยู่นอก .wp-list จึงติดล่างเสมอไม่เลื่อนตาม */
+  .wp-pop{position:fixed; z-index:50; display:flex; flex-direction:column; box-sizing:border-box;
+    background:var(--card-bg); border:1px solid var(--border); border-radius:10px; overflow:hidden;
+    box-shadow:0 16px 40px rgba(20,24,29,.20), 0 2px 8px rgba(20,24,29,.10);}
+  .wp-list{position:relative; flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;}
+  .wp-foot{flex:0 0 auto;}
+  .wp-foot:empty{display:none;}
+  /* ข้อความยาวตัดบรรทัดได้ · line-height ≥1.45 และไม่มีความสูงตายตัว — สระบน/ล่างภาษาไทยไม่ถูกตัด */
+  .wp-row{display:flex; align-items:center; gap:8px; width:100%; box-sizing:border-box; min-height:36px; margin:0;
+    text-align:left; background:var(--card-bg); color:var(--text); border:none; border-bottom:1px solid var(--border); border-radius:0;
+    font-family:inherit; font-size:14px; padding:8px 14px; line-height:1.45; white-space:normal; overflow-wrap:anywhere; cursor:pointer;}
+  .wp-row .wp-txt{flex:1 1 auto; min-width:0;}
+  .wp-row svg{flex:0 0 auto;}
+  .wp-row:hover{background:var(--surface);}
+  .wp-row.current{background:var(--surface-2); font-weight:700;}
+  .wp-row.active{background:var(--surface); box-shadow:inset 3px 0 0 var(--navy);}
+  .wp-clear{color:var(--text-2); font-size:13px;}
+  .wp-pop .up-sub{padding:8px 14px 4px; font-size:11px; font-weight:700; color:var(--text-2); letter-spacing:.4px;}
+  .wp-add{border-bottom:none; border-top:1px solid var(--border); color:var(--red-ink); font-weight:700;}
+  .wp-add.locked{color:var(--text-2); font-weight:600;}
+  .wp-empty{padding:16px; text-align:center; color:var(--text-2); font-size:13.5px;}
   @media (max-width:1100px), (pointer:coarse) and (max-width:1400px){
-    .jp-warranty-input{min-height:44px;}
+    .jp-warranty-box{min-height:44px;}
+    .jp-warranty-box .jp-warranty-input{font-size:16px;}   /* ต่ำกว่า 16px iOS ซูมหน้าเองตอนโฟกัส */
+    .jp-warranty-caret{flex:0 0 44px; width:44px; min-height:44px;}
+    .wp-row{min-height:44px; font-size:15px;}
+    .wp-clear{font-size:13px;}
   }
+  /* รายการเป็น fixed บน body — เปิดค้างแล้วสั่งพิมพ์ต้องไม่ติดไปบนกระดาษ (U9 · เฉพาะ selector นี้ ไม่แตะกฎพิมพ์อื่น) */
+  @media print{ #jp-warranty-pop{display:none !important;} }
   table.parts-table tbody tr:hover td{background:var(--surface);}
   table.parts-table .parts-cat-header{background:var(--surface-2); color:var(--text); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0.4px; padding:7px 10px; border-left:4px solid var(--navy);}
   table.parts-table .parts-cat-row:hover td{background:var(--surface);}
@@ -8807,6 +8869,379 @@ function partLineWarrantyText(p){
   if(typeof p.warrantyText === 'string') return cleanWarrantyText(p.warrantyText);
   const d = Number(p.warrantyDays);
   return d > 0 ? cleanWarrantyText(warrantyOptionLabel(d)) : '';
+}
+
+/* ================= v5.1.9 warranty-combo — ช่องประกันแบบ "เลือกจากรายการ + พิมพ์เอง" =================
+   datalist เดิมของ v5.1.3 บน iPad/มือถือแทบไม่โผล่ (ช่างไม่รู้ว่ามีตัวเลือก) จึงเปลี่ยนเป็นกล่อง + ปุ่ม ▾ + รายการของแอพเอง
+   ตัวเลือก = LINE_WARRANTY_SUGGESTIONS (8 ค่ามาตรฐาน ลบไม่ได้) + config/main.warrantyOptions (ที่ร้านเพิ่มเอง)
+   ใครเพิ่ม/แก้/ลบได้: แอดมินเท่านั้น (คำตอบเจ้าของข้อ 1) — กฎ Firestore ให้พนักงานแตะ config/main ได้แค่ technicians
+     ถ้าเครื่องพนักงานส่งคีย์นี้ขึ้นไป batch ของ flushState ล้มทั้งก้อน งานอื่นของเครื่องนั้นหายตาม
+     ทุกฟังก์ชันที่เขียนจึงเช็ก canManageCatalog() "ก่อน" แตะ state (ไม่พึ่งด่านใน flushState)
+   state.warrantyOptions = ค่าจากเซิร์ฟเวอร์ตรงตัว ไม่ clean/dedupe ตอนรับ snapshot (backend N1: เครื่องที่ปรับเองจะ
+     ต่างจาก shadow แล้วส่ง config ซ้ำทุกรอบ / พนักงานโดนกล่องเตือน) · ทำความสะอาดที่ allWarrantyOptions() (อ่านอย่างเดียว)
+     และตอนเขียน (เพิ่ม/แก้ชื่อ) เท่านั้น (decisions: PM resolution ของ backend N1 กับ security C5)
+   ไม่จำค่า: บรรทัดใหม่ช่องว่างเสมอ ไม่เขียนลง models / masterParts (คำตอบเจ้าของข้อ 4) */
+const WARRANTY_OPTIONS_MAX = 30;
+const WARRANTY_CAP_MSG = 'ครบ 30 ตัวเลือกแล้ว — ลบตัวที่ไม่ใช้ในหน้าตั้งค่า';
+// กุญแจเทียบซ้ำ: ไม่สนตัวพิมพ์ และไม่สนช่องว่าง ("1ปี" = "1 ปี") — ใช้ทั้งกันซ้ำและกรองรายการ
+function warrantyOptionKey(v){ return cleanWarrantyText(v).toLowerCase().replace(/\s+/g, ''); }
+function warrantyShopListRaw(){ return Array.isArray(state.warrantyOptions) ? state.warrantyOptions : []; }
+function allWarrantyOptions(){
+  const out = LINE_WARRANTY_SUGGESTIONS.slice();
+  const seen = new Set(out.map(warrantyOptionKey));
+  let n = 0;
+  warrantyShopListRaw().forEach(x => {
+    if(typeof x !== 'string' || n >= WARRANTY_OPTIONS_MAX) return;   // ข้อมูลเสียจากเซิร์ฟเวอร์ = ข้าม ไม่ throw (C5)
+    const c = cleanWarrantyText(x);
+    const k = warrantyOptionKey(c);
+    if(!k || seen.has(k)) return;
+    seen.add(k); out.push(c); n++;
+  });
+  return out;
+}
+function findWarrantyOption(v){
+  const k = warrantyOptionKey(v);
+  if(!k) return null;
+  return allWarrantyOptions().find(o => warrantyOptionKey(o) === k) || null;
+}
+// คืนค่าที่ใช้ได้ (ตัวใหม่ หรือตัวเดิมที่ซ้ำ) ให้ผู้เรียกใส่ลงบรรทัด · null = ไม่ได้เพิ่ม (ไม่ใช่แอดมิน / ว่าง / ครบ)
+function addWarrantyOption(text){
+  if(!canManageCatalog()){ flashToast('เพิ่มตัวเลือกได้เฉพาะผู้ดูแลระบบ — ข้อความที่พิมพ์ใช้ได้เลย'); return null; }
+  const c = cleanWarrantyText(text);
+  if(!c){ flashToast('ข้อความว่าง — พิมพ์เงื่อนไขประกันก่อน'); return null; }
+  const ex = findWarrantyOption(c);
+  if(ex){ flashToast('มี "' + ex + '" อยู่แล้ว'); return ex; }
+  const list = warrantyShopListRaw().slice();
+  if(list.length >= WARRANTY_OPTIONS_MAX){ flashToast(WARRANTY_CAP_MSG); return null; }
+  list.push(c);   // ต่อท้ายเท่านั้น ห้าม sort — stableJson คงลำดับ array (ลำดับเปลี่ยน = diff = ส่งซ้ำ)
+  state.warrantyOptions = list;
+  saveState(true);
+  flashToast('เพิ่มตัวเลือก "' + c + '" แล้ว');
+  return c;
+}
+// กล่องเพิ่มตัวเลือก (การ์ดตั้งค่า + แถว "+ เพิ่มตัวเลือก…" ในรายการ) · onAdded ไม่ส่ง = วาดหน้าใหม่ (หน้าตั้งค่า)
+function addWarrantyOptionPrompt(onAdded){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  if(warrantyShopListRaw().length >= WARRANTY_OPTIONS_MAX){ flashToast(WARRANTY_CAP_MSG); return; }
+  uiModal({ message: 'ตัวเลือกประกันใหม่', input: true, placeholder: 'เช่น 3 เดือน หรือ 5,000 กม.',
+    okLabel: 'เพิ่มเป็นตัวเลือก', cancelLabel: 'ยกเลิก',
+    onOk: v => {
+      const r = addWarrantyOption(v);
+      if(!r) return;
+      if(typeof onAdded === 'function') onAdded(r); else render();
+    } });
+}
+// แก้ชื่อ = แก้แค่ตัวเลือก ใบงานที่เลือกไว้แล้วเก็บเป็นข้อความ ไม่ถูกแก้ย้อนหลัง (คำตอบเจ้าของข้อ 3)
+function renameWarrantyOption(i, value){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); render(); return; }
+  const list = warrantyShopListRaw();
+  if(!Number.isInteger(i) || i < 0 || i >= list.length){ render(); return; }
+  // v5.1.9 warranty-combo (security ข้อสังเกต): ระหว่างพิมพ์ snapshot อาจเลื่อน/เปลี่ยนรายการ
+  // จึงเทียบค่าเดิมที่ช่องแสดงตอน render (defaultValue ของช่องที่ยิง onchange) — หาตัวเดิมอีกรอบแบบเดียวกับตอนลบ
+  const ev = (typeof window !== 'undefined' && window.event) ? window.event : null;
+  const src = ev && ev.target;
+  if(src && typeof src.defaultValue === 'string' && src.value === value){
+    const shownOld = src.defaultValue;
+    if(list[i] !== shownOld){
+      const j = list.indexOf(shownOld);
+      if(j < 0){ flashToast('รายการเปลี่ยนระหว่างแก้ — ลองใหม่อีกครั้ง'); render(); return; }
+      i = j;
+    }
+  }
+  const c = cleanWarrantyText(value);
+  const old = typeof list[i] === 'string' ? cleanWarrantyText(list[i]) : '';
+  if(!c || c === list[i]){ render(); return; }
+  const k = warrantyOptionKey(c);
+  // ซ้ำกับตัวอื่น (รวม 8 มาตรฐาน) — ยกเว้นตัวมันเอง จึงแก้แค่ตัวพิมพ์เล็ก/ใหญ่ของตัวเองได้
+  const dup = allWarrantyOptions().find(o => warrantyOptionKey(o) === k && o !== old);
+  if(dup){ flashToast('มี "' + dup + '" อยู่แล้ว'); render(); return; }
+  const next = list.slice(); next[i] = c;
+  state.warrantyOptions = next;
+  saveState(true);
+  flashToast('แก้ตัวเลือกแล้ว');
+  render();
+}
+function deleteWarrantyOption(i){
+  if(!canManageCatalog()){ flashToast('เฉพาะผู้ดูแลระบบเท่านั้น'); return; }
+  const list = warrantyShopListRaw();
+  if(!Number.isInteger(i) || i < 0 || i >= list.length) return;
+  const name = list[i];
+  const shown = typeof name === 'string' ? cleanWarrantyText(name) : '';
+  uiConfirm('เอา "' + shown + '" ออกจากตัวเลือกประกัน?\n\nใบงานที่เลือกไว้แล้วยังแสดงข้อความเดิม', () => {
+    // v5.1.9 warranty-combo (security ข้อสังเกต): เช็กสิทธิ์ซ้ำตอนกดยืนยัน (สิทธิ์อาจเปลี่ยนระหว่างรอ)
+    if(!canManageCatalog()) return;
+    // กล่องยืนยันเป็น async — ระหว่างรอ snapshot อาจเลื่อนลำดับ จึงหาตัวเดิมอีกรอบก่อนลบ
+    const cur = warrantyShopListRaw();
+    const j = cur[i] === name ? i : cur.indexOf(name);
+    if(j < 0) return;
+    state.warrantyOptions = cur.filter((_, k) => k !== j);
+    saveState(true);
+    flashToast('เอาตัวเลือกออกแล้ว');
+    render();
+  }, 'เอาออก');
+}
+
+/* ----- รายการ (popover) ของช่องประกัน -----
+   ต่อท้าย document.body (ไม่อยู่ในตาราง — .table-wrap overflow-x:auto ตัดรายการทิ้ง) · position:fixed เปิดได้ทีละอัน
+   ห้าม render() ระหว่างพิมพ์ (iOS คีย์บอร์ดหลุดกลางคำ) — กรองโดยเขียน innerHTML ของรายการเท่านั้น
+   ทุกปุ่มในรายการ preventDefault ที่ pointerdown/mousedown: ไม่งั้นช่องเสียโฟกัสก่อน click -> change ยิง -> render()
+   -> รายการหายก่อนแตะถึง · ข้อความตัวเลือกไม่เคยอยู่ใน on*="…" (อ้างด้วย data-i + ผูก onclick ใน JS · security C2) */
+let wpPop = null;
+function closeWarrantyPop(){
+  const p = wpPop;
+  if(!p) return;
+  wpPop = null;
+  if(p.el) p.el.remove();
+  document.removeEventListener('pointerdown', p.onOutside, true);
+  document.removeEventListener('focusin', p.onFocusIn, true);
+  window.removeEventListener('scroll', p.onScroll, true);
+  window.removeEventListener('resize', p.onReposition);
+  const vv = window.visualViewport;
+  if(vv && vv.removeEventListener){ vv.removeEventListener('resize', p.onReposition); vv.removeEventListener('scroll', p.onReposition); }
+  if(p.input){ p.input.setAttribute('aria-expanded', 'false'); p.input.removeAttribute('aria-activedescendant'); }
+  if(p.caret) p.caret.classList.remove('open');
+}
+// หาช่องของบรรทัดนี้ใหม่ ถ้า DOM ถูกวาดใหม่ระหว่างทาง (เช่น ช่องอื่นเสียโฟกัสแล้ว change -> render)
+function findWarrantyInput(rowId){
+  const rows = document.querySelectorAll('tr[data-row-id]');
+  for(let k = 0; k < rows.length; k++){
+    if(rows[k].getAttribute('data-row-id') === String(rowId)) return rows[k].querySelector('.jp-warranty-input');
+  }
+  return null;
+}
+function toggleWarrantyPop(btn, jobId, rowId){
+  const box = btn && btn.closest('.jp-warranty-box');
+  let input = box && box.querySelector('.jp-warranty-input');
+  if(!input || input.disabled || input.readOnly) return;
+  if(wpPop && wpPop.input === input){ closeWarrantyPop(); return; }
+  /* จอสัมผัส: ไม่โฟกัสช่อง (คีย์บอร์ดไม่เด้งบังรายการ) · คอม: โฟกัสก่อนเปิด เพื่อใช้ ↑↓ Enter ต่อได้ทันที
+     โฟกัสก่อนเปิด เพราะช่องอื่นที่เสียโฟกัสอาจยิง change -> render() วาดตารางใหม่ (ช่องเดิมหลุดจากหน้า) */
+  const coarse = !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+  if(!coarse){
+    input.focus();
+    if(!input.isConnected) input = findWarrantyInput(rowId);
+    if(!input) return;
+  }
+  openWarrantyPop(input, jobId, rowId, false);
+}
+function openWarrantyPop(input, jobId, rowId, filtering){
+  closeWarrantyPop();
+  const box = input.closest('.jp-warranty-box');
+  const el = document.createElement('div');
+  el.id = 'jp-warranty-pop';
+  el.className = 'wp-pop';
+  el.setAttribute('role', 'listbox');
+  el.setAttribute('aria-label', 'ตัวเลือกประกัน');
+  el.innerHTML = '<div class="wp-list"></div><div class="wp-foot"></div>';
+  document.body.appendChild(el);
+  const p = { el, input, box, caret: box ? box.querySelector('.jp-warranty-caret') : null, jobId, rowId,
+              filtering: !!filtering, shown: [], active: -1, graceUntil: Date.now() + 600 };
+  // แตะนอกรายการและนอกกรอบช่อง = ปิด (ในกรอบ: ปุ่ม ▾ สลับเอง / แตะช่องเพื่อพิมพ์ต่อ ไม่ปิด)
+  p.onOutside = e => {
+    const t = e && e.target;
+    if(t && (el.contains(t) || (p.box && p.box.contains(t)))) return;
+    closeWarrantyPop();
+  };
+  // 600ms แรกหลังเปิด/โฟกัสช่อง: iOS เลื่อนหน้าเองตอนคีย์บอร์ดขึ้น ถ้าปิดตาม scroll รายการจะหายทันทีที่พิมพ์ตัวแรก
+  p.onFocusIn = e => { if(e && e.target === p.input) p.graceUntil = Date.now() + 600; };
+  p.onScroll = e => {
+    const t = e && e.target;
+    if(t && t.nodeType === 1 && el.contains(t)) return;   // เลื่อนในรายการเอง
+    if(Date.now() < p.graceUntil) positionWarrantyPop();
+    else closeWarrantyPop();
+  };
+  p.onReposition = () => positionWarrantyPop();   // คีย์บอร์ดขึ้น/ลง (visualViewport) = ย้ายตำแหน่ง ไม่ปิด
+  document.addEventListener('pointerdown', p.onOutside, true);
+  document.addEventListener('focusin', p.onFocusIn, true);
+  window.addEventListener('scroll', p.onScroll, true);
+  window.addEventListener('resize', p.onReposition);
+  const vv = window.visualViewport;
+  if(vv && vv.addEventListener){ vv.addEventListener('resize', p.onReposition); vv.addEventListener('scroll', p.onReposition); }
+  wpPop = p;
+  input.setAttribute('aria-expanded', 'true');
+  if(p.caret) p.caret.classList.add('open');
+  drawWarrantyPop();
+  positionWarrantyPop();
+  if(!p.filtering){
+    // เปิดด้วยลูกศร: ให้แถวค่าปัจจุบันอยู่กลางรายการ (ใช้ scrollTop ของรายการเอง ไม่ใช้ scrollIntoView ที่อาจเลื่อนทั้งหน้า)
+    const list = el.querySelector('.wp-list');
+    const cur = list && list.querySelector('.wp-row.current');
+    if(cur) list.scrollTop = Math.max(0, cur.offsetTop - (list.clientHeight - cur.offsetHeight) / 2);
+  }
+}
+/* ตำแหน่งจาก getBoundingClientRect ของกรอบ · ใช้ visualViewport ถ้ามี (iOS เปิดคีย์บอร์ดแล้ว innerHeight ไม่หด)
+   ลงใต้กรอบ 4px · ที่ข้างล่าง < 200px และข้างบนมากกว่า -> พลิกขึ้น · หักแถบล่าง (.bottom-nav) ถ้ามันบังอยู่
+   มือถือ ≤700px เต็มความกว้างการ์ด (12px สองข้าง) · คอม/iPad กว้าง max(กรอบ, 260) ≤360 ไม่ล้นจอ */
+function positionWarrantyPop(){
+  const p = wpPop;
+  if(!p) return;
+  if(!p.box || !p.box.isConnected || !p.input.isConnected){ closeWarrantyPop(); return; }
+  const r = p.box.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const layoutH = window.innerHeight || 0;
+  const vw = (document.documentElement && document.documentElement.clientWidth) || window.innerWidth || 0;
+  const vTop = vv ? vv.offsetTop : 0;
+  let vBottom = vv ? vv.offsetTop + vv.height : layoutH;
+  const bn = document.querySelector('.bottom-nav');
+  if(bn && bn.offsetHeight){
+    const bt = bn.getBoundingClientRect().top;
+    if(bt > r.bottom && bt < vBottom) vBottom = bt;   // คีย์บอร์ดเปิด = แถบล่างจมใต้คีย์บอร์ด ไม่ต้องหัก
+  }
+  const below = vBottom - r.bottom - 8;
+  const above = r.top - vTop - 8;
+  const up = below < 200 && above > below;
+  const room = (up ? above : below) - 4;
+  const el = p.el;
+  el.style.maxHeight = Math.max(132, Math.min(320, room)) + 'px';
+  if(vw <= 700){
+    el.style.left = '12px'; el.style.right = '12px'; el.style.width = 'auto';
+  } else {
+    const w = Math.min(360, Math.max(r.width, 260), vw - 16);
+    let left = r.left;
+    if(left + w > vw - 8) left = vw - 8 - w;
+    el.style.left = Math.max(8, left) + 'px'; el.style.right = 'auto'; el.style.width = w + 'px';
+  }
+  if(up){ el.style.top = 'auto'; el.style.bottom = (layoutH - r.top + 4) + 'px'; }
+  else { el.style.bottom = 'auto'; el.style.top = (r.bottom + 4) + 'px'; }
+}
+function drawWarrantyPop(){
+  const p = wpPop;
+  if(!p) return;
+  const typed = p.filtering ? cleanWarrantyText(p.input.value) : '';
+  const needle = warrantyOptionKey(typed);
+  const all = allWarrantyOptions();
+  const nStd = LINE_WARRANTY_SUGGESTIONS.length;
+  // กรองด้วย includes บนกุญแจ (ไม่ใช่ RegExp — ".*" / "(" เป็นตัวอักษรธรรมดา · security C3)
+  const shown = all.map((o, i) => ({ o, shop: i >= nStd })).filter(x => !needle || warrantyOptionKey(x.o).indexOf(needle) >= 0);
+  p.shown = shown;
+  p.active = -1;
+  p.input.removeAttribute('aria-activedescendant');
+  const curK = warrantyOptionKey(p.input.value);
+  const stop = 'onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()"';
+  let h = '';
+  // "ล้างช่องนี้" เฉพาะเปิดด้วยลูกศรและช่องมีค่า — ไม่โผล่ระหว่างพิมพ์ (ต่างจาก "ไม่รับประกัน" ที่พิมพ์ลงใบ)
+  if(!p.filtering && curK) h += `<button type="button" class="wp-row wp-clear" ${stop}>ล้างช่องนี้ (ไม่แสดงประกันบนใบ)</button>`;
+  let hdr = false;
+  shown.forEach((x, i) => {
+    if(x.shop && !hdr){ hdr = true; h += '<div class="up-sub">ของร้าน</div>'; }
+    const cur = curK && warrantyOptionKey(x.o) === curK;
+    h += `<button type="button" role="option" class="wp-row${cur ? ' current' : ''}" aria-selected="${cur ? 'true' : 'false'}" data-i="${i}" ${stop}>`
+       + `<span class="wp-txt">${escapeHtml(x.o)}</span>${cur ? icon('check', 16) : ''}</button>`;
+  });
+  if(!shown.length) h += '<div class="wp-empty">ไม่มีในรายการ — ข้อความที่พิมพ์ใช้ได้เลย</div>';
+  const list = p.el.querySelector('.wp-list');
+  list.innerHTML = h;
+  list.querySelectorAll('.wp-row[data-i]').forEach(b => {
+    b.onclick = () => { const x = p.shown[+b.getAttribute('data-i')]; if(x) applyWarrantyPick(p, x.o, false); };
+  });
+  const clr = list.querySelector('.wp-clear');
+  if(clr) clr.onclick = () => applyWarrantyPick(p, '', true);
+
+  // แถวท้าย: เพิ่มข้อความที่พิมพ์ / เพิ่มตัวเลือก… (ช่องว่าง) — แอดมินเท่านั้น · พนักงานเห็นแบบล็อก (คำตอบเจ้าของข้อ 1)
+  const admin = canManageCatalog();
+  const full = warrantyShopListRaw().length >= WARRANTY_OPTIONS_MAX;
+  const fieldEmpty = !cleanWarrantyText(p.input.value);
+  let f = '', kind = '';
+  if(typed && !findWarrantyOption(typed)){
+    if(!admin){ kind = 'staff'; f = 'ใช้ข้อความนี้ได้เลย · เพิ่มเป็นตัวเลือกได้เฉพาะผู้ดูแลระบบ'; }
+    else if(full){ kind = 'full'; f = WARRANTY_CAP_MSG; }
+    else { kind = 'typed'; f = `${icon('plus', 16)}<span class="wp-txt">เพิ่ม "${escapeHtml(typed)}" เป็นตัวเลือก</span>`; }
+  } else if(!typed && fieldEmpty && admin){
+    if(full){ kind = 'full'; f = WARRANTY_CAP_MSG; }
+    else { kind = 'blank'; f = `${icon('plus', 16)}<span class="wp-txt">เพิ่มตัวเลือก…</span>`; }
+  }
+  const foot = p.el.querySelector('.wp-foot');
+  foot.innerHTML = f ? `<button type="button" class="wp-row wp-add${kind === 'staff' || kind === 'full' ? ' locked' : ''}" ${stop}>${f}</button>` : '';
+  const add = foot.querySelector('.wp-add');
+  if(add) add.onclick = () => {
+    if(kind === 'staff' || !canManageCatalog()){ flashToast('เพิ่มตัวเลือกได้เฉพาะผู้ดูแลระบบ — ข้อความที่พิมพ์ใช้ได้เลย'); closeWarrantyPop(); return; }
+    if(kind === 'full'){ flashToast(WARRANTY_CAP_MSG); closeWarrantyPop(); return; }
+    if(kind === 'typed'){ const r = addWarrantyOption(typed); if(r) applyWarrantyPick(p, r, false); return; }
+    closeWarrantyPop();
+    addWarrantyOptionPrompt(r => applyWarrantyPick(p, r, false));
+  };
+}
+/* ใส่ค่าลงบรรทัดผ่าน onJobPartFieldChange ทางเดียวกับพิมพ์เอง (cleanWarrantyText + บันทึก) แล้วปิด
+   เลิกทำ (U3/U8): ล้างช่อง · หรือแตะตัวเลือกทับข้อความที่พิมพ์เอง (ไม่อยู่ในรายการ) — กันแตะพลาดทับข้อความยาว */
+function applyWarrantyPick(p, value, isClear){
+  if(!p) return;
+  const job = getJob(p.jobId);
+  const row = job && (job.partsNeeded || []).find(r => r.id === p.rowId);
+  if(!row) { closeWarrantyPop(); return; }
+  const before = partLineWarrantyText(row);
+  const after = cleanWarrantyText(value);
+  if(p.input && p.input.isConnected) p.input.value = after;
+  closeWarrantyPop();
+  onJobPartFieldChange(p.jobId, p.rowId, 'warrantyText', after);
+  if(before === after) return;
+  const undo = () => onJobPartFieldChange(p.jobId, p.rowId, 'warrantyText', before);
+  if(isClear) showUndoToast('ล้างประกันบรรทัดนี้แล้ว', undo);
+  else if(before && !findWarrantyOption(before)) showUndoToast('เปลี่ยนประกันเป็น "' + after + '"', undo);
+}
+// พิมพ์ = เปิด (ถ้ายังไม่เปิด) + กรอง · ไม่แก้ค่าบรรทัดระหว่างพิมพ์ (บันทึกตอน change เหมือนเดิม) · ไม่ render()
+function onWarrantyInput(input, jobId, rowId){
+  if(!wpPop || wpPop.input !== input){ openWarrantyPop(input, jobId, rowId, true); return; }
+  wpPop.filtering = true;
+  drawWarrantyPop();
+  positionWarrantyPop();
+}
+function warrantyPopRows(){ return wpPop ? Array.from(wpPop.el.querySelectorAll('.wp-row')) : []; }
+function setWarrantyActive(idx){
+  const p = wpPop;
+  if(!p) return;
+  const rows = warrantyPopRows();
+  if(!rows.length){ p.active = -1; return; }
+  idx = Math.max(0, Math.min(rows.length - 1, idx));   // หยุดที่หัว/ท้าย ไม่วน
+  rows.forEach((b, k) => { b.classList.toggle('active', k === idx); if(!b.id) b.id = 'jp-warranty-opt-' + k; });
+  p.active = idx;
+  const b = rows[idx];
+  p.input.setAttribute('aria-activedescendant', b.id);
+  const list = p.el.querySelector('.wp-list');
+  if(list && list.contains(b)){
+    if(b.offsetTop < list.scrollTop) list.scrollTop = b.offsetTop;
+    else if(b.offsetTop + b.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = b.offsetTop + b.offsetHeight - list.clientHeight;
+  }
+}
+// คีย์บอร์ดคอม (U3): ↓/Alt+↓ เปิด · ↑↓ เลื่อน · Enter เลือก/บันทึก · Esc ปิด (ข้อความคงเดิม) · Tab ปิดแล้วไปช่องถัดไปตามปกติ
+function onWarrantyKey(e, input, jobId, rowId){
+  if(!e || !input) return;
+  const k = e.key;
+  const open = !!(wpPop && wpPop.input === input);
+  if(k === 'ArrowDown' || k === 'Down'){
+    e.preventDefault();
+    if(!open){
+      openWarrantyPop(input, jobId, rowId, false);
+      const rows = warrantyPopRows();
+      let at = rows.findIndex(b => b.classList.contains('current'));
+      if(at < 0) at = rows.findIndex(b => !b.classList.contains('wp-clear') && !b.classList.contains('wp-add'));
+      setWarrantyActive(at < 0 ? 0 : at);
+      return;
+    }
+    if(!e.altKey) setWarrantyActive(wpPop.active + 1);
+    return;
+  }
+  if(k === 'ArrowUp' || k === 'Up'){
+    if(!open) return;
+    e.preventDefault();
+    setWarrantyActive(wpPop.active < 0 ? 0 : wpPop.active - 1);
+    return;
+  }
+  if(k === 'Enter'){
+    if(!open) return;
+    e.preventDefault();   // ไม่ให้ Enter ไปกดปุ่มอื่นบนหน้า
+    const b = wpPop.active >= 0 ? warrantyPopRows()[wpPop.active] : null;
+    if(b) b.click();
+    else { closeWarrantyPop(); input.blur(); }   // blur = change ยิง = บันทึกข้อความที่พิมพ์
+    return;
+  }
+  if(k === 'Escape' || k === 'Esc'){
+    if(!open) return;
+    e.preventDefault();
+    e.stopPropagation();   // Esc ปิดแค่รายการ ไม่ปิดหน้าจออื่นที่ฟัง Esc อยู่
+    closeWarrantyPop();
+    return;
+  }
+  if(k === 'Tab' && open) closeWarrantyPop();
 }
 
 // ลูกค้ากลับก่อน was removed; anything still on it lands on the quote step, which is
@@ -13514,7 +13949,8 @@ function emptyState(){
     settings:{ aiApiKey:"", geminiApiKey:"", aiModel:"claude", themeId:"default" },
     customers:[], vehicles:[], complaintTypes:[], jobs:[], editLog:[],
     masterParts:[], partBrandOptions:[], deletedMasterPartNames:[], technicians:[], models:[],
-    unitOptions:[]   // v4.2.6 — หน่วยนับที่ร้านเพิ่มเอง อยู่ใน config/main
+    unitOptions:[],   // v4.2.6 — หน่วยนับที่ร้านเพิ่มเอง อยู่ใน config/main
+    warrantyOptions:[]   // v5.1.9 warranty-combo — ตัวเลือกประกันที่ร้านเพิ่มเอง (config/main · แอดมินเท่านั้น)
   };
 }
 
@@ -14204,6 +14640,12 @@ function buildCatalogCopy(src){
   }));
   const config = { deletedMasterPartNames: cl(Array.isArray(src.deletedMasterPartNames) ? src.deletedMasterPartNames : []) };
   if(Array.isArray(src.unitOptions) && src.unitOptions.length) config.unitOptions = cl(src.unitOptions);
+  /* v5.1.9 warranty-combo — ก็อปตัวเลือกประกันของร้านไปสาขาใหม่ด้วย (คำตอบเจ้าของข้อ 2) · ทำความสะอาด "ตอนเขียนลงที่ใหม่"
+     (สตริงล้วน · cleanWarrantyText · ไม่ว่าง · ≤30) ไม่ขัดกฎห้ามปรับตอนอ่าน (backend N1) เพราะเป็นเอกสารใหม่ของอีกสาขา (security C5) */
+  if(Array.isArray(src.warrantyOptions)){
+    const wo = src.warrantyOptions.filter(s => typeof s === 'string').map(cleanWarrantyText).filter(Boolean).slice(0, WARRANTY_OPTIONS_MAX);
+    if(wo.length) config.warrantyOptions = wo;
+  }
   config.deletedMasterPartNames.forEach(n => review.push({ where: 'อะไหล่กลางที่ลบแล้ว', text: String(n) }));
   // ตัด by/job/src ทุกชั้นอีกรอบ รวมคีย์ของ map (กันช่องที่ allowlist ชั้นในพลาดในอนาคต)
   const scrub = v => {
@@ -14264,7 +14706,7 @@ async function planCatalogCopy(targetId){
     const cfg = cfgDoc.exists ? (cfgDoc.data() || {}) : {};
     const out = buildCatalogCopy({
       models: await rows('models'), masterParts: await rows('masterParts'), partBrandOptions: await rows('partBrandOptions'),
-      unitOptions: cfg.unitOptions || [], deletedMasterPartNames: cfg.deletedMasterPartNames || [], technicians: cfg.technicians || []
+      unitOptions: cfg.unitOptions || [], warrantyOptions: cfg.warrantyOptions || [], deletedMasterPartNames: cfg.deletedMasterPartNames || [], technicians: cfg.technicians || []
     });
     if(out.report.errors.length) return no('ข้อมูลต้นทางผิดรูป ต้องแก้ที่ดอนเมืองก่อน', out.report);
     return { ok: true, reason: '', report: out.report, plan: out };
@@ -14293,6 +14735,7 @@ async function commitCatalogCopy(targetId, plan){
     base.technicians = [];
     base.deletedMasterPartNames = p.config.deletedMasterPartNames || [];
     base.unitOptions = p.config.unitOptions || [];
+    base.warrantyOptions = p.config.warrantyOptions || [];   // v5.1.9 warranty-combo — buildConfigPayload ตัดทิ้งเองถ้าว่าง
     ops.push([bref.collection('config').doc('main'), cleanForFirestore(buildConfigPayload(base))]);
     ops.push([bref.collection('config').doc('boardMode'), { stripPublic: true }]);
     for(let i = 0; i < ops.length; i += COPY_BATCH_OPS){
@@ -16648,6 +17091,8 @@ function saveState(showToast){
 
    unitOptions ใส่ลงไปเฉพาะตอนมีค่าจริง — ดูเหตุผลเต็มที่ allUnitOptions:
    เครื่องของพนักงานที่ไม่ใช่แอดมินห้ามแตะคีย์นี้ ไม่งั้น batch ล้มทั้งก้อน */
+/* v5.1.9 warranty-combo — omit ตอนว่างแบบ unitOptions (ไม่งั้นเครื่องที่ไม่มีค่าเห็น diff กับเซิร์ฟเวอร์ที่ไม่มีคีย์ทุกรอบ)
+   ส่งค่าดิบตรงตัว ไม่ sort/clean — stableJson คงลำดับ array และ local/shadow ต้องผ่านทางเดียวกันถึงจะไม่ diff วน */
 function buildConfigPayload(src){
   src = src || state;
   const cfg = {
@@ -16657,6 +17102,7 @@ function buildConfigPayload(src){
     technicians: src.technicians || []
   };
   if((src.unitOptions || []).length) cfg.unitOptions = src.unitOptions;
+  if(Array.isArray(src.warrantyOptions) && src.warrantyOptions.length) cfg.warrantyOptions = src.warrantyOptions;
   return cfg;
 }
 
@@ -16670,7 +17116,9 @@ function buildConfigPayload(src){
    เขียนคีย์นั้นได้ (แอดมิน = ทุกคีย์ · พนักงาน = CONFIG_KEYS_STAFF_MAY_CHANGE) -> เก็บของ
    ในเครื่อง · คีย์อื่นรับของเซิร์ฟเวอร์ (คีย์ต้องห้ามของพนักงานต้องถูกทับกลับ ตามที่ด่าน
    v4.2.11 สัญญาไว้) · shadowConfig = สภาพของเซิร์ฟเวอร์เสมอ ไม่ใช่ของที่รวมของค้างแล้ว */
-const CONFIG_TOP_KEYS = ['shop', 'settings', 'deletedMasterPartNames', 'technicians', 'unitOptions'];
+// v5.1.9 warranty-combo — เติม warrantyOptions: ไม่งั้น state ไม่รับค่าที่แอดมินเครื่องอื่นเพิ่ม และของที่แอดมินเพิ่มค้างไม่ถูกกัน
+// (ห้ามเติมลง CONFIG_KEYS_STAFF_MAY_CHANGE — พนักงานต้องถูกทับด้วยค่าเซิร์ฟเวอร์เสมอ)
+const CONFIG_TOP_KEYS = ['shop', 'settings', 'deletedMasterPartNames', 'technicians', 'unitOptions', 'warrantyOptions'];
 
 function applyConfigSnapshot(d, meta){
   d = d || {};
@@ -16690,7 +17138,9 @@ function applyConfigSnapshot(d, meta){
     settings: d.settings ? d.settings : state.settings,
     deletedMasterPartNames: d.deletedMasterPartNames || [],
     technicians: d.technicians || [],
-    unitOptions: d.unitOptions || []
+    unitOptions: d.unitOptions || [],
+    // v5.1.9 warranty-combo — เก็บของเซิร์ฟเวอร์ตรงตัว (ไม่ map/filter สมาชิก · backend N1) ทำความสะอาดแค่ใน allWarrantyOptions()
+    warrantyOptions: Array.isArray(d.warrantyOptions) ? d.warrantyOptions : []
   };
   if(d.shop){
     // The launcher renders BEFORE login, when nothing has been read from
@@ -21814,6 +22264,7 @@ function hubContactHtml(){
 }
 
 function render(){
+  closeWarrantyPop();   // v5.1.9 warranty-combo — รายการผูกกับช่องในตารางเดิม วาดใหม่แล้วช่องนั้นหายจากหน้า รายการต้องไปด้วย
   __promoNameCache = null;   // v3.44.0 — ชื่อชุดโปรอาจถูกแก้ที่หลังบ้าน
   __unitAuditCache = null;   // v4.3.9 — กลุ่มราคาต่อหน่วย คิดใหม่รอบละครั้ง
   const app = document.getElementById('app');
@@ -26661,7 +27112,7 @@ function renderJobPartsEditor(job){
                 ${subOpts.map(o => `<option value="${escapeAttr(o)}" ${p.variant===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}
               </select>`
             : (p.variant ? `<div class="muted" style="font-size:12px; padding-left:5px;">(${escapeHtml(p.variant)})</div>` : '')}
-          ${inPromo || deduct ? '' : `<label class="jp-warranty"><span class="jp-warranty-lab">ประกัน</span><input type="text" class="jp-warranty-input" maxlength="${LINE_WARRANTY_MAX}" list="jp-warranty-list" placeholder="เช่น 6 เดือน, 1 ปี" value="${escapeAttr(partLineWarrantyText(p))}" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'warrantyText', this.value)"></label>`}
+          ${inPromo || deduct ? '' : `<div class="jp-warranty"><span class="jp-warranty-lab">ประกัน</span><div class="jp-warranty-box"><input type="text" class="jp-warranty-input" maxlength="${LINE_WARRANTY_MAX}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="ประกัน" role="combobox" aria-expanded="false" aria-controls="jp-warranty-pop" aria-autocomplete="list" placeholder="เช่น 6 เดือน, 1 ปี" value="${escapeAttr(partLineWarrantyText(p))}" oninput="onWarrantyInput(this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})" onkeydown="onWarrantyKey(event,this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'warrantyText', this.value)"><button type="button" class="jp-warranty-caret" tabindex="-1" aria-label="เปิดรายการประกัน" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="toggleWarrantyPop(this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})">${icon('chevron',16)}</button></div></div>`}
           ${jobLineStockHtml(job, p)}
         </td>
         <td class="center" data-label="จำนวน">
@@ -26687,7 +27138,6 @@ function renderJobPartsEditor(job){
       </tr>`;
     });
     html += `</tbody></table></div>
-      <datalist id="jp-warranty-list">${LINE_WARRANTY_SUGGESTIONS.map(o => `<option value="${escapeAttr(o)}"></option>`).join('')}</datalist>
       <div class="job-total-row"><span>${discountAmt > 0 ? 'ยอดรวมอะไหล่' : 'รวมราคาทั้งหมด'}</span><strong class="mono">${fmtMoney(total)} บาท</strong></div>
       <div class="job-discount-row">
         <span>ส่วนลด</span>
@@ -28639,6 +29089,32 @@ function renderMasterTab(){
     html += `</tbody></table></div>`;
   }
   html += `<div style="margin-top:10px;"><button class="btn secondary" style="min-height:44px;" onclick="addUnitOptionPrompt()">+ เพิ่มหน่วยใหม่</button></div>
+  </div>`;
+
+  /* v5.1.9 warranty-combo — ตัวเลือกประกัน (U7) ลอกโครงการ์ดหน่วยนับ: 8 มาตรฐานเป็นชิปลบไม่ได้ · ของร้านแก้ชื่อ/ลบได้
+     แสดงรายการดิบของ state (ลำดับ i = ลำดับใน state.warrantyOptions ที่ rename/delete อ้าง) ค่าผ่าน escapeAttr (security C6)
+     ค่าเสียที่ไม่ใช่สตริง (ไม่ควรมี) แสดงเป็นช่องว่างให้แอดมินลบทิ้งได้ */
+  const wo = warrantyShopListRaw();
+  const woFull = wo.length >= WARRANTY_OPTIONS_MAX;
+  html += `<div class="card">
+    <h3>ตัวเลือกประกัน (รายการในช่อง "ประกัน" ใต้ชื่ออะไหล่)</h3>
+    <p class="muted">ช่างแตะเลือกได้ในใบงาน หรือพิมพ์ข้อความอื่นเองก็ได้เสมอ — ลบหรือแก้ชื่อตรงนี้ ไม่แก้ใบงานที่เลือกไว้แล้ว</p>
+    <div class="row-flex" style="gap:6px; flex-wrap:wrap; margin-bottom:12px;">
+      ${LINE_WARRANTY_SUGGESTIONS.map(u => `<span class="chk-chip" style="cursor:default;">${escapeHtml(u)}</span>`).join('')}
+    </div>
+    <p class="muted" style="margin-top:0;">ข้างบนคือตัวเลือกมาตรฐาน ลบไม่ได้ · ข้างล่างคือที่ร้านเพิ่มเอง (สูงสุด ${WARRANTY_OPTIONS_MAX})</p>`;
+  if(wo.length === 0){
+    html += `<div class="empty-state" style="padding:10px 12px;">ยังไม่มีตัวเลือกที่ร้านเพิ่มเอง</div>`;
+  } else {
+    html += `<div class="table-wrap"><table class="parts-table"><thead><tr><th>ข้อความประกัน</th><th class="center" style="width:70px;">ลบ</th></tr></thead><tbody>`;
+    wo.forEach((u, i) => {
+      html += `<tr><td><input type="text" class="unit-input" style="width:100%;" maxlength="${LINE_WARRANTY_MAX}" value="${escapeAttr(typeof u === 'string' ? u : '')}" onchange="renameWarrantyOption(${i}, this.value)"></td>
+        <td class="center"><button class="icon-btn" style="min-width:44px;min-height:44px;" aria-label="ลบตัวเลือกนี้" onclick="deleteWarrantyOption(${i})">${icon('x',13)}</button></td></tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+  html += `<div style="margin-top:10px;"><button class="btn secondary" style="min-height:44px;" ${woFull ? 'disabled' : ''} onclick="addWarrantyOptionPrompt()">+ เพิ่มตัวเลือกประกัน</button></div>
+    ${woFull ? '<p class="muted" style="margin:6px 0 0;">ครบ 30 ตัวเลือกแล้ว — ลบตัวที่ไม่ใช้ก่อน</p>' : ''}
   </div>`;
   return html;
 }
