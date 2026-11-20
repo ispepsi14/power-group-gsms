@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.9";
+  const APP_VERSION = "5.1.10";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3451,6 +3451,20 @@
                  ที่ไม่มี warrantyOptions (ลบคีย์ = แตะคีย์ต้องห้าม) แล้วทั้ง batch ถูกปฏิเสธ จึงบังคับอัปเดต (รอเครื่องว่างตาม v5.1.7)
               ใบพิมพ์ไม่เปลี่ยน · ไม่แตะ firestore.rules / flushState / configWriteAllowed / CONFIG_KEYS_STAFF_MAY_CHANGE
               เทสต์: tests/warranty-combo.guard.js
+     v5.1.10 — คำนำหน้าชื่อลูกค้า คุณ / K. ติดตายตัว (2026-11-20) · งาน customer-name-prefix
+              ช่างพิมพ์ "คุณ" เองบ้างไม่พิมพ์บ้าง ข้อความ LINE เติม "คุณ" ซ้ำเป็น "คุณคุณ…" และชื่ออังกฤษออกเป็น "คุณJohn"
+              1. ฟังก์ชันล้วน customerPrefixFor / stripCustomerPrefix / customerDisplayName (ไม่อ้าง view/state · คืนข้อความล้วน ผู้เรียก escape)
+                 ตัวอักษรตัวแรก A–Z = "K. ชื่อ" (เว้นวรรค) · อื่น ๆ = "คุณชื่อ" · ว่าง = "-" · ทุกชื่อได้คำนำหน้า (บริษัท/นาย/Mr. ด้วย)
+                 ตัด "คุณ"/"K."/"K " ที่พิมพ์มาเอง 1 ครั้ง — "คุณ" ตัดเฉพาะเมื่อตามด้วยพยัญชนะ ก–ฮ หรือช่องว่าง (คุณากร ไม่ถูกตัด)
+              2. ช่องชื่อ ฟอร์มรับรถ + แก้ไขใบงาน: ป้ายคำนำหน้า aria-hidden ติดซ้าย (.name-prefix-group) + .sr-only "คำนำหน้า …"
+                 oninput อัปเดตป้ายใน DOM เท่านั้น ไม่เรียก render() · ตัดคำนำหน้าตอนออกจากช่อง (onchange) และตอนบันทึก
+              3. เก็บชื่อเปล่าใน customers.name (submitCheckin ใหม่ + ci_editMatch, saveEditJob) · edit log เทียบชื่อเปล่า
+                 พิมพ์ "คุณสมชาย" ทับ "สมชาย" = ไม่เปลี่ยน · ชื่อเก่าที่มี คุณ/K. อยู่แล้วไม่ถูกเขียนทับ แสดงไม่ซ้อน
+              4. แสดงผ่าน customerDisplayName ทุกจุด: การ์ด/รายการ, หน้าใบงาน, ปฏิทิน, ถังขยะ, ใบพิมพ์, ใบเสนอราคา, กล่องยืนยันลบ
+                 ข้อความ LINE ของแอพ (buildLineSummaryText แทนบรรทัดชื่อ — ไม่แตะบล็อก LINE-SHARED / functions/) ชื่อว่าง = "-"
+              5. ค้นหา jobSearchBlob มีทั้งชื่อเปล่าและชื่อพร้อมคำนำหน้า · .pv-value ตัดคำได้ (ชื่อยาวไม่ล้นใบ A5)
+              ไม่แตะ firestore.rules / config/main / flushState · ไม่ย้ายข้อมูลเก่า
+              เทสต์: tests/customer-name-prefix.guard.js
               -->
 
 
@@ -4475,6 +4489,15 @@
   .field input.bad, .field select.bad{
     border-color:var(--danger) !important; background:var(--danger-bg) !important;
   }
+  /* v5.1.10 — ช่องชื่อลูกค้า: ป้ายคำนำหน้า คุณ / K. ติดซ้ายในกรอบเดียวกับช่อง (ไม่ใช่ส่วนของ value) */
+  .sr-only{position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); clip-path:inset(50%); white-space:nowrap; border:0;}
+  .name-prefix-group{position:relative; display:flex; align-items:stretch; border:1px solid var(--border); border-radius:9px; background:var(--card-bg); overflow:hidden; transition:border-color .12s, box-shadow .12s; cursor:text;}
+  .name-prefix-group:focus-within{border-color:var(--navy); box-shadow:0 0 0 3px rgba(48,71,94,.13);}
+  .name-prefix{flex:0 0 auto; display:flex; align-items:center; padding:0 11px; background:var(--surface); border-right:1px solid var(--border); color:var(--text); font-weight:700; font-size:inherit; line-height:1.4; white-space:nowrap; user-select:none; -webkit-user-select:none; pointer-events:none;}
+  .name-prefix.empty{color:var(--text-2);}
+  .name-prefix-group input[type=text], .name-prefix-group input[type=text]:focus{border:none; border-radius:0; box-shadow:none; background:transparent; flex:1 1 auto; min-width:0; width:auto;}
+  .name-prefix-group.bad{border-color:var(--danger); background:var(--danger-bg);}
+  .name-prefix-group.bad .name-prefix{background:transparent; color:var(--danger);}
   .field-err{
     margin-top:4px; font-size:11.5px; font-weight:600; color:var(--danger);
     display:flex; align-items:center; gap:4px;
@@ -6084,7 +6107,7 @@
   .pv-promo-box .p{font-weight:700; font-size:15px; color:var(--red);}
   .pv-foot{font-size:11.5px; color:var(--text-2); font-style:italic; margin-top:14px;}
   .pv-section-title{font-weight:700; font-size:14px; margin:14px 0 8px;}
-  .pv-value{font-weight:600;}
+  .pv-value{font-weight:600; min-width:0; overflow-wrap:anywhere;}
   .pv-tags{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;}
   .pv-tag{display:inline-block; background:var(--surface-2); border-radius:999px; padding:4px 10px; font-size:12.5px;}
   .pv-check-circle{
@@ -17682,6 +17705,57 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
 function escapeAttr(str){ return escapeHtml(str); }
+/* v5.1.10 customer-name-prefix — ฟังก์ชันล้วน (ไม่อ้าง view/state/document) คืนข้อความล้วน ผู้เรียกเป็นคน escape
+   stripCustomerPrefix: trim แล้วตัดคำนำหน้าที่ช่างพิมพ์มาเอง "ครั้งเดียว"
+     "คุณ" ตัดเฉพาะเมื่อตามด้วยพยัญชนะ ก–ฮ หรือช่องว่าง (ชื่อจริง คุณากร / คุณัญญา ไม่ถูกตัด)
+     "K." (ตามด้วยอะไรก็ได้) หรือ "K" + ช่องว่าง ไม่สนตัวพิมพ์ (Kitti / Kim ไม่ถูกตัด)
+   customerPrefixFor: ตัวอักษรตัวแรกที่เป็น "ตัวอักษร" A–Z/a–z = "K." · อย่างอื่นทั้งหมด = "คุณ"
+   customerDisplayName: ชื่อว่าง = "-" · อังกฤษ "K. ชื่อ" (เว้นวรรค) · อื่น ๆ "คุณชื่อ" · ทุกชื่อได้คำนำหน้า */
+function stripCustomerPrefix(raw){
+  let n = (raw === undefined || raw === null) ? '' : String(raw).trim();
+  if(/^คุณ(?=[\u0E01-\u0E2E\s])/.test(n)) n = n.slice(3);
+  else if(/^[Kk](?:\.|\s)/.test(n)) n = n.slice(1).replace(/^\./, '');
+  return n.replace(/^\s+/, '');
+}
+function customerPrefixFor(name){
+  const m = /\p{L}/u.exec(stripCustomerPrefix(name));
+  return (m && /^[A-Za-z]$/.test(m[0])) ? 'K.' : 'คุณ';
+}
+function customerDisplayName(name){
+  const n = stripCustomerPrefix(name);
+  if(!n) return '-';
+  return customerPrefixFor(n) === 'K.' ? 'K. ' + n : 'คุณ' + n;
+}
+/* ป้ายคำนำหน้าในช่องชื่อ — แก้ DOM ตรง ห้ามเรียก render() (คีย์บอร์ด iOS หลุด) */
+function updateNamePrefixLabel(el){
+  const g = (el && typeof el.closest === 'function') ? el.closest('.name-prefix-group') : null;
+  if(!g) return;
+  const p = customerPrefixFor(el.value);
+  const tag = g.querySelector('.name-prefix');
+  if(tag){ tag.textContent = p; tag.classList.toggle('empty', !String(el.value || '').trim()); }
+  const sr = g.querySelector('.sr-only');
+  if(sr) sr.textContent = 'คำนำหน้า ' + p;
+}
+/* ออกจากช่อง (onchange): ตัดคำนำหน้าที่พิมพ์/วางมาเอง แล้วเก็บลง view — ไม่เรียก render() */
+function onCustomerNameCommit(el, field){
+  if(!el) return;
+  const n = stripCustomerPrefix(el.value);
+  if(el.value !== n) el.value = n;
+  if(field === 'ci_newCustomerName') onCiFieldInput(field, n);
+  else if(field === 'je_customerName') onJeFieldInput(field, n);
+  updateNamePrefixLabel(el);
+}
+/* markup ช่องชื่อลูกค้าแบบมีป้ายคำนำหน้า form = 'ci' (ฟอร์มรับรถ) | 'je' (แก้ไขใบงาน)
+   handler เป็นข้อความตายตัวทั้งสองแบบ (ไม่ต่อค่าเข้า on*= — handlerxss S1) · value ผ่าน escapeAttr */
+function customerNameFieldHtml(form, value){
+  const p = escapeHtml(customerPrefixFor(value));
+  const empty = String(value || '').trim() ? '' : ' empty';
+  const v = escapeAttr(value);
+  if(form === 'je'){
+    return `<div class="field"><label for="je-name">ชื่อลูกค้า</label><div class="name-prefix-group" onclick="var i=this.querySelector('input'); if(i &amp;&amp; document.activeElement!==i) i.focus()"><span class="name-prefix${empty}" aria-hidden="true">${p}</span><input id="je-name" type="text" aria-describedby="je-name-pfx" value="${v}" oninput="onJeFieldInput('je_customerName', this.value); updateNamePrefixLabel(this)" onchange="onCustomerNameCommit(this, 'je_customerName')"><span id="je-name-pfx" class="sr-only">คำนำหน้า ${p}</span></div></div>`;
+  }
+  return `<div class="field"><label for="ci-name">ชื่อลูกค้า</label><div class="name-prefix-group" onclick="var i=this.querySelector('input'); if(i &amp;&amp; document.activeElement!==i) i.focus()"><span class="name-prefix${empty}" aria-hidden="true">${p}</span><input id="ci-name" type="text" aria-describedby="ci-name-pfx" value="${v}" oninput="onCiFieldInput('ci_newCustomerName', this.value); updateNamePrefixLabel(this)" onchange="onCustomerNameCommit(this, 'ci_newCustomerName')"><span id="ci-name-pfx" class="sr-only">คำนำหน้า ${p}</span></div></div>`;
+}
 // handler-xss: ลิงก์รูปจาก Firestore (thumb / photos[] / jobPhotos.url|dataUrl / ลายเซ็น) ยอมแค่ data:image base64 กับ Storage ของ Firebase
 // อย่างอื่น (javascript: / data:text/html / โฮสต์นอก) คืน '' -> ผู้เรียกไม่วาด <img>/<a> และใช้ช่องว่างแบบเดิมของจอนั้นแทน
 const SAFE_IMG_PREFIX = 'https://firebasestorage.googleapis.com/v0/b/power-group-gsms.firebasestorage.app/o/';   // = PHOTO_SHARE_URL_PREFIX
@@ -17900,7 +17974,7 @@ function jobSearchBlob(job){
     job.jobNumber, job.queueNo, job.bay, job.bay ? bayLabel(job.bay) : '', job.technician,
     plate, plate.replace(/[\s-]/g, ''),
     v.province, v.brand, v.model, v.year, v.color,
-    c.name, c.phone
+    c.name, c.name ? customerDisplayName(c.name) : '', c.phone
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -19449,7 +19523,7 @@ function submitCheckin(){
   } else if(view.ci_matchedVehicleId && view.ci_editMatch){
     vehicle = getVehicle(view.ci_matchedVehicleId);
     customer = getCustomer(vehicle.customerId);
-    customer.name = view.ci_newCustomerName || customer.name;
+    customer.name = stripCustomerPrefix(view.ci_newCustomerName) || customer.name;   // v5.1.10 เก็บชื่อเปล่า
     customer.phone = view.ci_newCustomerPhone || customer.phone;
     vehicle.province = view.ci_newProvince || vehicle.province;
     vehicle.brand = resolvedBrand || vehicle.brand;
@@ -19458,8 +19532,8 @@ function submitCheckin(){
     vehicle.color = view.ci_newColor || vehicle.color;
     vehicle.mileage = mileage;
   } else {
-    if(!view.ci_newCustomerName.trim()){ flashToast('กรุณากรอกชื่อลูกค้า'); return; }
-    customer = { id: uid(), name: view.ci_newCustomerName.trim(), phone: view.ci_newCustomerPhone.trim() };
+    if(!stripCustomerPrefix(view.ci_newCustomerName)){ flashToast('กรุณากรอกชื่อลูกค้า'); return; }
+    customer = { id: uid(), name: stripCustomerPrefix(view.ci_newCustomerName), phone: view.ci_newCustomerPhone.trim() };   // v5.1.10 เก็บชื่อเปล่า
     state.customers.push(customer);
     vehicle = {
       id: uid(), customerId: customer.id, plate,
@@ -20201,7 +20275,7 @@ function startEditJob(jobId){
   view.je_editing = true;
   view.je_jobId = jobId;
   view.je_plate = v.plate || '';
-  view.je_customerName = c.name || '';
+  view.je_customerName = stripCustomerPrefix(c.name);   // v5.1.10 ช่องแสดงชื่อเปล่า ป้ายคำนำหน้าอยู่นอก value
   view.je_customerPhone = c.phone || '';
   view.je_brand = v.brand || '';
   view.je_model = v.model || '';
@@ -20256,7 +20330,7 @@ function saveEditJob(jobId){
   }
 
   diff('ทะเบียนรถ', v.plate, view.je_plate);
-  diff('ชื่อลูกค้า', c.name, view.je_customerName);
+  diff('ชื่อลูกค้า', stripCustomerPrefix(c.name), stripCustomerPrefix(view.je_customerName));   // v5.1.10 เทียบ/บันทึกชื่อเปล่า
   diff('เบอร์โทร', c.phone, view.je_customerPhone);
   diff('ยี่ห้อ', v.brand, view.je_brand);
   diff('รุ่น', v.model, view.je_model);
@@ -20283,7 +20357,8 @@ function saveEditJob(jobId){
   }
 
   v.plate = view.je_plate.trim();
-  c.name = view.je_customerName.trim();
+  // v5.1.10 — เก็บชื่อเปล่า · ชื่อเดิมที่ต่างแค่คำนำหน้า (ข้อมูลเก่า "คุณสมชาย") ไม่ถูกเขียนทับ
+  { const nm = stripCustomerPrefix(view.je_customerName); if(nm !== stripCustomerPrefix(c.name)) c.name = nm; }
   c.phone = view.je_customerPhone.trim();
   v.brand = view.je_brand.trim().toUpperCase();
   v.model = view.je_model.trim().toUpperCase();
@@ -20308,7 +20383,7 @@ function deleteJobConfirm(jobId){
   /* v4.7.0 — ใบที่เบิกของจากสต็อกไว้: บอกในข้อความยืนยัน แล้วถามเรื่องคืน "หลัง" ย้ายลงถังขยะ */
   const stockMv = stockJobMoves(jobId);
   const stockOut = stockMv ? stockJobOutstanding(stockMv).reduce((s, r) => s + r.out, 0) : 0;
-  uiConfirm(`ลบรายการรับรถนี้?\n${v.plate||'-'} · ${c.name||'-'}\n\nย้ายไปถังขยะ กู้คืนได้จากหน้าตั้งค่า`
+  uiConfirm(`ลบรายการรับรถนี้?\n${v.plate||'-'} · ${customerDisplayName(c.name)}\n\nย้ายไปถังขยะ กู้คืนได้จากหน้าตั้งค่า`
     + (stockOut ? `\nมีของเบิกจากสต็อก ${stockOut} ชิ้น — จะถามเรื่องคืนต่อ` : ''), () => {
     /* Soft delete — the record and its photos stay, only marked. A hard delete used to
        destroy the photos too, which made "undo" impossible. */
@@ -21781,7 +21856,7 @@ async function generateAiSummary(){
 - เลขงาน: ${job.jobNumber}
 - ทะเบียนรถ: ${v.plate || '-'}
 - ยี่ห้อ/รุ่น/ปี: ${v.brand||'-'} ${v.model||''} ${v.year||''}
-- ลูกค้า: ${c.name||'-'}
+- ลูกค้า: ${customerDisplayName(c.name)}
 - อาการที่แจ้ง: ${complaintsText}
 - สถานะปัจจุบัน: ${statusOf(job.status).label}
 - เลขไมล์: ${job.mileageIn||'-'}
@@ -22786,7 +22861,7 @@ function renderJobList(){
             ${jobEtaChipHtml(job)}
           </div>
           <div class="meta strong">${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}${v.color ? ' · '+escapeHtml(v.color) : ''}</div>
-          <div class="meta">${escapeHtml(c.name||'-')}</div>
+          <div class="meta">${escapeHtml(customerDisplayName(c.name))}</div>
           <div class="jn mono">${escapeHtml(job.jobNumber)} · ${fmtDT(job.createdAt)}</div>
         </div>
         <span class="badge ${st.cls}">${escapeHtml(st.label)}</span>
@@ -22942,7 +23017,7 @@ function renderCheckin(){
     html += `<div class="card">
       <h3><span class="ci-step">2</span>${matched ? 'แก้ไขข้อมูลลูกค้า/รถ' : 'ข้อมูลลูกค้าและรถ (ใหม่)'}</h3>
       <div class="row2">
-        <div class="field"><label>ชื่อลูกค้า</label><input type="text" value="${escapeAttr(view.ci_newCustomerName)}" oninput="onCiFieldInput('ci_newCustomerName', this.value)"></div>
+        ${customerNameFieldHtml('ci', view.ci_newCustomerName)}
         <div class="field"><label>เบอร์โทร</label><input type="tel" value="${escapeAttr(view.ci_newCustomerPhone)}" oninput="onCiFieldInput('ci_newCustomerPhone', this.value)"></div>
       </div>
       <div class="field">
@@ -24935,9 +25010,10 @@ function formatLineSummary(job, ctx){
 function buildLineSummaryText(job){
   /* v4.3.8 — ป้ายลูกค้าเดิมใช้เกณฑ์เดียวกับบล็อก "ครั้งก่อน" (ลูกค้ามีใบอื่น หรือรถคันนี้เคยเข้ามาแล้ว) */
   const seenBefore = isRepeatCustomer(job.customerId, job.id) || previousJobsForVehicle(job).length > 0;
-  return formatLineSummary(job, {
+  const cust = getCustomer(job.customerId) || {};
+  const text = formatLineSummary(job, {
     vehicle: getVehicle(job.vehicleId) || {},
-    customer: getCustomer(job.customerId) || {},
+    customer: cust,
     seenBefore,
     lastService: lastServiceSummary(job),
     priceNote: view.line_priceNote,
@@ -24946,6 +25022,11 @@ function buildLineSummaryText(job){
     queueFallback: view.line_queueNo,
     fmtDate: fmtDateBE
   });
+  /* v5.1.10 customer-name-prefix — บรรทัดชื่อ (บรรทัดที่ 2) ใช้คำนำหน้า คุณ / K. ของแอพ ชื่อว่าง = "-"
+     บล็อก LINE-SHARED (ใช้ร่วมกับ Bot) ยังเติม "คุณ" ตายตัว — ไม่แตะ จึงแทนบรรทัดนี้ที่ตัวห่อของแอพแทน */
+  const out = String(text).split('\n');
+  if(out.length > 1) out[1] = customerDisplayName(cust.name) + (seenBefore ? ' (ลูกค้าเดิม)' : '');
+  return out.join('\n');
 }
 
 /* ---------------- v4.6.5 — ส่งเข้ากลุ่มไลน์ (spec docs/specs/line-share-quote-photos.md) ----------------
@@ -26097,7 +26178,7 @@ function renderJobDetail(jobId){
       <div><div class="k">ช่างผู้รับผิดชอบ</div><div class="v">${job.technician ? escapeHtml(job.technician) : '-'} <button class="btn secondary small" style="margin-left:6px;" onclick="assignTechnician(${escapeAttr(JSON.stringify(String(job.id)))})">${job.technician ? 'เปลี่ยน' : 'มอบหมาย'}</button></div></div>
       <div><div class="k">Job Number</div><div class="v">${escapeHtml(job.jobNumber)}</div></div>
       <div><div class="k">วันที่รับรถ</div><div class="v">${fmtDT(job.createdAt)}</div></div>
-      <div><div class="k">ชื่อลูกค้า</div><div class="v">${escapeHtml(c.name||'-')}</div></div>
+      <div><div class="k">ชื่อลูกค้า</div><div class="v">${escapeHtml(customerDisplayName(c.name))}</div></div>
       <div><div class="k">เบอร์โทร</div><div class="v">${escapeHtml(c.phone||'-')}</div></div>
       <div><div class="k">ยี่ห้อ/รุ่น/ปี</div><div class="v">${escapeHtml(v.brand||'-')} ${escapeHtml(v.model||'')} ${escapeHtml(v.year||'')}</div></div>
       <div><div class="k">สี</div><div class="v">${escapeHtml(v.color||'-')}</div></div>
@@ -27289,7 +27370,7 @@ function renderJobFormHeader(job, docTitle, subLine){
     </div>
     <div class="pv-intake">
       <div class="pv-intake-row">
-        <span class="pv-field wide"><label>ชื่อลูกค้า</label><span class="pv-value">${escapeHtml(c.name||'-')}</span></span>
+        <span class="pv-field wide"><label>ชื่อลูกค้า</label><span class="pv-value">${escapeHtml(customerDisplayName(c.name))}</span></span>
         <span class="pv-field"><label>เบอร์โทร</label><span class="pv-value">${escapeHtml(c.phone||'-')}</span></span>
       </div>
       <div class="pv-intake-row">
@@ -27611,7 +27692,7 @@ function renderJobQuotePage(job, opts){
 
     <div class="qt-meta">
       <div class="qt-meta-col">
-        <div class="qt-row"><span class="qt-k">ชื่อลูกค้า</span><span class="qt-v">${escapeHtml(c.name || '-')}</span></div>
+        <div class="qt-row"><span class="qt-k">ชื่อลูกค้า</span><span class="qt-v">${escapeHtml(customerDisplayName(c.name))}</span></div>
         <div class="qt-row"><span class="qt-k">เบอร์โทร</span><span class="qt-v">${escapeHtml(c.phone || '-')}</span></div>
         <div class="qt-row"><span class="qt-k">ทะเบียนรถ</span><span class="qt-v">${plateHtml(v.plate, v.province, 'sm')}</span></div>
       </div>
@@ -27684,7 +27765,7 @@ function renderJobEditForm(job){
     <h3>${icon('edit',15)} แก้ไขข้อมูลรับรถ — ${escapeHtml(job.jobNumber)}</h3>
     <div class="field"><label>ทะเบียนรถ</label><input type="text" class="force-upper mono" value="${escapeAttr(view.je_plate)}" oninput="onJeUpperInput('je_plate', this)" autocapitalize="characters" autocorrect="off" spellcheck="false"></div>
     <div class="row2">
-      <div class="field"><label>ชื่อลูกค้า</label><input type="text" value="${escapeAttr(view.je_customerName)}" oninput="onJeFieldInput('je_customerName', this.value)"></div>
+      ${customerNameFieldHtml('je', view.je_customerName)}
       <div class="field"><label>เบอร์โทร</label><input type="tel" value="${escapeAttr(view.je_customerPhone)}" oninput="onJeFieldInput('je_customerPhone', this.value)"></div>
     </div>
     <div class="row2">
@@ -32135,7 +32216,7 @@ function deliveredResultsHtml(){
           ${warr ? `<span class="dv-warr ${warr.cls}">${icon('shield',12)} ${escapeHtml(warr.label)}</span>` : ''}
         </div>
         <div class="dv-model">${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}${v.color ? ' · '+escapeHtml(v.color) : ''}</div>
-        <div class="dv-cust">${escapeHtml(c.name||'-')}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
+        <div class="dv-cust">${escapeHtml(customerDisplayName(c.name))}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
         ${job.technician ? `<div class="dv-tech">${icon('wrench',11)} ช่าง${escapeHtml(job.technician)}</div>` : ''}
         <div class="dv-meta mono">${escapeHtml(job.jobNumber||'-')} · ส่งเมื่อ ${fmtDT(dAt)}</div>
       </div>
@@ -32275,7 +32356,7 @@ function rejectedResultsHtml(){
           <span class="dv-warr expired">${icon('x',12)} ไม่อนุมัติ</span>
         </div>
         <div class="dv-model">${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}${v.color ? ' · '+escapeHtml(v.color) : ''}</div>
-        <div class="dv-cust">${escapeHtml(c.name||'-')}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
+        <div class="dv-cust">${escapeHtml(customerDisplayName(c.name))}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
         <div class="dv-meta mono">${escapeHtml(job.jobNumber||'-')} · เอารถลงเมื่อ ${fmtDT(rAt)}</div>
       </div>
       <div class="dv-amt">
@@ -32429,7 +32510,7 @@ function renderHeldTab(){
         <div class="held-info">
           <div class="held-plate">${plateHtml(v.plate, v.province, 'sm')}</div>
           <div class="held-car">${escapeHtml([v.brand, v.model, v.color].filter(Boolean).join(' ') || '-')}</div>
-          <div class="held-meta">${escapeHtml(c.name || '-')} · รับรถ ${escapeHtml(fmtDT(job.createdAt))} · ค้างมา ${days} วัน</div>
+          <div class="held-meta">${escapeHtml(customerDisplayName(c.name))} · รับรถ ${escapeHtml(fmtDT(job.createdAt))} · ค้างมา ${days} วัน</div>
         </div>
       </div>
       <div class="held-actions">
@@ -32603,7 +32684,7 @@ function stuckResultsHtml(){
             <span class="badge ${st.cls}">${escapeHtml(st.label)}</span>
           </div>
           <div class="dv-model">${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}${v.color ? ' · '+escapeHtml(v.color) : ''}</div>
-          <div class="dv-cust">${escapeHtml(c.name||'-')}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
+          <div class="dv-cust">${escapeHtml(customerDisplayName(c.name))}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
           <div class="dv-meta mono">${escapeHtml(job.jobNumber||'-')} · รับรถเมื่อ ${fmtDT(job.createdAt)}</div>
           ${(job.notes||[]).length ? `<div class="dv-notes">
             ${job.notes.map((n, idx) => `<div class="dv-note-item">
@@ -33012,7 +33093,7 @@ function renderWarrantyExpiryTab(){
           <span class="dv-warr ${warr.cls === 'today' ? 'today' : 'active'}">${icon('shield',12)} ${escapeHtml(warr.label)}</span>
         </div>
         <div class="dv-model">${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}${v.color ? ' · '+escapeHtml(v.color) : ''}</div>
-        <div class="dv-cust">${escapeHtml(c.name||'-')}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
+        <div class="dv-cust">${escapeHtml(customerDisplayName(c.name))}${c.phone ? ' · '+escapeHtml(c.phone) : ''}</div>
         <div class="dv-meta mono">${escapeHtml(job.jobNumber||'-')} · ส่งมอบเมื่อ ${fmtDT(deliveredAtOf(job))}</div>
       </div>
       <div class="dv-acts">
@@ -33083,7 +33164,7 @@ function renderCalendarTab(){
             return `<tr style="cursor:pointer;" onclick="openJob(${escapeAttr(JSON.stringify(String(j.id)))})">
               <td class="mono">${escapeHtml(v.plate||'-')}</td>
               <td>${escapeHtml(v.brand||'')} ${escapeHtml(v.model||'')}</td>
-              <td>${escapeHtml(c.name||'-')}</td>
+              <td>${escapeHtml(customerDisplayName(c.name))}</td>
               <td class="center"><span class="badge ${st.cls}">${escapeHtml(st.label)}</span></td>
             </tr>`;
           }).join('')}
@@ -33729,7 +33810,7 @@ function renderTrashCard(){
           <span class="trash-plate">${escapeHtml(v.plate||'-')}</span>
           <span class="badge ${st.cls}">${escapeHtml(st.label)}</span>
         </div>
-        <div class="trash-sub">${escapeHtml([v.brand, v.model].filter(Boolean).join(' '))}${c.name ? ' · ' + escapeHtml(c.name) : ''}</div>
+        <div class="trash-sub">${escapeHtml([v.brand, v.model].filter(Boolean).join(' '))}${c.name ? ' · ' + escapeHtml(customerDisplayName(c.name)) : ''}</div>
         <div class="trash-meta mono">${escapeHtml(j.jobNumber||'-')}${j.queueNo ? ' · คิว ' + escapeHtml(j.queueNo) : ''} · ลบเมื่อ ${fmtDT(j.deletedAt)}${j.deletedBy ? ' โดย ' + escapeHtml(j.deletedBy) : ''}</div>
       </div>
       <div class="trash-acts">
