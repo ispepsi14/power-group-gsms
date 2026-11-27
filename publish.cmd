@@ -57,6 +57,31 @@ if not "%BEHIND%"=="0" (
   goto :fail
 )
 
+rem 2 พ.ย. 2026 - งาน multi-branch: ตรวจก่อน git add ว่าใส่ UID ของบัญชีรวมครบแล้ว
+rem ถ้ายังเป็น placeholder แล้ว push เว็บจริงจะไม่ตรงกับกฎ จึงต้องหยุดตรงนี้
+rem ผลของ guard มีชื่อบัญชีปนอยู่ จึงส่งลง nul ไม่ให้ขึ้นจอ
+echo.
+echo Checking branch rules...
+if not exist "tests\branch-rules.guard.js" (
+  echo.
+  echo ERROR: ไม่พบไฟล์ตรวจ tests\branch-rules.guard.js - ตรวจ UID ไม่ได้ จึงไม่ publish
+  goto :fail
+)
+where node >nul 2>nul
+if errorlevel 1 (
+  echo.
+  echo ERROR: ไม่พบคำสั่ง node บนเครื่องนี้ - ตรวจ UID ไม่ได้ จึงไม่ publish
+  goto :fail
+)
+node tests/branch-rules.guard.js --publish public/index.html >nul 2>&1
+if not "%ERRORLEVEL%"=="0" (
+  echo.
+  echo ERROR: ยังใส่ UID ของบัญชีรวมไม่ครบ หรือกฎสาขายังไม่ผ่านการตรวจ
+  echo        ต้องใส่ UID เดียวกันใน firestore.rules, storage.rules และ public\index.html
+  echo        แจ้งทีมงานให้ตรวจก่อน แล้วค่อยกด publish ใหม่
+  goto :fail
+)
+
 rem 25 ก.ย. 2026 - เดิมบรรทัดนี้ stage แค่ public\index.html ไฟล์เดียว
 rem เมื่อมีไฟล์ใหม่ในโฟลเดอร์ public (version.json, firebase-messaging-sw.js)
 rem มันจึงไม่ถูก commit และไม่เคยขึ้นเซิร์ฟเวอร์ ทั้งที่อยู่ในเครื่องแล้ว
@@ -66,9 +91,16 @@ rem 5 ต.ค. 2026 - เพิ่ม firebase.json กับ firestore.rules �
 rem firebase.json อยู่นอกโฟลเดอร์ public แต่เป็นตัวคุม Cache-Control ของเว็บ
 rem ถ้าไม่ stage มาด้วย การแก้เรื่องแคชจะไม่มีวันขึ้นเซิร์ฟเวอร์ - เป็นกับดัก
 rem ตัวเดียวกับที่ทำให้ version.json หายไปสองสัปดาห์
+rem
+rem 24 ต.ค. 2026 - งาน line-bot-queue-command เพิ่ม functions scripts storage.rules .gitignore
+rem functions\ คือซอร์ส LINE Bot (Cloud Function) และ scripts\extract-line-shared.js
+rem ต้องขึ้น GitHub ไว้เป็นสำเนาซอร์ส ถ้าเครื่องพังจะได้ไม่หาย
+rem storage.rules = กฎ Cloud Storage · .gitignore ราก = บรรทัดกันไฟล์ลับของ Bot
+rem push ส่วนนี้ไม่ deploy Bot เอง - GitHub Actions deploy เฉพาะ hosting (public\)
+rem node_modules / .secret.local / .env* ถูก .gitignore กันไว้แล้ว ไม่ขึ้น GitHub
 echo.
-echo [2/4] Staging public\ + firebase.json + firestore.rules ...
-git add -A -- public firebase.json firestore.rules
+echo [2/4] Staging public\ + firebase.json + firestore.rules + functions\ + scripts\ + storage.rules + .gitignore ...
+git add -A -- public firebase.json firestore.rules functions scripts storage.rules .gitignore
 if errorlevel 1 goto :fail
 
 git diff --cached --quiet
