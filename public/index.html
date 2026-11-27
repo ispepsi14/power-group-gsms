@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.10";
+  const APP_VERSION = "5.1.13";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -4559,6 +4559,28 @@
     background:transparent;
   }
   .set-sec-body > .card + .card{border-top:1px solid var(--border); padding-top:15px;}
+  /* Settings overview: clear groups and compact navigation on every screen. */
+  .set-index{padding:20px; border-radius:16px; margin-bottom:18px;}
+  .set-index-head{align-items:flex-start; margin-bottom:14px;}
+  .set-index-title{font-size:22px; line-height:1.3;}
+  .set-index-sub{margin:5px 0 0; font-size:13px; color:var(--text-2); line-height:1.5;}
+  .set-index-chips{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px;}
+  .set-chip{min-height:44px; justify-content:flex-start; border-radius:10px; font-weight:600; text-align:left;}
+  .set-sec{border-radius:14px; margin-bottom:10px; scroll-margin-top:100px;}
+  .set-sec-head{padding:16px; min-height:72px;}
+  .set-sec-ic{width:40px; height:40px; border-radius:11px;}
+  .set-sec-title{font-size:15px;}
+  .set-sec-desc{font-size:12px; line-height:1.45;}
+  .set-sec-body{padding:18px 18px 5px;}
+  @media (max-width:460px){
+    .set-index{padding:15px;}
+    .set-index-title{font-size:19px;}
+    .set-index-chips{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .set-chip{font-size:12px; padding:8px;}
+    .set-sec-desc{display:block;}
+    .set-sec-head{padding:12px; min-height:64px;}
+    .set-sec-body{padding:14px 12px 4px;}
+  }
   @media (max-width:460px){
     .set-sec-desc{display:none;}
     .set-sec-head{min-height:52px; padding:11px 11px;}
@@ -7231,6 +7253,15 @@
      จอแคบย่อโลโก้ให้พอดีแถวเดียว ไม่ให้ปุ่มทับโลโก้หรือเกิด scroll แนวนอน · ดอนเมืองบัญชีอื่นไม่มีคลาสนี้
      ป้าย "ผู้ดูแล" ในชิปซ่อนทุกขนาด: บัญชีรวมเป็นผู้ดูแลเสมอ และที่ 1280px ปุ่มที่เพิ่มมาทำให้แถบตกเป็น 2 แถว (วัดแล้ว 70 -> 131px) */
   .app-bar.has-switch .user-chip .u-role{display:none;}
+  /* Keep the desktop toolbar on one line even when the centered content column
+     is narrower than the viewport. The user menu must remain able to overflow. */
+  @media (min-width:1101px) and (pointer:fine){
+    .app-bar{flex-wrap:nowrap; padding-inline:20px; gap:8px;}
+    .app-bar .left-group, .app-bar .topnav{flex-wrap:nowrap;}
+    .app-bar .left-group{gap:10px; min-width:0;}
+    .app-bar .main-nav .topnav-btn{white-space:nowrap; padding-inline:10px;}
+    .app-bar .backup-nav{flex-shrink:0;}
+  }
   @media (max-width:500px){
     .app-bar.has-switch .brand-block::before{width:132px; height:40px;}
     .app-bar.has-switch .backup-nav{gap:5px;}
@@ -14065,7 +14096,37 @@ function scopedDb(raw){
 function isRootBranch(){ return activeBranch === null || activeBranch === BRANCH_ROOT; }
 function branchKey(base){ return isRootBranch() ? base : base + '@' + activeBranch; }
 function branchStoragePath(p){ return isRootBranch() ? p : 'branches/' + activeBranch + '/' + p; }
-function isAllBranchAccount(){ return !!(currentUser && currentUser.uid === ALL_BRANCH_UID); }
+function isAllBranchAccount(){ return !!(currentUser && uidCanAccessAllBranches(currentUser.uid)); }
+function uidCanAccessAllBranches(uid){ return uid === ALL_BRANCH_UID || uid === BOOTSTRAP_ADMIN_UID; }
+/*
+  Per-user branch access.  `allowedBranches` is the authoritative list when it is
+  present; older profiles that do not have the field keep their existing single
+  branch through `branchId`.  An explicit empty array intentionally grants no
+  branch access, so a malformed migration can never fall through to another branch.
+*/
+function allowedBranchesForProfile(profile){
+  if(profile && Object.prototype.hasOwnProperty.call(profile, 'allowedBranches') && !Array.isArray(profile.allowedBranches)) return [];
+  if(profile && Array.isArray(profile.allowedBranches)){
+    const seen = {};
+    return profile.allowedBranches.filter(id => {
+      if(typeof id !== 'string' || !BRANCH_ID_RE.test(id) || seen[id]) return false;
+      seen[id] = true;
+      return true;
+    });
+  }
+  return profile && typeof profile.branchId === 'string' && BRANCH_ID_RE.test(profile.branchId)
+    ? [profile.branchId] : [];
+}
+function defaultAllowedBranch(profile, allowed){
+  return profile && allowed.indexOf(profile.branchId) >= 0 ? profile.branchId : (allowed[0] || '');
+}
+function currentAllowedBranches(){
+  return currentUser && Array.isArray(currentUser.allowedBranches) ? currentUser.allowedBranches.slice() : [];
+}
+function canCurrentUserAccessBranch(id){
+  return !!(currentUser && uidCanAccessAllBranches(currentUser.uid)) || currentAllowedBranches().indexOf(id) >= 0;
+}
+function canSwitchBranches(){ return !!(currentUser && uidCanAccessAllBranches(currentUser.uid)) || currentAllowedBranches().length > 1; }
 function branchLabelVisible(){ return isAllBranchAccount() || !isRootBranch() || MULTI_BRANCH_LIVE; }
 function branchName(){ return isRootBranch() ? 'ดอนเมือง' : ((activeBranchDoc && activeBranchDoc.name) || activeBranch); }
 function jobNumberPrefix(){ return isRootBranch() ? 'PG' : activeBranchDoc.code; }   // รหัสผ่านการตรวจตอนตัดสินสาขาแล้ว
@@ -14106,19 +14167,17 @@ function restoreScreenAfterReload(){
   } catch(e){}
 }
 /* ตัดสินสาขาจุดเดียว ก่อนเริ่ม listener · ผิดทุกกรณี = ไม่ตกเป็นดอนเมือง
-   เฟส 2 (P2-3): ไม่มีฟิลด์ branchId = E2 เหมือนค่าเสีย (ตัด default พร้อมกฎทั้งสองไฟล์)
-   bootstrap = ดอนเมืองเสมอ (ข้อ 7) · บัญชีรวม = สาขาที่เลือกไว้ (ไม่มี = ดอนเมือง · ไม่มีในระบบแล้ว = E7)
-   คืน {branch, doc} หรือ {err, msg, uid, owner} */
+   บัญชีรวมไปได้ทุกสาขา ส่วนบัญชีทั่วไปไปได้เฉพาะ users/{uid}.allowedBranches
+   (โปรไฟล์เก่าที่ไม่มีฟิลด์นี้ยังใช้ branchId เดิมได้หนึ่งสาขา) · คืน {branch, doc} หรือ error */
 function resolveBranchForProfile(profile, uid){
-  if(uid === BOOTSTRAP_ADMIN_UID) return Promise.resolve({ branch: BRANCH_ROOT });
-  if(uid === ALL_BRANCH_UID){
-    const want = readAllBranchChoice();
-    if(!want || want === BRANCH_ROOT) return Promise.resolve({ branch: BRANCH_ROOT });
+  if(uidCanAccessAllBranches(uid)){
+    const want = readBranchChoice(uid);
+    if(!want || want === BRANCH_ROOT) return Promise.resolve({ branch: BRANCH_ROOT, allowedBranches: null });
     if(!BRANCH_ID_RE.test(want)) return Promise.resolve({ err: 'E7', msg: E7_MSG });
     return db.collection('branches').doc(want).get().then(d => {
       const data = d.exists ? (d.data() || {}) : null;
       if(!data || typeof data.code !== 'string' || !BRANCH_CODE_RE.test(data.code) || data.code === 'PG') return { err: 'E7', msg: E7_MSG };
-      return { branch: want, doc: data };
+      return { branch: want, doc: data, allowedBranches: null };
     }).catch(() => ({ err: 'E4', msg: E4_MSG }));
   }
   if(!profile){
@@ -14130,15 +14189,18 @@ function resolveBranchForProfile(profile, uid){
     // the person who can't get in copies the exact string the admin needs.
     return Promise.resolve({ err: 'E1', msg: 'บัญชีนี้ยังไม่ได้รับสิทธิ์เข้าใช้งาน กรุณาติดต่อผู้ดูแลระบบ', uid });
   }
-  if(profile.branchId === BRANCH_ROOT) return Promise.resolve({ branch: BRANCH_ROOT });
-  const id = profile.branchId;
-  // E2 แก้ได้เฉพาะบัญชีรวมหรือ Console กฎกันแอดมินดอนเมืองไว้ จึงส่งหาเจ้าของระบบ (decisions)
-  if(typeof id !== 'string' || !BRANCH_ID_RE.test(id)) return Promise.resolve({ err: 'E2', msg: E2_MSG, uid, owner: true });
+  const allowed = allowedBranchesForProfile(profile);
+  // allowedBranches: [] is an explicit denial; never guess a branch from stale local storage.
+  if(!allowed.length) return Promise.resolve({ err: 'E2', msg: E2_MSG, uid, owner: true });
+  const saved = readBranchChoice(uid);
+  const id = saved && allowed.indexOf(saved) >= 0 ? saved : defaultAllowedBranch(profile, allowed);
+  if(!id) return Promise.resolve({ err: 'E2', msg: E2_MSG, uid, owner: true });
+  if(id === BRANCH_ROOT) return Promise.resolve({ branch: BRANCH_ROOT, allowedBranches: allowed });
   const e3 = { err: 'E3', msg: E3_MSG, uid, owner: true };
   return db.collection('branches').doc(id).get().then(d => {
     const data = d.exists ? (d.data() || {}) : null;
     if(!data || typeof data.code !== 'string' || !BRANCH_CODE_RE.test(data.code) || data.code === 'PG') return e3;
-    return { branch: id, doc: data };
+    return { branch: id, doc: data, allowedBranches: allowed };
   }).catch(err => (err && err.code === 'permission-denied') ? e3 : { err: 'E4', msg: E4_MSG });
 }
 /* ปฏิเสธการเข้าใช้: signOut จะยิง handleAuthChange(null) -> render() -> renderLogin() ไม่มีพารามิเตอร์
@@ -14227,7 +14289,8 @@ function afterSyncStarted(uid){
 }
 
 /* ---------------- ทะเบียนสาขา (เฟส 2) ----------------
-   รายชื่อ = ดอนเมือง (ค่าคงที่ ไม่มีเอกสาร) + branches/* · list ได้เฉพาะบัญชีรวม (กฎ) บัญชีอื่นไม่ยิง query
+   รายชื่อ = ดอนเมือง (ค่าคงที่ ไม่มีเอกสาร) + branches/* · บัญชีรวม list ได้ทุกสาขา
+   แต่บัญชีทั่วไปอ่านแบบ get เฉพาะ id ที่ allowedBranches อนุญาต จึงไม่มี query รวม
    state: idle | loading | ok | error · ปุ่มสลับซ่อนเฉพาะ "โหลดสำเร็จและมีสาขาเดียว" */
 const BRANCH_ROOT_ENTRY = { id: 'donmueang', name: 'ดอนเมือง', code: 'PG' };
 /* ทะเบียน 6 สาขาใหม่ตาม docs/specs/multi-branch.branches.md (ดอนเมืองอยู่ root ไม่มีเอกสาร จึงไม่อยู่ในรายการนี้)
@@ -14249,28 +14312,33 @@ function sortBranchRows(rows){
   return rows.sort((a, b) => order(a.id) - order(b.id) || String(a.name || a.id).localeCompare(String(b.name || b.id), 'th'));
 }
 function loadBranchRegistry(){
-  if(!isAllBranchAccount()){
-    const own = [Object.assign({}, BRANCH_ROOT_ENTRY)];
-    if(!isRootBranch() && activeBranchDoc) own.push(Object.assign({}, activeBranchDoc, { id: activeBranch }));
-    return Promise.resolve(own);
-  }
   const gen = ++branchRegistryGen;
   branchRegistry = { state: 'loading', list: branchRegistry.list };
   safeRender();
-  return db.collection('branches').get().then(snap => {
-    const rows = [];
-    snap.forEach(d => {
-      if(d.id === BRANCH_ROOT || !BRANCH_ID_RE.test(d.id)) return;
-      rows.push(Object.assign({}, d.data() || {}, { id: d.id }));
-    });
+  const finish = rows => {
     sortBranchRows(rows);
     const list = [Object.assign({}, BRANCH_ROOT_ENTRY)].concat(rows);
     if(gen === branchRegistryGen){ branchRegistry = { state: 'ok', list }; safeRender(); }
     return list;
-  }, err => {
+  };
+  const fail = err => {
     if(gen === branchRegistryGen){ branchRegistry = { state: 'error', list: null }; safeRender(); }
     throw err;
-  });
+  };
+  if(currentUser && uidCanAccessAllBranches(currentUser.uid)){
+    return db.collection('branches').get().then(snap => {
+      const rows = [];
+      snap.forEach(d => {
+        if(d.id === BRANCH_ROOT || !BRANCH_ID_RE.test(d.id)) return;
+        rows.push(Object.assign({}, d.data() || {}, { id: d.id }));
+      });
+      return finish(rows);
+    }, fail);
+  }
+  const ids = currentAllowedBranches().filter(id => id !== BRANCH_ROOT);
+  return Promise.all(ids.map(id => db.collection('branches').doc(id).get()))
+    .then(docs => finish(docs.filter(d => d.exists && BRANCH_ID_RE.test(d.id))
+      .map(d => Object.assign({}, d.data() || {}, { id: d.id }))), fail);
 }
 function registryEntry(id){
   if(id === BRANCH_ROOT) return BRANCH_ROOT_ENTRY;
@@ -14283,7 +14351,7 @@ function branchNameOf(id){
   return (b && b.name) || String(id || '');
 }
 function branchSwitchVisible(){
-  if(!isAllBranchAccount()) return false;
+  if(!canSwitchBranches()) return false;
   return !(branchRegistry.state === 'ok' && branchRegistry.list && branchRegistry.list.length <= 1);
 }
 /* สร้าง branches/{id} จาก BRANCH_DIRECTORY · บัญชีรวมเท่านั้น · อ่านก่อน มีแล้ว = ไม่ทับ
@@ -14319,16 +14387,21 @@ async function createBranchDoc(id, overrides){
   return { ok: true };
 }
 
-/* ---------------- บัญชีรวม: จำสาขา + จอ E7 ----------------
-   sessionStorage = ต่อแท็บ · localStorage = ค่าเริ่มของแท็บใหม่ (§4.5 ข้อ 4) · บัญชีอื่นไม่อ่านค่านี้ (AC-30) */
+/* ---------------- สาขาที่เลือกไว้ต่อบัญชี + จอ E7 ----------------
+   คีย์เดิมของบัญชีรวมคงไว้เพื่อไม่ให้การอัปเดตพาเจ้าของกลับไปสาขาอื่น ส่วนบัญชี
+   ทั่วไปใช้คีย์ตาม UID เพื่อไม่ให้เครื่องที่ใช้ร่วมกันพาไปสาขาของคนก่อนหน้า */
 const ALL_BRANCH_CHOICE_KEY = 'gsms.allBranch';
+const BRANCH_CHOICE_PREFIX = 'gsms.branchChoice.';
 const BRANCH_SWITCHED_ONCE_KEY = 'gsms.branchSwitchedOnce';
 const E7_MSG = 'สาขาที่เลือกไว้ไม่มีในระบบแล้ว เลือกสาขาที่จะทำงาน';
-function readAllBranchChoice(){
-  try { return sessionStorage.getItem(ALL_BRANCH_CHOICE_KEY) || localStorage.getItem(ALL_BRANCH_CHOICE_KEY) || ''; } catch(e){ return ''; }
+function branchChoiceKey(uid){ return uid === ALL_BRANCH_UID ? ALL_BRANCH_CHOICE_KEY : BRANCH_CHOICE_PREFIX + String(uid || ''); }
+function readBranchChoice(uid){
+  const key = branchChoiceKey(uid);
+  try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; } catch(e){ return ''; }
 }
-function writeAllBranchChoice(id){
-  try { sessionStorage.setItem(ALL_BRANCH_CHOICE_KEY, id); localStorage.setItem(ALL_BRANCH_CHOICE_KEY, id); } catch(e){}
+function writeBranchChoice(uid, id){
+  const key = branchChoiceKey(uid);
+  try { sessionStorage.setItem(key, id); localStorage.setItem(key, id); } catch(e){}
 }
 /* E7: ไม่ signOut ไม่เริ่ม listener · ข้อความอยู่ใน view.branchMissing ให้ render() วาดซ้ำได้ (ไม่ถูกหน้าอื่นกลบ) */
 function showBranchMissing(msg){
@@ -14354,7 +14427,7 @@ function renderBranchMissing(){
 /* currentUser ยังไม่ถูกตั้ง (ยังไม่เข้าแอป) จึงอ่านรายชื่อเองตรงนี้ ไม่ผ่าน loadBranchRegistry */
 function pickBranchFromMissing(){
   const u = auth && auth.currentUser;
-  if(!u || u.uid !== ALL_BRANCH_UID) return;
+  if(!u || !uidCanAccessAllBranches(u.uid)) return;
   db.collection('branches').get().then(snap => {
     const rows = [];
     snap.forEach(d => {
@@ -14363,18 +14436,18 @@ function pickBranchFromMissing(){
     });
     const list = [{ value: BRANCH_ROOT, label: BRANCH_ROOT_ENTRY.name }].concat(sortBranchRows(rows).map(bd =>
       Object.assign({ value: bd.id, label: bd.name || bd.id }, bd.catalogCopiedAt ? {} : { sub: 'กำลังตั้งค่า' })));
-    uiChoice('เลือกสาขาที่จะทำงาน', list, v => { writeAllBranchChoice(v); reloadKeepingScreen(); });
+    uiChoice('เลือกสาขาที่จะทำงาน', list, v => { writeBranchChoice(u.uid, v); reloadKeepingScreen(); });
   }).catch(() => flashToast('โหลดรายชื่อสาขาไม่สำเร็จ ลองอีกครั้ง'));
 }
 
-/* ---------------- สลับสาขา (บัญชีรวม · AC-28/29 · U-2) ----------------
+/* ---------------- สลับสาขา (บัญชีรวมและผู้ใช้ที่ได้รับสิทธิ์ · AC-28/29 · U-2) ----------------
    หยุดรับการแก้ไข (view.branchSwitch: render() วาดสถานะแทนแอป) -> flushState -> waitForPendingWrites ≤ 5 วิ
    -> ตรวจว่าทุกแถวเข้า shadow แล้ว (ถูกปฏิเสธ = ไม่สลับ) -> ถอน token แจ้งเตือนของเครื่องนี้ที่สาขาเดิม
    -> จำสาขา + ธงครั้งเดียว -> โหลดหน้าใหม่ · ไม่รีเซ็ตตัวแปรเอง (§4.4: shadow ของสาขาเก่า + path ใหม่ = ลบทั้งสาขา)
    ทุกทางที่ผิด: ล้าง view.branchSwitch กลับหน้าเดิม ไม่โหลดใหม่ งานยังอยู่ในเครื่อง */
 const BRANCH_SWITCH_WAIT_MS = 5000;
 function openBranchPicker(){
-  if(!isAllBranchAccount()) return;
+  if(!canSwitchBranches()) return;
   if(branchRegistry.state === 'error'){ flashToast('โหลดรายชื่อสาขาไม่สำเร็จ ลองอีกครั้ง'); loadBranchRegistry().catch(() => {}); return; }
   if(branchRegistry.state !== 'ok'){
     flashToast('กำลังโหลดรายชื่อสาขา ลองอีกครั้ง');
@@ -14382,7 +14455,7 @@ function openBranchPicker(){
     return;
   }
   view.userMenuOpen = false;
-  const opts = branchRegistry.list.map(b => {
+  const opts = branchRegistry.list.filter(b => canCurrentUserAccessBranch(b.id)).map(b => {
     const o = { value: b.id, label: b.name || b.id };
     // nowLabel = ป้าย "ปัจจุบัน" ที่ uiChoice วาดชิดขวาของแถวสาขาที่เปิดอยู่ (เห็นบนจอจริง ไม่ใช่ฟิลด์ซ่อน)
     if(b.id === (activeBranch || BRANCH_ROOT)){ o.current = true; o.nowLabel = 'ปัจจุบัน'; }
@@ -14441,13 +14514,15 @@ function unsavedLocalCount(opts){
 // v5.1.7 fix-p1 BA-2 — ให้ .then/.catch ของ commit ใน flushState ทำงานก่อนนับ (แบบเดียวกับ switchBranch)
 async function settleFlushCallbacks(){ for(let i = 0; i < 20; i++) await Promise.resolve(); }
 async function switchBranch(targetId){
-  if(!isAllBranchAccount() || !db || !dataReady || view.branchSwitch || logoutBusy) return;
+  if(!canSwitchBranches() || !db || !dataReady || view.branchSwitch || logoutBusy) return;
   if(branchRegistry.state === 'error'){ flashToast('โหลดรายชื่อสาขาไม่สำเร็จ ลองอีกครั้ง'); return; }
   if(branchRegistry.state !== 'ok'){ flashToast('กำลังโหลดรายชื่อสาขา ลองอีกครั้ง'); return; }
   const cur = branchName();
   if(targetId === (activeBranch || BRANCH_ROOT)){ flashToast('อยู่สาขา' + cur + 'อยู่แล้ว'); return; }
   const target = registryEntry(targetId);
-  if(!target || typeof targetId !== 'string' || !BRANCH_ID_RE.test(targetId)){ flashToast('ไม่พบสาขานี้ในรายชื่อสาขา'); return; }
+  if(!target || typeof targetId !== 'string' || !BRANCH_ID_RE.test(targetId) || !canCurrentUserAccessBranch(targetId)){
+    flashToast('คุณไม่มีสิทธิ์เข้าสาขานี้'); return;
+  }
   const retry = () => { switchBranch(targetId); };
   const box = msg => uiModal({ message: msg, okLabel: 'ลองอีกครั้ง', cancelLabel: 'อยู่สาขานี้ต่อ', onOk: retry });
   if(isOnline === false){ box('ตอนนี้ออฟไลน์ ยังสลับสาขาไม่ได้\nต่อเน็ตแล้วลองอีกครั้ง งานยังอยู่ในเครื่อง ไม่หาย'); return; }
@@ -14476,7 +14551,7 @@ async function switchBranch(targetId){
   }
   view.branchSwitch = { target: targetId, name: target.name || targetId, phase: 'reloading' };
   render();
-  writeAllBranchChoice(targetId);
+  writeBranchChoice(currentUser && currentUser.uid, targetId);
   try { sessionStorage.setItem(BRANCH_SWITCHED_ONCE_KEY, '1'); } catch(e){}
   clearTimeout(saveTimer);
   dataReady = false;   // ไม่มี flush ระหว่างรอหน้าโหลดใหม่
@@ -15063,7 +15138,9 @@ function handleAuthChange(user){
             email: user.email || '',
             // บัญชีรวมใช้ชื่อคงที่ ไม่ให้ส่วนหน้าอีเมลไปโผล่ใน presence / ประวัติแก้ไข (U-4)
             name: isAll ? 'เจ้าของระบบ' : ((profile && profile.name) || (user.email || '').split('@')[0]),
-            role: isAll ? 'admin' : ((profile && profile.role) || (user.uid === BOOTSTRAP_ADMIN_UID ? 'admin' : 'staff'))
+            role: uidCanAccessAllBranches(user.uid) ? 'admin' : ((profile && profile.role) || 'staff'),
+            // Kept in memory only.  The rules independently check the same profile field.
+            allowedBranches: uidCanAccessAllBranches(user.uid) ? null : (r.allowedBranches || [r.branch])
           };
           if(isAll){ try { auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(() => {}); } catch(e){} }   // S-7
           // First ever login by the bootstrap admin: write their own users/ entry so the
@@ -15077,7 +15154,9 @@ function handleAuthChange(user){
           markBranchReady();
           // บัญชีเจ้าของ marker กลับมาบันทึกเสร็จแล้ว ลบเฉพาะ entry ของตัวเอง (P2-1) ปลดจอ E5 ให้บัญชีอื่น
           afterSyncStarted(user.uid);
-          if(isAll) loadBranchRegistry().catch(() => {});
+          if(showBranchHubAfterLogin && canSwitchBranches()) view.hubDismissed = false;
+          showBranchHubAfterLogin = false;
+          if(canSwitchBranches()) loadBranchRegistry().catch(() => {});
         });
       });
     })
@@ -15087,13 +15166,16 @@ function handleAuthChange(user){
     });
 }
 
+let showBranchHubAfterLogin = false;
 function doLogin(){
   view.authError = null;
   const email = (document.getElementById('login-email') || {}).value || '';
   const pass  = (document.getElementById('login-pass')  || {}).value || '';
   if(!email.trim() || !pass){ renderLogin('กรุณากรอกอีเมลและรหัสผ่าน'); return; }
+  showBranchHubAfterLogin = true;
   renderAuthStatus('กำลังตรวจสอบ...');
   auth.signInWithEmailAndPassword(email.trim(), pass).catch(err => {
+    showBranchHubAfterLogin = false;
     const map = {
       'auth/invalid-email': 'รูปแบบอีเมลไม่ถูกต้อง',
       'auth/user-not-found': 'ไม่พบบัญชีนี้',
@@ -22274,6 +22356,11 @@ function renderHubScreen(){
         <div class="hub-sub">หน้าพนักงานต้องล็อกอิน ส่วนอีกสองหน้าเปิดค้างไว้บนจอได้เลย โดยไม่เปิดข้อมูลส่วนตัวของลูกค้า</div>
       </div>
 
+      ${currentUser ? `<div style="margin:0 0 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span>สาขาปัจจุบัน: <b>${escapeHtml(branchName())}</b></span>
+        ${canSwitchBranches() ? `<button type="button" class="btn secondary" onclick="openBranchPicker()">${icon('pin',16)} เลือกสาขา</button>` : ''}
+      </div>` : `<div style="margin:0 0 18px;">เข้าสู่ระบบพนักงานก่อน เพื่อเลือกสาขาที่ได้รับสิทธิ์</div>`}
+
       <div class="hub-grid">
         <button type="button" class="hub-main" onclick="enterStaffApp()">
           <span class="hub-main-head">
@@ -22370,7 +22457,7 @@ function render(){
     view.modelId = null;
   }
   const settingsActive = !view.modelId && ['shop','models','master','pricebook','users','linegroups'].includes(view.tab);
-  let html = `<div class="app-bar no-print${branchLabelVisible() ? ' has-branch' : ''}${isAllBranchAccount() ? ' has-switch' : ''}">
+  let html = `<div class="app-bar no-print${branchLabelVisible() ? ' has-branch' : ''}${branchSwitchVisible() ? ' has-switch' : ''}">
     <div class="left-group">
       <div class="brand-block"><span class="brand-mark">${icon('bolt',18)}</span><span class="brand">POWER GROUP</span><span class="ver">v${APP_VERSION}</span></div>
       <div class="topnav main-nav">
@@ -22384,7 +22471,7 @@ function render(){
     </div>
     <div class="topnav backup-nav">
       ${presenceStripHtml()}
-      ${isAllBranchAccount() ? `<button class="branch-switch-btn" id="branch-switch-btn" aria-label="เลือกสาขา" title="เลือกสาขา (ตอนนี้: ${escapeAttr(branchName())})" onclick="event.stopPropagation(); openBranchPicker()">${icon('pin',18)}</button>` : ''}
+      ${branchSwitchVisible() ? `<button class="branch-switch-btn" id="branch-switch-btn" aria-label="เลือกสาขา" title="เลือกสาขา (ตอนนี้: ${escapeAttr(branchName())})" onclick="event.stopPropagation(); openBranchPicker()">${icon('pin',18)}</button>` : ''}
       <button class="darkmode-toggle-btn" title="${isDarkOn() ? 'ปิดโหมดมืด' : 'เปิดโหมดมืด'}" onclick="toggleDarkMode()">${icon(isDarkOn() ? 'sun' : 'moon', 16)}</button>
       <span class="user-wrap">
         <button class="user-chip" onclick="toggleUserMenu(event)">
@@ -30718,17 +30805,20 @@ function appUpdateStatusHtml(){
    ตอนนี้แต่ละใบถูกสร้างเป็นชิ้นแยกก่อน แล้วค่อยจัดลงหมวดตอนท้าย เวลาจะเพิ่มการ์ดใหม่
    จึงแค่เติมชื่อลงในหมวดที่ควรอยู่ ไม่ต้องไปหาว่าควรแทรกบรรทัดไหน */
 const SETTINGS_SECTIONS = [
-  { key:'catalog',  icon:'book',     title:'ข้อมูลหลัก / แคตตาล็อก',
-    desc:'รุ่นรถ สินค้า ช่าง ตำราราคา ใบเปล่า', cards:['nav','backfill'] },
-  // [multi-branch เฟส 2] เห็นเฉพาะบัญชีรวมขณะเปิดดอนเมือง (C.branches ว่าง = หมวดหายทั้งหมวด)
   { key:'branches', icon:'pin',      title:'สาขา',
-    desc:'สร้างสาขาใหม่ และคัดลอกรายการรถจากดอนเมือง', cards:['branches'] },
-  { key:'shop',     icon:'settings', title:'ข้อมูลร้าน และผู้ใช้งาน',
-    desc:'ชื่อร้าน เบอร์ติดต่อ ช่องทำงาน ผู้ดูแล สิทธิ์การใช้งาน', cards:['shop','bays','admin','users'] },
+    desc:'จัดการสาขาและคัดลอกข้อมูลตั้งต้น', cards:['branches'] },
+  { key:'shop',     icon:'settings', title:'ข้อมูลร้านและช่องซ่อม',
+    desc:'ชื่อร้าน เบอร์ติดต่อ และผังช่องทำงาน', cards:['shop','bays'] },
+  { key:'people',   icon:'shield',   title:'ผู้ใช้งานและทีมงาน',
+    desc:'บัญชีผู้ใช้ สิทธิ์ ผู้ดูแล และรายชื่อช่าง', cards:['users','admin','teamnav'] },
+  { key:'catalog',  icon:'book',     title:'รุ่นรถ สินค้า และราคา',
+    desc:'แคตตาล็อก ตำราราคา ตรวจราคาและรวมรุ่นซ้ำ', cards:['nav','backfill','aibook'] },
+  { key:'customer', icon:'gauge',    title:'หน้าลูกค้าและ QR',
+    desc:'กระดานสถานะ หน้ารับรอง และขอคะแนน', cards:['board','reception','boardPriv','feedback'] },
+  { key:'communication', icon:'chat', title:'แชทและการแจ้งเตือน',
+    desc:'ผู้ช่วยตอบแชท แจ้งเตือน และกลุ่ม LINE', cards:['bot','push','linenav'] },
   { key:'docs',     icon:'printer',  title:'เอกสารและการพิมพ์',
     desc:'ขนาดและแนวกระดาษของทุกใบที่พิมพ์', cards:['print'] },
-  { key:'customer', icon:'chat',     title:'ช่องทางลูกค้า',
-    desc:'กระดานสถานะ ขอคะแนน ผู้ช่วยตอบแชท แจ้งเตือน', cards:['board','reception','boardPriv','feedback','bot','aibook','push'] },
   { key:'look',     icon:'sun',      title:'หน้าตาแอป',
     desc:'โทนสี และโหมดมืด', cards:['theme','dark'] },
   { key:'data',     icon:'save',     title:'ข้อมูล สำรอง และถังขยะ',
@@ -30737,7 +30827,7 @@ const SETTINGS_SECTIONS = [
     desc:'เวอร์ชันที่เครื่องนี้ใช้อยู่', cards:['version'] },
 ];
 // หมวดที่เปิดไว้ตั้งแต่แรก — เลือกหมวดที่หน้าร้านแตะบ่อยที่สุด หมวดอื่นกดทีเดียวก็เปิด
-const SETTINGS_DEFAULT_OPEN = { catalog:true, branches:true };
+const SETTINGS_DEFAULT_OPEN = {};
 function settingsSectionOpen(key){
   const st = view.setOpen || (view.setOpen = {});
   return (st[key] === undefined) ? !!SETTINGS_DEFAULT_OPEN[key] : !!st[key];
@@ -31722,16 +31812,19 @@ function renderSettingsTab(){
     <div class="settings-nav">
       <button class="settings-nav-btn" onclick="goTab('models')">${icon('open',18)}<span>รุ่นรถ</span><small>${state.models.length} รุ่น</small></button>
       <button class="settings-nav-btn" onclick="goTab('master')">${icon('plus',18)}<span>สินค้า</span><small>${state.masterParts.length} รายการ</small></button>
-      <button class="settings-nav-btn" onclick="goTab('technicians')">${icon('wrench',18)}<span>ชื่อช่าง</span><small>${(state.technicians||[]).length} คน</small></button>
       <button class="settings-nav-btn" onclick="goTab('pricebook')">${icon('book',18)}<span>ตำราราคา</span><small>ดู/พิมพ์ราคา</small></button>
       ${(function(){ const g = unitPriceAudit(); if(!g.length) return '';
         const mixed = g.filter(x => x.prices.length > 1).length;
         return `<button class="settings-nav-btn" onclick="goTab('unitfix')">${icon('wrench',18)}<span>ราคาต่อหน่วย</span><small>${mixed ? mixed + ' กลุ่มราคาไม่ตรงกัน' : g.length + ' กลุ่ม'}</small></button>`; })()}
       ${(function(){ const g = findDuplicateModelGroups();
         return g.length ? `<button class="settings-nav-btn" onclick="goTab('dupmerge')">${icon('wrench',18)}<span>รวมรุ่นซ้ำ</span><small>${g.length} กลุ่มรอรวม</small></button>` : ''; })()}
-      ${(isAdmin() && isRootBranch()) ? `<button class="settings-nav-btn" onclick="goTab('linegroups')">${icon('chat',18)}<span>กลุ่ม LINE</span><small>${(function(){ const k = lineGroupsNeedCheckCount(); return k ? 'มี ' + k + ' กลุ่มต้องตรวจสมาชิก' : 'อนุมัติกลุ่มให้ Bot ตอบ'; })()}</small></button>` : ''}
     </div>
   </div>`;
+  C.teamnav = `<div class="card"><h3>รายชื่อช่าง</h3><p class="muted">จัดการรายชื่อช่างสำหรับมอบหมายงานในสาขานี้</p>
+    <button class="btn secondary" onclick="goTab('technicians')">${icon('wrench',15)} จัดการชื่อช่าง (${(state.technicians||[]).length} คน)</button></div>`;
+  C.linenav = (isAdmin() && isRootBranch()) ? `<div class="card"><h3>กลุ่ม LINE</h3>
+    <p class="muted">จัดการกลุ่มที่อนุญาตให้ผู้ช่วยตอบข้อความ</p>
+    <button class="btn secondary" onclick="goTab('linegroups')">${icon('chat',15)} จัดการกลุ่ม LINE</button></div>` : '';
 
   const hasNew = appUpdate.newer || appUpdate.changed;
   C.version = `<div class="card">
@@ -32043,7 +32136,8 @@ function renderSettingsTab(){
   const anyClosed = live.some(x => !settingsSectionOpen(x.sec.key));
   let html = `<div class="set-index no-print">
     <div class="set-index-head">
-      <span class="set-index-title">${icon('settings',15)} ตั้งค่า</span>
+      <div><span class="set-index-title">${icon('settings',20)} ตั้งค่า</span>
+        <p class="set-index-sub">เลือกหมวดที่ต้องการจัดการ · สาขา${escapeHtml(branchName())}</p></div>
       <button class="set-index-all" onclick="setAllSettingsSections(${anyClosed ? 'true' : 'false'})">
         ${anyClosed ? icon('plus',13) + ' เปิดทุกหมวด' : icon('minus',13) + ' ยุบทุกหมวด'}
       </button>
