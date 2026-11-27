@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.13";
+  const APP_VERSION = "5.1.14";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3465,6 +3465,20 @@
               5. ค้นหา jobSearchBlob มีทั้งชื่อเปล่าและชื่อพร้อมคำนำหน้า · .pv-value ตัดคำได้ (ชื่อยาวไม่ล้นใบ A5)
               ไม่แตะ firestore.rules / config/main / flushState · ไม่ย้ายข้อมูลเก่า
               เทสต์: tests/customer-name-prefix.guard.js
+     v5.1.14 — รายการในชุดโปรล็อกเป็น "1 คู่" แก้ไม่ได้ (2026-11-27) · งาน promo-child-unit-lock
+              ของช่วงล่างในชุดโปรเปลี่ยนทั้งสองข้างเสมอ แต่ใบเสนอราคาขึ้น "1 ชิ้น" ลูกค้าอ่านว่าได้ข้างเดียว
+              1. ตัวตัดสินเดียว promoLineLocked / promoLineQtyUnit(job, p) — ล็อกเมื่อบรรทัดมี promoParent และหัวชุดยังอยู่ในใบ
+                 (บรรทัดกำพร้าแก้ได้ตามเดิม) · ไม่แก้ p · ใบเก่าที่เก็บ "2 ชิ้น" แสดง "1 คู่" โดยไม่เขียนข้อมูลเก่า
+              2. จอแก้ใบงาน: ช่องจำนวน+หน่วยของบรรทัดลูกเป็นป้ายเขียว "1 คู่" + "ล็อกตามชุดโปร" (แตะ = toast) ทุก role
+                 onJobPartFieldChange / onJobPartUnitChange กันจำนวน/หน่วยของบรรทัดที่ล็อกก่อนทำอะไร (ไม่จำราคา ไม่ saveState)
+                 เปลี่ยนแบรนด์บนบรรทัดที่ล็อกไม่ดึงราคาที่จำไว้มาเติม (เอาชุดออกแล้วได้ของเดิมคืนครบ)
+              3. "1 คู่" ทุกที่ที่ลูกค้าเห็น: ใบเสนอราคาพิมพ์, ข้อความแชร์ใบเสนอราคา, หน้ารับรถ/บอร์ด (คีย์เดิม ไม่เพิ่มฟิลด์)
+                 ข้อความสรุปใบงานกลุ่ม LINE (formatLineSummary ใช้ร่วมกับ Bot) ยังไม่เปลี่ยน — งานถัดไป
+              4. บรรทัดลูกที่สร้างใหม่เก็บ qty 1 / unit คู่ · บรรทัดเดี่ยวที่ย้ายเข้าชุดเก็บจำนวน/หน่วยเดิมไว้ (ล็อกที่การแสดงผล)
+              5. เบิกสต็อกจากบรรทัดลูก: สต็อกนับ ชิ้น/ข้าง/อัน/ตัว ตั้งต้น 2 ("1 คู่ = 2 ชิ้น · ตั้งให้แล้ว แก้ได้") · สต็อกนับคู่ = 1
+                 หน่วยอื่น = 1 + เตือนเดิม · คิดใหม่ตอนเลือกของ (ถ้าช่างยังไม่แก้เลข) · ปุ่ม "เบิกเพิ่ม" เทียบเป้าเดียวกัน
+              ไม่แตะ firestore.rules / config/main / flushState / normalizeJobRow / stockIssue / ตำรารุ่นรถ
+              เทสต์: tests/promo-child-unit-lock.guard.js
               -->
 
 
@@ -8442,6 +8456,10 @@ html[data-mode="dark"] .ctp-why{background:rgba(223,108,27,.16);color:#e8a977;}
 
 .in-promo-tag{display:inline-block;font-size:11px;font-weight:700;color:#14532d;
   background:rgba(31,157,85,.14);border-radius:999px;padding:3px 9px;white-space:nowrap;}
+/* v5.1.14 — ช่องจำนวนของบรรทัดลูกโปร ล็อก "1 คู่" (สีมาจาก .in-promo-tag ทั้งสว่าง/มืด) */
+.qty-inline.qty-locked{align-items:center;justify-content:center;cursor:default;min-height:44px;}
+.qty-lock-chip{font-size:13px;padding:5px 12px;line-height:1.35;min-height:32px;box-sizing:border-box;display:inline-flex;align-items:center;}
+.qty-lock-hint{font-size:10.5px;color:var(--text-2);white-space:nowrap;}
 .qt-in-promo-name{padding-left:9px;}
 .qt-in-promo-note{font-size:10px;color:#444;white-space:nowrap;}
 /* v4.3.6 — บรรทัดหักลบ (เทิร์นของเก่า) ใช้สีแดงคนละชุดกับชุดโปรที่เป็นสีเขียว
@@ -9973,6 +9991,9 @@ function pairUnitPriceShift(row, fromUnit, toUnit){
 }
 
 function onJobPartUnitChange(jobId, partRowId, value){
+  // v5.1.14 — บรรทัดลูกโปรล็อก "1 คู่" กันก่อน handleUnitAddChoice (ไม่เด้งกล่องเพิ่มหน่วย ไม่เขียนอะไร)
+  { const j = getJob(jobId), r = j && (j.partsNeeded || []).find(p => p.id === partRowId);
+    if(r && promoLineLocked(j, r)) return; }
   if(handleUnitAddChoice(value, (unit) => {
     onJobPartFieldChange(jobId, partRowId, 'unit', unit);
     saveState(true);
@@ -13331,8 +13352,9 @@ function boardPayloadFull(job){
        ใบที่พิมพ์ลงกระดาษไม่มีปัญหานี้เพราะแยกด้วย isPromoChild จริง */
     parts: (job.partsNeeded || [])
       .filter(p => (p.partName || '').trim())
-      .map(p => ({ name: p.partName, qty: parseQty(p.qty), unit: p.unit || 'ชิ้น',
-                   price: parseLinePrice(p.price), inPromo: !!p.promoParent })),  // v4.3.6 หักลบติดลบได้
+      .map(p => { const qu = promoLineQtyUnit(job, p);   // v5.1.14 — บรรทัดลูกโปร = 1 คู่ (คีย์เดิม ไม่เพิ่มฟิลด์)
+                  return { name: p.partName, qty: parseQty(qu.qty), unit: qu.unit || 'ชิ้น',
+                   price: parseLinePrice(p.price), inPromo: !!p.promoParent }; }),  // v4.3.6 หักลบติดลบได้
     partsSubtotal: jobPartsTotal(job),
     discountType: job.discountType || 'amount',
     discountValue: Number(job.discountValue) || 0,
@@ -16594,6 +16616,18 @@ function submitStockReceive(){
   });
 }
 
+/* v5.1.14 — จำนวนที่ต้องเบิกของบรรทัด คิดใน "หน่วยของรายการสต็อก"
+   บรรทัดลูกโปรที่ล็อก "1 คู่": สต็อกนับหน่วยเดี่ยว (SINGLE_UNITS) = 2 · สต็อกนับคู่ = 1 ·
+   หน่วยอื่น = 1 (+ เตือนหน่วยไม่ตรงเดิม — เบิกขาดแก้ง่ายกว่าเบิกเกิน)
+   บรรทัดอื่นใช้จำนวนที่เก็บในใบตามเดิม · ไม่แตะ stockIssue/stockReturn */
+function stockLineTarget(job, row, it){
+  const qu = promoLineQtyUnit(job, row);
+  if(!qu.locked) return { n: parseQty(row && row.qty), locked: false, single: false, unit: '' };
+  const u = it ? stockUnitOf(it) : '';
+  const single = !!it && SINGLE_UNITS.indexOf(u) >= 0;
+  return { n: single ? 2 : 1, locked: true, single, unit: u };
+}
+
 /* ---------- บรรทัดใบงาน (U4) — อยู่ในตัวแก้ไขบนจอเท่านั้น (.no-print) ไม่อยู่ในใบพิมพ์ ---------- */
 function jobLineStockHtml(job, p){
   if(!job || !p || p.promoId || isDeductRow(p) || !String(p.partName || '').trim()) return '';
@@ -16609,7 +16643,7 @@ function jobLineStockHtml(job, p){
     const unit = stockUnitOf(it, p.unit);
     inner += `<span class="stock-issued-chip">${icon('check', 13)} ${escapeHtml('เบิกแล้ว ' + out + ' ' + unit + (it ? ' · ' + stockVariantLabel(it) : ''))}</span>`;
     inner += `<button type="button" class="btn secondary small stock-return-btn" ${attrs} onclick="stockReturnFromJobLine(this.dataset.jobId, this.dataset.rowId)">คืนสต็อก</button>`;
-    if(!rejected && out < parseQty(p.qty)){
+    if(!rejected && out < stockLineTarget(job, p, it).n){
       inner += dirty ? waitBtn
         : `<button type="button" class="btn secondary small stock-withdraw-btn" ${attrs} onclick="stockWithdrawFromJobLine(this.dataset.jobId, this.dataset.rowId)">เบิกเพิ่ม</button>`;
     }
@@ -16631,9 +16665,9 @@ function stockWithdrawFromJobLine(jobId, rowId){
   const moves = stockJobMoves(jobId);
   const out = moves ? stockRowOut(moves, rowId) : 0;
   const prev = out > 0 ? stockRowItemId(moves, rowId) : '';
-  const left = Math.max(1, Math.round(parseQty(row.qty) - out));
+  const left = Math.max(1, Math.round(stockLineTarget(job, row, prev ? stockState.items[prev] : null).n - out));
   view.stockPick = { jobId, rowId, token: stockNewToken(), step: prev ? 2 : 1, itemId: prev, locked: !!prev,
-                     q: '', n: left, busy: false, err: '' };
+                     q: '', n: left, out: out, nTouched: false, busy: false, err: '' };
   stockModalOpen(stockPickHtml(), () => { const sp = view.stockPick; if(sp && sp.busy) return false; view.stockPick = null; return true; });
 }
 function stockPickCtx(){
@@ -16693,7 +16727,8 @@ function stockPickHtml(){
   const warn = STOCK_NOT_APPROVED.indexOf(job.status) >= 0 ? `<div class="stock-warn">${icon('bell', 14)} ลูกค้ายังไม่อนุมัติใบนี้</div>` : '';
   if(sp.step === 1){
     const tag = jobVehicleTag(job);
-    return head + `<div class="muted stock-ctx">${escapeHtml(String(row.partName || '') + ' · ในใบ ' + (row.qty || 1) + ' ' + (row.unit || 'ชิ้น') + (tag ? ' · ' + tag : ''))}</div>
+    const qu = promoLineQtyUnit(job, row);   // v5.1.14 — บรรทัดลูกโปรขึ้น "ในใบ 1 คู่"
+    return head + `<div class="muted stock-ctx">${escapeHtml(String(row.partName || '') + ' · ในใบ ' + (qu.locked ? qu.qty : (row.qty || 1)) + ' ' + (qu.unit || 'ชิ้น') + (tag ? ' · ' + tag : ''))}</div>
       ${warn}
       <div class="search-wrap">${icon('search')}<input type="text" id="spSearch" class="ui-modal-input" autocomplete="off"
         placeholder="ค้นหาของในสต็อก" value="${escapeAttr(sp.q)}" oninput="stockPickSearch(this.value)"></div>
@@ -16704,7 +16739,12 @@ function stockPickHtml(){
   const it = stockState.items[sp.itemId] || {};
   const unit = stockUnitOf(it);
   const busy = sp.busy ? 'disabled' : '';
-  const unitWarn = row.unit && it.unit && row.unit !== it.unit
+  const tgt = stockLineTarget(job, row, stockState.items[sp.itemId]);
+  /* v5.1.14 — บรรทัดลูกโปร "1 คู่" กับสต็อกหน่วยเดี่ยว: แปลงให้แล้ว บอกการแปลงแทนคำเตือน */
+  const unitWarn = tgt.locked
+    ? (tgt.single ? `<div class="muted stock-conv">${escapeHtml('1 ' + PAIR_UNIT + ' = 2 ' + unit + ' · ตั้งให้แล้ว แก้ได้')}</div>`
+      : it.unit && it.unit !== PAIR_UNIT ? `<div class="stock-warn">${escapeHtml('ในใบเขียนไว้ 1 ' + PAIR_UNIT + ' — เช็กหน่วยให้ตรงก่อนเบิก')}</div>` : '')
+    : row.unit && it.unit && row.unit !== it.unit
     ? `<div class="stock-warn">${escapeHtml('ในใบเขียนไว้ ' + (row.qty || 1) + ' ' + row.unit + ' — เช็กหน่วยให้ตรงก่อนเบิก')}</div>` : '';
   return head + `<div class="stock-ctx"><b>${escapeHtml(stockItemLabel(it))}</b></div>
     ${warn}
@@ -16736,12 +16776,21 @@ function stockPickChoose(itemId){
   const sp = view.stockPick;
   if(!sp || !stockState.items[itemId]) return;
   sp.itemId = itemId; sp.step = 2; sp.err = '';
+  /* v5.1.14 — บรรทัดลูกโปร: ตั้งจำนวนใหม่ตามหน่วยของของที่เลือก (เป้า − ที่เบิกแล้ว ขั้นต่ำ 1)
+     ถ้าช่างแก้เลขเองไว้แล้ว (nTouched) ไม่ทับ */
+  const { job, row } = stockPickCtx();
+  if(job && row && !sp.nTouched){
+    const tgt = stockLineTarget(job, row, stockState.items[itemId]);
+    if(tgt.locked) sp.n = Math.max(1, Math.round(tgt.n - (Number(sp.out) || 0)));
+  }
   stockModalSet('stockPickModal', stockPickHtml());
 }
 function stockPickBack(){
   const sp = view.stockPick; if(!sp || sp.busy) return;
   if(sp.locked){ view.stockPick = null; closeUiModal(); return; }
-  sp.n = parseInt(stockVal('spQty', String(sp.n)), 10) || sp.n;
+  const typed = parseInt(stockVal('spQty', String(sp.n)), 10) || sp.n;
+  if(typed !== sp.n) sp.nTouched = true;   // v5.1.14 — ช่างแก้เลขเอง ห้ามตั้งให้ใหม่ทับ
+  sp.n = typed;
   sp.step = 1; sp.err = '';
   stockModalSet('stockPickModal', stockPickHtml());
 }
@@ -23829,7 +23878,7 @@ function addPromoChildLines(job, model, promo){
 
     job.partsNeeded.push({
       id: uid(), partName: mp.partName, variant: mp.variant || '',
-      qty: mp.qty || '1', unit: mp.unit || 'ชิ้น',
+      qty: '1', unit: PAIR_UNIT,          // v5.1.14 — บรรทัดลูกโปรเป็น "1 คู่" เสมอ (ไม่ใช้ qty/unit ของรุ่นรถ)
       brand: '', price: '', note: '',
       promoParent: promo.id
     });
@@ -23855,6 +23904,18 @@ function partPriceAndBrand(mp){
 }
 
 function isPromoChild(p){ return !!(p && p.promoParent); }
+/* v5.1.14 — บรรทัดลูกของชุดโปรล็อก "1 คู่" (ทั้งจำนวนและหน่วย) ทุกที่ที่แสดง
+   ตัดสินที่ชั้นแสดงผลที่เดียว ห้ามแก้ p (ใบเก่าที่เก็บ "2 ชิ้น" ไม่ถูกเขียนทับ ·
+   บรรทัดเดี่ยวที่ย้ายเข้าชุดเก็บจำนวน/หน่วยเดิมไว้ เอาชุดออกแล้วได้คืน)
+   ล็อกเฉพาะเมื่อหัวชุด (promoId ตรงกัน) ยังอยู่ในใบ — บรรทัดกำพร้าแก้ได้ตามเดิม */
+function promoLineLocked(job, p){
+  if(!p || !p.promoParent || p.promoId || !job) return false;
+  return (job.partsNeeded || []).some(h => h && h.promoId && h.promoId === p.promoParent);
+}
+function promoLineQtyUnit(job, p){
+  if(promoLineLocked(job, p)) return { qty: 1, unit: PAIR_UNIT, locked: true };
+  return { qty: p ? p.qty : '', unit: p ? p.unit : '', locked: false };
+}
 
 /* v4.6.1 — ตัวหุ้มสำหรับ "การแตะชิป" โดยเฉพาะ
 
@@ -24099,6 +24160,10 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
   if(!job) return;
   const row = job.partsNeeded.find(p => p.id === partRowId);
   if(!row) return;
+  /* v5.1.14 — บรรทัดลูกโปรที่ล็อก "1 คู่": จำนวน/หน่วยแก้ไม่ได้ กันทางโค้ดก่อนแตะค่าใด ๆ
+     (ไม่จำราคา ไม่ saveState) · เปลี่ยนแบรนด์ยังได้ แต่ไม่ดึงราคาที่จำไว้มาเติม (ข้างล่าง) */
+  const promoLocked = promoLineLocked(job, row);
+  if(promoLocked && (field === 'qty' || field === 'unit')) return;
   /* v3.23.0 — ช่องเงินกับช่องจำนวนถูกทำให้เป็นตัวเลขตั้งแต่ตอนคีย์
      เดิมเก็บสตริงดิบ ๆ แล้วให้แต่ละหน้าจอไปแปลเอาเอง ซึ่งแปลไม่ตรงกัน
      เก็บเป็นตัวเลขตรงนี้ที่เดียว ทุกหน้าจอจึงได้เลขเดียวกันโดยอัตโนมัติ */
@@ -24127,7 +24192,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
      ราคาเอง หรือเมื่อเลือกแบรนด์ใหม่ (แล้วตัดสินใหม่ข้างล่าง) */
   if(field === 'price' || field === 'brand') delete row.priceForeign;
   let brandPriceIsForeign = false;
-  if(field === 'brand' && row.brand && parseMoney(row.price)){
+  if(field === 'brand' && row.brand && parseMoney(row.price) && !promoLocked){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
     /* v5.1.7 fix-p1 B2 — ราคาที่จำไว้ผูกกับหน่วยของมัน (OEM 1,800 ต่อ "คู่") เดิมยกเลขมาวางบนบรรทัด
        "2 ชิ้น" ตรง ๆ = 3,600 แล้วยังจำ 1,800/ชิ้น กลับเข้าช่อง OEM ทำให้คันหน้าผิดต่อ
@@ -24150,7 +24215,7 @@ function onJobPartFieldChange(jobId, partRowId, field, value){
       flashToast(`ยังไม่มีราคาของ ${row.brand} — เลขที่เห็นเป็นราคาของแบรนด์อื่น ตรวจก่อนออกใบ`);
     }
   }
-  if((field === 'partName' || field === 'brand' || field === 'variant') && !parseMoney(row.price)){
+  if((field === 'partName' || field === 'brand' || field === 'variant') && !parseMoney(row.price) && !promoLocked){
     const hit = recallPartPrice(job, row.partName, row.variant, row.brand);
     if(hit && hit.same){
       fillRecalledPrice(row, hit);   // v5.1.7 fix-p1 B1 — จำนวน/หน่วยกับราคาต้องสอดคล้องกัน (ดู fillRecalledPrice)
@@ -25194,7 +25259,8 @@ function buildQuoteShareText(job){
     const qty = parseQty(p.qty), price = parseLinePrice(p.price);
     L.push((i + 1) + ') ' + (promo ? '└ ' : '') + (p.partName || '') +
       (p.variant ? ' (' + p.variant + ')' : '') + (isDeductRow(p) ? ' (หักออก)' : ''));
-    const qtyUnit = (qty + ' ' + (p.unit || '')).trim();
+    const qu = promoLineQtyUnit(job, p);   // v5.1.14 — บรรทัดลูกโปรขึ้น "1 คู่"
+    const qtyUnit = ((qu.locked ? qu.qty : qty) + ' ' + (qu.unit || '')).trim();
     const tail = promo ? 'อยู่ในรายการโปร'
       : !price ? 'ราคา -'
       : 'ละ ' + fmtMoney(price) + ' · รวม ' + fmtMoney(price * qty);
@@ -27283,13 +27349,17 @@ function renderJobPartsEditor(job){
           ${inPromo || deduct ? '' : `<div class="jp-warranty"><span class="jp-warranty-lab">ประกัน</span><div class="jp-warranty-box"><input type="text" class="jp-warranty-input" maxlength="${LINE_WARRANTY_MAX}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="ประกัน" role="combobox" aria-expanded="false" aria-controls="jp-warranty-pop" aria-autocomplete="list" placeholder="เช่น 6 เดือน, 1 ปี" value="${escapeAttr(partLineWarrantyText(p))}" oninput="onWarrantyInput(this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})" onkeydown="onWarrantyKey(event,this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'warrantyText', this.value)"><button type="button" class="jp-warranty-caret" tabindex="-1" aria-label="เปิดรายการประกัน" onpointerdown="event.preventDefault()" onmousedown="event.preventDefault()" onclick="toggleWarrantyPop(this,${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))})">${icon('chevron',16)}</button></div></div>`}
           ${jobLineStockHtml(job, p)}
         </td>
-        <td class="center" data-label="จำนวน">
-          <div class="qty-inline">
+        <td class="center" data-label="จำนวน">${promoLineLocked(job, p)
+          ? `<div class="qty-inline qty-locked" title="ล็อกตามชุดโปร" onclick="flashToast('รายการในชุดโปรล็อกเป็น 1 คู่ — แก้ไม่ได้')">
+            <span class="in-promo-tag qty-lock-chip" aria-label="${escapeAttr('1 ' + PAIR_UNIT + ' ล็อกตามชุดโปร')}">${escapeHtml('1 ' + PAIR_UNIT)}</span>
+            <span class="qty-lock-hint">ล็อกตามชุดโปร</span>
+          </div>`
+          : `<div class="qty-inline">
             <input type="number" min="1" step="1" class="qty-input" value="${escapeAttr(p.qty)}" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'qty', this.value)">
             <select class="unit-select" onchange="onJobPartUnitChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))}, this.value)">
               ${unitSelectOptions(p.unit, canManageCatalog())}
             </select>
-          </div>
+          </div>`}
         </td>
         <td data-label="แบรนด์">
           <select class="brand-name-select" onchange="onJobPartFieldChange(${escapeAttr(JSON.stringify(String(job.id)))},${escapeAttr(JSON.stringify(String(p.id)))},'brand', this.value)">
@@ -27713,6 +27783,7 @@ function renderJobQuotePage(job, opts){
         const price = parseLinePrice(p.price);   // v4.3.6 — บรรทัดหักลบติดลบได้
         const deduct = isDeductRow(p);
         const inPromo = isPromoChild(p);
+        const qu = promoLineQtyUnit(job, p);   // v5.1.14 — บรรทัดลูกโปร (หัวชุดยังอยู่) ขึ้น "1 คู่"
         const baseName = p.variant
           ? `${escapeHtml(p.partName)} <span class="qt-sub">(${escapeHtml(p.variant)})</span>`
           : escapeHtml(p.partName);
@@ -27724,7 +27795,7 @@ function renderJobQuotePage(job, opts){
         rows += `<tr class="${inPromo ? 'qt-in-promo' : ''}${deduct ? ' qt-deduct' : ''}">
           <td class="center">${startIdx + i + 1}</td>
           <td>${name}${deduct ? ' <span class="qt-deduct-note">(หักออก)</span>' : ''}${lineWarrantyDiv(p, inPromo, deduct)}</td>
-          <td class="center">${escapeHtml(String(qty))} ${escapeHtml(p.unit || '')}</td>
+          <td class="center">${escapeHtml(String(qu.locked ? qu.qty : qty))} ${escapeHtml(qu.unit || '')}</td>
           <td>${escapeHtml(p.brand || '-')}</td>
           <td class="right${inPromo ? ' qt-in-promo-note' : ' mono'}">${
             inPromo ? 'อยู่ในรายการโปร' : (price ? fmtMoney(price) : '-')}</td>
