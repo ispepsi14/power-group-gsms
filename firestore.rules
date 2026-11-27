@@ -35,13 +35,26 @@ service cloud.firestore {
         && request.auth.uid == '79YAV3SBT7ZAFfCz9rLMYyTRlPw1';
     }
 
-    // [multi-branch] all-branch account: UID + email hash must both match (the repo is public, so no plain email here)
-    // UID is checked first: anonymous tokens have no email claim
-    function allBranchUid() { return 'GqybqhanlWXyKYTVnLqe9YwPknz1'; }
+    // [multi-branch · branch-switch-accounts 6.1.2] all-branch (owner) accounts A, B, C are equal in every way.
+    // Each UID is paired with the sha256 of its OWN lowercase email (the repo is public, so no plain email here).
+    // UID is checked first: anonymous tokens have no email claim (isAllBranchUid is false -> && stops before email).
+    // C = the bootstrap UID: with the matching email it is a full owner (memberOf/adminOf check allBranchAdmin() first);
+    // a bootstrap token without that email falls through to the old Don Mueang-only bootstrap path.
+    function allBranchUid()  { return 'GqybqhanlWXyKYTVnLqe9YwPknz1'; }   // B (original all-branch account)
+    function allBranchUidA() { return '9N4AVhcoyIYJHwVyoIs1VYQc5i62'; }   // A
+    function allBranchUidC() { return bootUid(); }                        // C = bootstrap
+    function isAllBranchUid(u) { return u in [allBranchUid(), allBranchUidA(), allBranchUidC()]; }
+    // hash that must match THAT uid (pairs, never "any listed uid + any listed hash") · other uids get '' which never equals 64 hex
+    function allBranchHashFor(u) {
+      return u == allBranchUid()  ? 'adaf5b32d99f927f6f516b9d651d412a7f8f3efe4415994c8b22f637032bbf23'
+           : u == allBranchUidA() ? '6e34eb93773f8aecaa2ba935f0671e54d7b594ac6fd8cffa95987484244febf1'
+           : u == allBranchUidC() ? '7251418478c4d27acb768be1aa92b4a73e145aa222b18eeb8fab122319add0f9'
+           : '';
+    }
     function allBranchAdmin() {
       return request.auth != null
-        && request.auth.uid == allBranchUid()
-        && hashing.sha256(request.auth.token.email.toUtf8()).toHexString().lower() == 'adaf5b32d99f927f6f516b9d651d412a7f8f3efe4415994c8b22f637032bbf23';
+        && isAllBranchUid(request.auth.uid)
+        && hashing.sha256(request.auth.token.email.toUtf8()).toHexString().lower() == allBranchHashFor(request.auth.uid);
     }
 
     function signedIn() {
@@ -99,9 +112,11 @@ service cloud.firestore {
     function userKeys() { return ['name', 'email', 'role', 'branchId']; }
     function userRoleOk(d) { return d.get('role', 'staff') in ['admin', 'staff']; }
     // S-5: the all-branch account must always send branchId as a real, known value
+    // S-A4 (6.1.2): an owner may not create/update any owner's users doc (its own included) — owner access never reads it
     function allBranchUserWriteOk(userId) {
       let nb = request.resource.data.branchId;
       return allBranchAdmin()
+        && !isAllBranchUid(userId)
         && nb is string
         && (nb == 'donmueang' || (validBranch(nb) && exists(/databases/$(database)/documents/branches/$(nb))))
         && (userId != bootUid() || nb == 'donmueang')
@@ -135,19 +150,20 @@ service cloud.firestore {
             && userRoleOk(request.resource.data))
         // Phase 2 fix 1: branch admins may only create ids shaped like a real Auth UID (28 alphanumerics; 20 = Auto-ID is still flagged in the app).
         // Quotes or other characters in a doc id were stored XSS in the all-branch users screen.
-        || (!allBranchAdmin() && userId != allBranchUid() && userId != bootUid()
+        // S-A4 (6.1.2): no owner doc (A, B, C — C is bootstrap) through the branch-admin path.
+        || (!allBranchAdmin() && !isAllBranchUid(userId) && userId != bootUid()
             && userId.matches('^[A-Za-z0-9]{20,128}$')
             && adminOf(userBranch(request.resource.data))
             && request.resource.data.keys().hasOnly(userKeys())
             && userRoleOk(request.resource.data));
       allow update: if allBranchUserWriteOk(userId)
-        || (!allBranchAdmin() && userId != allBranchUid()
+        || (!allBranchAdmin() && !isAllBranchUid(userId)
             && adminOf(userBranch(resource.data))
             && userBranch(request.resource.data) == userBranch(resource.data)
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(userKeys())
             && userRoleOk(request.resource.data));
-      allow delete: if allBranchAdmin()
-        || (!allBranchAdmin() && userId != allBranchUid() && userId != bootUid()
+      allow delete: if (allBranchAdmin() && !isAllBranchUid(userId))
+        || (!allBranchAdmin() && !isAllBranchUid(userId) && userId != bootUid()
             && adminOf(userBranch(resource.data)));
     }
 

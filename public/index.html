@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "6.1.0";
+  const APP_VERSION = "6.1.2";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3494,6 +3494,29 @@
                  ช่องติ๊ก 16px (เจ้าของขอให้เล็กลง) · ทั้งแถว label ยังเป็นพื้นที่กด (min-height 44px)
               ไม่แตะ firestore.rules / config/main / flushState / Firestore
               เทสต์: tests/remember-login.guard.js
+     v6.1.1 — แก้: บัญชีผู้ดูแลตั้งต้น (bootstrap) ถูกนับเป็นบัญชีรวม (2026-11-27) · งาน bootstrap-donmueang-only
+              ที่มา: 5.1.11–5.1.13 (commit 7507184) ใส่ BOOTSTRAP_ADMIN_UID ใน uidCanAccessAllBranches แต่ firestore.rules
+              ยังตรึง bootstrap ไว้ดอนเมือง → ปุ่มสลับสาขา / หน้าเลือกสาขา / การ์ด "สาขา" / list users ทั้งหมด โดน permission-denied
+              1. uidCanAccessAllBranches = ALL_BRANCH_UID เท่านั้น · เพิ่ม isBootstrapUid()
+              2. resolveBranchForProfile: bootstrap = ดอนเมืองเสมอ (allowedBranches ['donmueang']) ไม่อ่าน branches/* ไม่สนสาขาที่จำไว้
+                 ไม่มีเอกสาร / เอกสารเสีย / ชี้สาขาอื่น ก็ยังเข้าดอนเมืองได้ (B-7 / D8)
+              3. handleAuthChange: bootstrap ยังเป็น admin เสมอ · เขียน users/ ครั้งแรกเหมือนเดิม
+              ไม่แตะ firestore.rules / config/main / flushState / allowedBranches ของพนักงานทั่วไป
+              เทสต์: tests/branch2.guard.js HB3 C11 · tests/branch2ui.guard.js BC-2 · tests/branch.guard.js D8 D12
+     v6.1.2 — บัญชีเจ้าของ 3 บัญชี (A, B, C) สลับดูได้ทุกสาขาเท่ากัน (2026-11-27) · งาน branch-switch-accounts แบบ (ก)
+              **แทนที่ผล bootstrap ของ v6.1.1** (6.1.1 ยังไม่ publish): เจ้าของสั่งให้ C = bootstrap เป็นเจ้าของทุกสาขาเต็มตัว
+              1. ALL_BRANCH_UIDS = Object.freeze([B = ALL_BRANCH_UID, A, C = BOOTSTRAP_ADMIN_UID]) · isAllBranchUid() ·
+                 uidCanAccessAllBranches = isAllBranchUid · ไม่มีอีเมล/hash ในแอป · ลำดับตรงกับ firestore.rules / storage.rules
+              2. resolveBranchForProfile: ทางเจ้าของถูกเช็กก่อนเสมอ (ทางตรึง bootstrap ไว้ดอนเมืองของ 6.1.1 ไม่ถูกเรียกอีก)
+              3. handleAuthChange: เจ้าของทั้ง 3 = admin · allowedBranches null · SESSION เมื่อไม่ติ๊ก "จำ" (S-7) · ออกจากระบบล้างแคช
+                 ชื่อ: B = 'เจ้าของระบบ' เหมือนเดิม · A/C = ชื่อในเอกสาร users (ตัดช่องว่าง ไม่เกิน 40 ตัว) ไม่มีใช้ 'เจ้าของระบบ'
+              4. branchChoiceKey: B คงคีย์ gsms.allBranch (isLegacyOwnerUid) · A/C ใช้ gsms.branchChoice.<uid> ของตัวเอง
+              5. เจ้าของแก้เอกสาร users ของตัวเองไม่ได้ตามกฎ: ข้ามการเขียนครั้งแรกของ bootstrap / repairBootstrapAdmin / syncOwnEmail
+              6. หน้าผู้ใช้: แถวเจ้าของ ปิดเลือกบทบาท ไม่มีปุ่มลบ/ย้ายสาขา ไม่อยู่ในการ์ดบัญชีไม่มีสาขา ·
+                 addUserAccess / onUserFieldChange / onUserBranchChange / deleteUserAccess ปฏิเสธ UID เจ้าของก่อนเขียน
+              ไม่แตะ config/main / flushState / SYNC_COLLECTIONS / mergeSnapshotRows
+              ต้อง publish firestore.rules + storage.rules ใน Console ก่อนกด publish.cmd (B6 ข้อ 1)
+              เทสต์: tests/multi-owner.guard.js
               -->
 
 
@@ -14076,7 +14099,23 @@ const BRANCH_GLOBAL = ['users','branches'];
 const BRANCH_ROOT_ONLY = ['lineGroups','boardPublic'];
 const MULTI_BRANCH_LIVE = true;    // เฟส 2: ทุกบัญชีเห็นป้ายสาขา (U-1 · §4.5 ข้อ 5)
 // UID ของบัญชีรวม · เจ้าของส่ง UID แล้วใส่ตรงนี้และในกฎทั้งสองไฟล์
-const ALL_BRANCH_UID = 'GqybqhanlWXyKYTVnLqe9YwPknz1';
+const ALL_BRANCH_UID = 'GqybqhanlWXyKYTVnLqe9YwPknz1';   // บัญชี B (บัญชีรวมเดิม) · คงชื่อเดิม
+/* v6.1.2 branch-switch-accounts — บัญชีเจ้าของ 3 บัญชี (B, A, C) เท่ากันทุกอย่าง · ลำดับต้องตรงกับ firestore.rules / storage.rules
+   C = BOOTSTRAP_ADMIN_UID (คำตอบเจ้าของรอบ 2: bootstrap เป็นเจ้าของทุกสาขาเต็มตัว) · UID ไม่ใช่ความลับ · ห้ามใส่อีเมล/hash ในแอป */
+const ALL_BRANCH_UIDS = Object.freeze([ALL_BRANCH_UID, '9N4AVhcoyIYJHwVyoIs1VYQc5i62', BOOTSTRAP_ADMIN_UID]);
+function isAllBranchUid(uid){ return typeof uid === 'string' && uid.length > 0 && ALL_BRANCH_UIDS.indexOf(uid) >= 0; }
+// บัญชี B เท่านั้น: คีย์สาขาที่เลือกไว้แบบเดิม (gsms.allBranch) และชื่อคงที่ 'เจ้าของระบบ'
+function isLegacyOwnerUid(uid){ return typeof uid === 'string' && Object.is(uid, ALL_BRANCH_UID); }
+const OWNER_DEFAULT_NAME = 'เจ้าของระบบ';
+const OWNER_NAME_MAX = 40;
+/* ชื่อแสดงของเจ้าของ (presence / ประวัติแก้ไข) · B = ชื่อคงที่เหมือนเดิม · A/C = profile.name (trim ≤ 40 ตัว) ไม่มีใช้ชื่อคงที่
+   ห้ามใช้ส่วนหน้าอีเมล (U-4) */
+function ownerDisplayName(uid, profile){
+  if(isLegacyOwnerUid(uid)) return OWNER_DEFAULT_NAME;
+  const raw = profile && typeof profile.name === 'string' ? profile.name.trim() : '';
+  const n = Array.from(raw).slice(0, OWNER_NAME_MAX).join('').trim();
+  return n || OWNER_DEFAULT_NAME;
+}
 const BRANCH_ID_RE = /^[a-z0-9-]{2,24}$/;      // ตรงกับ validBranch() ใน firestore.rules
 const BRANCH_CODE_RE = /^[A-Z]{2}$/;           // U-5 รหัสเลขงาน
 // เฟส 2 รอบแก้ 2: ตรงกับกฎ users ทุกทาง create (แอดมินสาขา + บัญชีรวม) · UID จริงยาว 28 · 20 = Auto-ID
@@ -14152,7 +14191,10 @@ function isRootBranch(){ return activeBranch === null || activeBranch === BRANCH
 function branchKey(base){ return isRootBranch() ? base : base + '@' + activeBranch; }
 function branchStoragePath(p){ return isRootBranch() ? p : 'branches/' + activeBranch + '/' + p; }
 function isAllBranchAccount(){ return !!(currentUser && uidCanAccessAllBranches(currentUser.uid)); }
-function uidCanAccessAllBranches(uid){ return uid === ALL_BRANCH_UID || uid === BOOTSTRAP_ADMIN_UID; }
+/* v6.1.2 — บัญชีรวม = ALL_BRANCH_UIDS (B, A, C) · แทนที่ผล v6.1.1 ที่ตรึง bootstrap ไว้ดอนเมือง
+   (กฎทั้งสองไฟล์ต้อง publish ให้ C เป็น allBranchAdmin ก่อนแอปนี้ขึ้น — B6 ข้อ 1) */
+function uidCanAccessAllBranches(uid){ return isAllBranchUid(uid); }
+function isBootstrapUid(uid){ return uid === BOOTSTRAP_ADMIN_UID; }
 /*
   Per-user branch access.  `allowedBranches` is the authoritative list when it is
   present; older profiles that do not have the field keep their existing single
@@ -14235,6 +14277,9 @@ function resolveBranchForProfile(profile, uid){
       return { branch: want, doc: data, allowedBranches: null };
     }).catch(() => ({ err: 'E4', msg: E4_MSG }));
   }
+  // v6.1.1 — bootstrap = แอดมินดอนเมืองเสมอ (B-7 / D8) ไม่ว่าจะไม่มีเอกสาร หรือเอกสารเสีย/ชี้สาขาอื่น
+  // v6.1.2 — bootstrap อยู่ใน ALL_BRANCH_UIDS จึงออกทางเจ้าของข้างบนก่อนเสมอ · บรรทัดนี้เหลือไว้กันกรณีเอา C ออกจากรายการเจ้าของ
+  if(isBootstrapUid(uid)) return Promise.resolve({ branch: BRANCH_ROOT, allowedBranches: [BRANCH_ROOT] });
   if(!profile){
     // Account exists in Auth but there is no users/{uid} document for it. Two
     // causes look identical from here: the admin hasn't granted access yet, or
@@ -14469,7 +14514,8 @@ const ALL_BRANCH_CHOICE_KEY = 'gsms.allBranch';
 const BRANCH_CHOICE_PREFIX = 'gsms.branchChoice.';
 const BRANCH_SWITCHED_ONCE_KEY = 'gsms.branchSwitchedOnce';
 const E7_MSG = 'สาขาที่เลือกไว้ไม่มีในระบบแล้ว เลือกสาขาที่จะทำงาน';
-function branchChoiceKey(uid){ return uid === ALL_BRANCH_UID ? ALL_BRANCH_CHOICE_KEY : BRANCH_CHOICE_PREFIX + String(uid || ''); }
+// v6.1.2 — ตั้งใจ: เฉพาะบัญชี B ใช้คีย์รวมเดิม · เจ้าของ A/C ใช้คีย์ตาม UID ของตัวเอง เครื่องที่ใช้ร่วมกันจึงไม่พาเจ้าของคนหนึ่งไปสาขาที่อีกคนเลือก
+function branchChoiceKey(uid){ return isLegacyOwnerUid(uid) ? ALL_BRANCH_CHOICE_KEY : BRANCH_CHOICE_PREFIX + String(uid || ''); }
 function readBranchChoice(uid){
   const key = branchChoiceKey(uid);
   try { return sessionStorage.getItem(key) || localStorage.getItem(key) || ''; } catch(e){ return ''; }
@@ -14674,7 +14720,7 @@ function openUserBranchPicker(uid){
   if(!usersListReady() || branchRegistry.state !== 'ok'){ flashToast('รอโหลดรายชื่อให้เสร็จก่อน'); return; }
   if(isOnline === false){ flashToast('ต้องต่อเน็ตก่อนจึงย้ายสาขาได้'); return; }
   const u = (view.usersAll || []).find(x => x.id === uid);
-  if(!u || uid === BOOTSTRAP_ADMIN_UID || uid === ALL_BRANCH_UID) return;
+  if(!u || isBootstrapUid(uid) || uidCanAccessAllBranches(uid)) return;   // ย้ายสาขาให้บัญชีรวมไม่มีความหมาย (กฎไม่อ่าน branchId)
   const orphan = isOrphanUser(u), name = u.name || uid;
   const opts = branchRegistry.list.filter(b => orphan || b.id !== u.branchId).map(b => ({ value: b.id, label: b.name || b.id }));
   uiChoice(orphan ? `เลือกสาขาให้ "${name}"` : `ย้าย "${name}" ไปสาขาไหน?`, opts, bid => {
@@ -14694,7 +14740,7 @@ function onUserBranchChange(uid, branchId){
   if(isOnline === false){ flashToast('ต้องต่อเน็ตก่อนจึงย้ายสาขาได้'); return Promise.resolve(false); }
   const u = (view.usersAll || []).find(x => x.id === uid);
   const b = registryEntry(branchId);
-  if(!u || !b || uid === BOOTSTRAP_ADMIN_UID || uid === ALL_BRANCH_UID) return Promise.resolve(false);
+  if(!u || !b || isBootstrapUid(uid) || uidCanAccessAllBranches(uid)) return Promise.resolve(false);
   const orphan = isOrphanUser(u), name = u.name || uid, bn = b.name || branchId;
   if(!orphan && blockedByAdminGuard(uid, { branchId }, 'ย้ายไม่ได้')) return Promise.resolve(false);
   return db.collection('users').doc(uid).update({ branchId })
@@ -14709,7 +14755,8 @@ function onUserBranchChange(uid, branchId){
    allowlist ไม่ใช่ blocklist · ไม่ผ่าน flushState (batch ของตัวเอง ≤ 400 ต่อก้อน) · ไม่แตะ state ของแอป
    เขียนได้เฉพาะ branches/{t} และ branches/{t}/{models,masterParts,partBrandOptions,complaintTypes,config}
    ลำดับ: catalogCopyStartedAt -> แคตตาล็อก -> catalogCopiedAt (ล้มกลางทาง = กดซ้ำได้ ผลเท่ารันครั้งเดียว เพราะ id เดิม)
-   ใช้ได้เฉพาะบัญชีรวมขณะเปิดดอนเมือง (กฎ: มีบัญชีเดียวที่อ่าน root และเขียนสาขาใหม่ได้พร้อมกัน) */
+   ใช้ได้เฉพาะบัญชีรวม (3 บัญชี) ขณะเปิดดอนเมือง (กฎ: เฉพาะบัญชีรวมที่อ่าน root และเขียนสาขาใหม่ได้พร้อมกัน)
+   สองคนก็อปสาขาเดียวกันพร้อมกัน = id เดิม ผลเท่ารันครั้งเดียว */
 const COPY_BATCH_OPS = 400;
 const COPY_STAMP_KEYS = ['price', 'brand', 'at', 'qty', 'unit', 'forModel'];
 const COPY_STRIP_KEYS = ['by', 'job', 'src'];
@@ -15213,13 +15260,13 @@ function handleAuthChange(user){
           view.authError = null;
           view.branchMissing = null;
           view.loginDraft = null;   // v6.1.0 — เข้าแอปแล้ว ไม่ต้องคงฟอร์มล็อกอิน
-          const isAll = user.uid === ALL_BRANCH_UID;
+          const isAll = uidCanAccessAllBranches(user.uid);   // v6.1.2 — เจ้าของทั้ง 3 บัญชี (B, A, C)
           currentUser = {
             uid: user.uid,
             email: user.email || '',
-            // บัญชีรวมใช้ชื่อคงที่ ไม่ให้ส่วนหน้าอีเมลไปโผล่ใน presence / ประวัติแก้ไข (U-4)
-            name: isAll ? 'เจ้าของระบบ' : ((profile && profile.name) || (user.email || '').split('@')[0]),
-            role: uidCanAccessAllBranches(user.uid) ? 'admin' : ((profile && profile.role) || 'staff'),
+            // บัญชีรวม: B ใช้ชื่อคงที่ · A/C ใช้ชื่อในเอกสาร (≤40) · ไม่ให้ส่วนหน้าอีเมลไปโผล่ใน presence / ประวัติแก้ไข (U-4 · S-A7)
+            name: isAll ? ownerDisplayName(user.uid, profile) : ((profile && profile.name) || (user.email || '').split('@')[0]),
+            role: (uidCanAccessAllBranches(user.uid) || isBootstrapUid(user.uid)) ? 'admin' : ((profile && profile.role) || 'staff'),
             // Kept in memory only.  The rules independently check the same profile field.
             allowedBranches: uidCanAccessAllBranches(user.uid) ? null : (r.allowedBranches || [r.branch])
           };
@@ -15227,7 +15274,8 @@ function handleAuthChange(user){
           if(isAll && !rememberLoginOn()){ try { auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(() => {}); } catch(e){} }
           // First ever login by the bootstrap admin: write their own users/ entry so the
           // account shows up in the user list like everyone else.
-          if(!profile && user.uid === BOOTSTRAP_ADMIN_UID){
+          // v6.1.2 — เจ้าของ (รวม bootstrap) แก้เอกสาร users ของตัวเองไม่ได้ตามกฎ จึงไม่ยิงคำขอที่รู้ว่าโดนปฏิเสธ
+          if(!profile && isBootstrapUid(user.uid) && !isAll){
             db.collection('users').doc(user.uid).set({
               name: currentUser.name, email: currentUser.email, role: 'admin', branchId: BRANCH_ROOT
             }).catch(() => {});
@@ -30063,6 +30111,8 @@ function renderUsersTab(){
       // + Auto-ID instead of pasting the account's UID — the login will be rejected and
       // nothing on this screen would otherwise say why.
       const looksAutoId = /^[A-Za-z0-9]{20}$/.test(u.id);
+      // v6.1.2 S-A4 — แถวเจ้าของ (บัญชีรวม 3 บัญชี): เปลี่ยนบทบาท/ลบ/ย้ายไม่ได้ · กฎไม่อ่านเอกสารนี้ ลบแล้วก็ไม่ได้ถอนสิทธิ์
+      const own = isAllBranchUid(String(u.id));
       html += `<tr>
         <td><input type="text" class="part-name-input" value="${escapeAttr(u.name||'')}" onchange="onUserFieldChange(${escapeAttr(JSON.stringify(String(u.id)))},'name', this.value)">
           ${looksAutoId ? `<div style="font-size:11px; margin-top:4px; color:var(--red-ink); line-height:1.5;">
@@ -30074,19 +30124,20 @@ function renderUsersTab(){
              <div class="muted" style="font-size:11px; margin-top:2px;">ดึงจากบัญชีจริงอัตโนมัติ</div>`
           : `<input type="text" class="part-name-input" style="font-weight:400; font-size:12.5px;" value="${escapeAttr(u.email||'')}" placeholder="อีเมลที่ใช้ล็อกอิน" onchange="onUserFieldChange(${escapeAttr(JSON.stringify(String(u.id)))},'email', this.value)">`}</td>
         <td>
-          <select class="brand-name-select" onchange="onUserFieldChange(${escapeAttr(JSON.stringify(String(u.id)))},'role', this.value)" ${isMe?'disabled':''}>
+          <select class="brand-name-select" onchange="onUserFieldChange(${escapeAttr(JSON.stringify(String(u.id)))},'role', this.value)" ${(isMe || own)?'disabled':''}>
             <option value="staff" ${u.role==='staff'?'selected':''}>พนักงาน</option>
             <option value="admin" ${u.role==='admin'?'selected':''}>ผู้ดูแลระบบ</option>
           </select>
           ${isMe ? `<div class="muted" style="font-size:11px; margin-top:3px;">บัญชีคุณเอง</div>` : ''}
+          ${own && !allAcc ? `<div class="muted" style="font-size:11px; margin-top:3px;">บัญชีรวม · เห็นทุกสาขา</div>` : ''}
         </td>
-        <td class="center">${isMe ? '<span class="muted">—</span>' : `<button class="icon-btn" onclick="deleteUserAccess(${escapeAttr(JSON.stringify(String(u.id)))})">${icon('trash',13)}</button>`}</td>
+        <td class="center">${isMe ? '<span class="muted">—</span>' : own ? '<span class="muted" style="font-size:11px; line-height:1.5;">ถอนสิทธิ์บัญชีรวมต้องแก้กฎ แจ้งทีมดูแล</span>' : `<button class="icon-btn" onclick="deleteUserAccess(${escapeAttr(JSON.stringify(String(u.id)))})">${icon('trash',13)}</button>`}</td>
       </tr>`;
-      // U-4 แถวรองของบัญชีรวม: สาขาของผู้ใช้ + ปุ่มย้าย (bootstrap ย้ายไม่ได้)
+      // U-4 แถวรองของบัญชีรวม: สาขาของผู้ใช้ + ปุ่มย้าย (บัญชีรวม 3 บัญชี รวม bootstrap ย้ายไม่ได้ · v6.1.2)
       if(allAcc){
-        const boot = u.id === BOOTSTRAP_ADMIN_UID;
-        html += `<tr class="user-branch-row"><td colspan="4"><div class="ubr-in"><span class="ubr-name muted">${icon('pin',13)}สาขา${escapeHtml(branchNameOf(u.branchId))}${boot ? ' · บัญชีตั้งต้น ย้ายไม่ได้' : ''}</span>
-          ${boot ? '' : `<button class="btn secondary small" id="user-move-${escapeAttr(u.id)}" onclick="openUserBranchPicker(${escapeAttr(JSON.stringify(String(u.id)))})">ย้ายสาขา</button>`}</div></td></tr>`;
+        const fixed = own || isBootstrapUid(u.id);
+        html += `<tr class="user-branch-row"><td colspan="4"><div class="ubr-in"><span class="ubr-name muted">${icon('pin',13)}${own ? 'บัญชีรวม · เห็นทุกสาขา' : `สาขา${escapeHtml(branchNameOf(u.branchId))}${fixed ? ' · บัญชีตั้งต้น ย้ายไม่ได้' : ''}`}</span>
+          ${fixed ? '' : `<button class="btn secondary small" id="user-move-${escapeAttr(u.id)}" onclick="openUserBranchPicker(${escapeAttr(JSON.stringify(String(u.id)))})">ย้ายสาขา</button>`}</div></td></tr>`;
       }
     });
     html += `</tbody></table></div>`;
@@ -30095,7 +30146,7 @@ function renderUsersTab(){
 
   // U-4 การ์ดบัญชีที่ยังไม่มีสาขา (บัญชีรวมเท่านั้น · ซ่อนเมื่อเป็น 0) · ค่าเสียแสดงให้เห็น ไม่เดาเป็นดอนเมือง
   if(allAcc && usersListReady()){
-    const orph = (view.usersAll || []).filter(isOrphanUser);
+    const orph = (view.usersAll || []).filter(u => isOrphanUser(u) && !isAllBranchUid(String(u.id)));   // v6.1.2 เจ้าของไม่ต้องผูกสาขา
     if(orph.length){
       html += `<div class="card" id="users-orphans"><h3>บัญชีที่ยังไม่มีสาขา (${orph.length})</h3>
         <p class="muted uo-hint">บัญชีเหล่านี้เข้าระบบไม่ได้จนกว่าจะผูกกับสาขา</p>`;
@@ -30272,6 +30323,11 @@ function addUserAccess(){
       uiModal({ message: 'UID ไม่ถูกต้อง ต้องเป็นตัวอักษรอังกฤษหรือตัวเลข 20-128 ตัว (UID จริงยาว 28 ตัว) ก๊อปจากคอลัมน์ User UID ใน Firebase Console', okLabel: 'เข้าใจแล้ว', cancelLabel: 'ปิด', onOk(){} });
       return;
     }
+    // v6.1.2 S-A4 — UID เจ้าของ: ไม่อ่าน ไม่เขียน (แอดมินสาขาโดนกฎปฏิเสธ · บัญชีรวมเขียนได้แต่ไม่มีผลกับสิทธิ์)
+    if(uidCanAccessAllBranches(targetUid)){
+      uiModal({ message: 'UID นี้เป็นบัญชีรวม เข้าได้ทุกสาขาอยู่แล้ว ไม่ต้องเพิ่ม', okLabel: 'เข้าใจแล้ว', cancelLabel: 'ปิด', onOk(){} });
+      return;
+    }
 
     /* Guard against the mistake this page used to allow silently: pasting a UID that
        already has access — most easily your OWN — overwrote that record, wiping the
@@ -30334,6 +30390,7 @@ function addUserAccess(){
    repaired here too so the user list doesn't show something misleading. */
 function repairBootstrapAdmin(){
   if(!db || !currentUser || currentUser.uid !== BOOTSTRAP_ADMIN_UID) return;
+  if(uidCanAccessAllBranches(currentUser.uid)) return;   // v6.1.2 — bootstrap เป็นเจ้าของ: กฎไม่ให้แก้เอกสารตัวเอง และกฎไม่อ่านเอกสารนี้อยู่แล้ว
   db.collection('users').doc(BOOTSTRAP_ADMIN_UID).get()
     .then(doc => {
       const d = doc.exists ? doc.data() : null;
@@ -30355,6 +30412,7 @@ function repairBootstrapAdmin(){
    SDK (Firebase only exposes the current user), so those stay editable in the table. */
 function syncOwnEmail(){
   if(!db || !currentUser || !currentUser.email) return;
+  if(uidCanAccessAllBranches(currentUser.uid)) return;   // v6.1.2 — เจ้าของแก้เอกสาร users ของตัวเองไม่ได้ตามกฎ (S-A4)
   db.collection('users').doc(currentUser.uid).get()
     .then(doc => {
       if(!doc.exists) return;
@@ -30368,6 +30426,12 @@ function syncOwnEmail(){
 function onUserFieldChange(targetUid, field, value){
   if(!isAdmin() || !db) return;
   if(['name','email','role'].indexOf(field) < 0) return;   // branchId ห้ามเปลี่ยนทางนี้
+  // v6.1.2 S-A4 — เอกสารของเจ้าของ (บัญชีรวม 3 บัญชี) แก้จากหน้านี้ไม่ได้ (กฎปฏิเสธ) · ไม่ยิงคำขอ
+  if(uidCanAccessAllBranches(targetUid)){
+    flashToast('บัญชีรวม แก้จากหน้านี้ไม่ได้');
+    render();
+    return;
+  }
   if(targetUid === currentUser.uid && field === 'role'){
     flashToast('เปลี่ยนสิทธิ์ของตัวเองไม่ได้');
     render();
@@ -30403,6 +30467,7 @@ function onUserFieldChange(targetUid, field, value){
 function deleteUserAccess(targetUid){
   const u = (view.usersList||[]).find(x => x.id === targetUid);
   if(!u) return;
+  if(uidCanAccessAllBranches(targetUid)){ flashToast('ถอนสิทธิ์บัญชีรวมต้องแก้กฎ แจ้งทีมดูแล'); return; }   // v6.1.2 S-A4
   if(blockedByAdminGuard(targetUid, { remove: true }, 'ยกเลิกสิทธิ์ไม่ได้')) return;   // AC-54
   uiConfirm(`ยกเลิกสิทธิ์เข้าระบบของ "${u.name||targetUid}"?\n\nบัญชีจะยังอยู่ใน Firebase แต่จะเข้าแอปไม่ได้อีก\n(ถ้าต้องการลบถาวร ให้ลบที่ Firebase Console ด้วย)`, () => {
     db.collection('users').doc(targetUid).delete()
