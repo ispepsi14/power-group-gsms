@@ -65,7 +65,7 @@
 
   // Shown in the app bar + Settings. Bump this on every change so it is obvious at a
   // glance whether a device is actually running the newest deploy or a cached copy.
-  const APP_VERSION = "5.1.15";
+  const APP_VERSION = "6.1.0";
 </script>
 
 <!-- POWER GROUP GSMS — internal version log (edited in place, filename stays fixed)
@@ -3479,7 +3479,7 @@
                  หน่วยอื่น = 1 + เตือนเดิม · คิดใหม่ตอนเลือกของ (ถ้าช่างยังไม่แก้เลข) · ปุ่ม "เบิกเพิ่ม" เทียบเป้าเดียวกัน
               ไม่แตะ firestore.rules / config/main / flushState / normalizeJobRow / stockIssue / ตำรารุ่นรถ
               เทสต์: tests/promo-child-unit-lock.guard.js
-     v5.1.15 — ช่องติ๊ก "จำการเข้าสู่ระบบในเครื่องนี้" ที่หน้าล็อกอิน (2026-11-27) · งาน remember-login
+     v6.1.0 — ช่องติ๊ก "จำการเข้าสู่ระบบในเครื่องนี้" ที่หน้าล็อกอิน (2026-11-27) · งาน remember-login
               บัญชีรวมถูกบังคับเป็น SESSION (S-7 เครื่องใช้ร่วม) ปิดแท็บ/ปัดแอปทิ้ง = ต้องล็อกอินใหม่ทุกครั้ง
               1. localStorage เท่านั้น (ค่าของเครื่อง): gsms.rememberLogin = '1' (รอบนี้เลือกจำ) · gsms.loginEmail = อีเมลที่ Firebase คืน
                  (user.email ตัดไม่เกิน 254 ตัว เขียนหลังล็อกอินสำเร็จเท่านั้น) · ไม่เก็บรหัสผ่านที่ใดเลย
@@ -3491,6 +3491,7 @@
                  gsms.loginEmail ไม่ลบตอนออกจากระบบ · เครื่องที่จำไว้ กล่องยืนยันออกเป็น "ครั้งหน้าต้องใส่รหัสผ่านใหม่" (U-6)
               5. renderLogin: เติมอีเมลด้วย .value หลังวาด (F4) · ติ๊กไว้ให้ถ้าเครื่องจำอีเมลไว้ · แก้อีเมลไม่ตรงที่จำ = เอาติ๊กออกทันที (F1)
                  คอม (pointer:fine) โฟกัสช่องรหัสผ่านเมื่อมีอีเมลเติมไว้ · CSS .auth-box .auth-remember ชนะ label{} / .auth-box input
+                 ช่องติ๊ก 16px (เจ้าของขอให้เล็กลง) · ทั้งแถว label ยังเป็นพื้นที่กด (min-height 44px)
               ไม่แตะ firestore.rules / config/main / flushState / Firestore
               เทสต์: tests/remember-login.guard.js
               -->
@@ -3713,17 +3714,17 @@
   .auth-uid .auth-uid-label{color:var(--text-2); font-size:11.5px; margin-bottom:6px; line-height:1.5;}
   .auth-uid input{width:100%; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px;}
   .auth-note{color:var(--text-2); font-size:12px; text-align:center; margin-top:16px; line-height:1.6;}
-  /* v5.1.15 — ช่องติ๊ก "จำการเข้าสู่ระบบในเครื่องนี้" · selector .auth-box .auth-remember ต้องชนะ
+  /* v6.1.0 — ช่องติ๊ก "จำการเข้าสู่ระบบในเครื่องนี้" · selector .auth-box .auth-remember ต้องชนะ
      label{} (~ส่วนช่องกรอกทั่วไป) และ .auth-box input (padding 13px ทำกล่องติ๊กบวมบน Safari iOS) */
   .auth-box .auth-remember{
-    display:flex; align-items:flex-start; gap:11px;
+    display:flex; align-items:flex-start; gap:9px;
     min-height:44px; margin:2px 0 14px; padding:10px 12px; box-sizing:border-box;
     background:var(--surface); border:1px solid var(--border); border-radius:9px;
     color:var(--text); font-size:14.5px; font-weight:600; line-height:1.55;
     cursor:pointer; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent;
   }
   .auth-box .auth-remember input{
-    flex:0 0 22px; width:22px; height:22px; margin:1px 0 0; padding:0;
+    flex:0 0 16px; width:16px; height:16px; margin:4px 0 0; padding:0;
     accent-color:var(--red); cursor:pointer;
   }
   .auth-box .auth-remember input:focus{box-shadow:none;}
@@ -14257,7 +14258,7 @@ function resolveBranchForProfile(profile, uid){
     return { branch: id, doc: data, allowedBranches: allowed };
   }).catch(err => (err && err.code === 'permission-denied') ? e3 : { err: 'E4', msg: E4_MSG });
 }
-/* v5.1.15 remember-login — ค่าของ "เครื่องนี้" (localStorage เท่านั้น ห้ามลง state.settings / config/main)
+/* v6.1.0 remember-login — ค่าของ "เครื่องนี้" (localStorage เท่านั้น ห้ามลง state.settings / config/main)
    'gsms.rememberLogin' = '1' เมื่อล็อกอินรอบนี้เลือก "จำ" → handleAuthChange ไม่ลดบัญชีรวมเป็น SESSION (S-7)
    'gsms.loginEmail' = อีเมลที่ Firebase คืน (user.email ≤ 254 ตัว) ไว้เติมช่องอีเมล + ติ๊กไว้ให้ · ไม่ลบตอนออกจากระบบ
    ห้ามเก็บรหัสผ่านหรือสิ่งที่แปลงจากรหัสผ่านที่ใดทั้งสิ้น · clearBranchLocalKeys / clearPartsLostKeys ไม่แตะสองคีย์นี้
@@ -14280,7 +14281,7 @@ function rememberedLoginEmail(){
 function rejectLogin(msg, uid, owner){
   view.authError = { msg, uid: uid || null, owner: !!owner };
   view.hubDismissed = true;
-  clearRememberLogin();   // v5.1.15 — ถูกปฏิเสธ (E2–E6) = ไม่จำ ลบก่อน signOut
+  clearRememberLogin();   // v6.1.0 — ถูกปฏิเสธ (E2–E6) = ไม่จำ ลบก่อน signOut
   auth.signOut();
   renderLogin(msg, uid);
 }
@@ -14312,7 +14313,7 @@ function prepareDeviceForBranch(branch, uid){
     try { sessionStorage.setItem(AUTH_ERROR_ONCE_KEY, E6_MSG); } catch(e){}
     renderLogin(E6_MSG);
     const go = () => reloadKeepingScreen();
-    clearRememberLogin();   // v5.1.15 F2 — ทาง E6 signOut เองโดยไม่ผ่าน rejectLogin
+    clearRememberLogin();   // v6.1.0 F2 — ทาง E6 signOut เองโดยไม่ผ่าน rejectLogin
     auth.signOut().then(go, go);
     return false;
   });
@@ -15171,7 +15172,7 @@ function handleAuthChange(user){
      เพราะ state/shadow/saveTimer ยังเป็นของบัญชีเดิม ถ้าเดินต่อ flushState จะส่งลบข้อมูล */
   if(pageLock){
     if(user && user.uid === pageLock.uid) return;
-    /* v5.1.15 F3 — ออกจากระบบ (รวมที่ Firebase ออกให้เอง: เปลี่ยนรหัส / token ถูกเพิกถอน) = ไม่จำ
+    /* v6.1.0 F3 — ออกจากระบบ (รวมที่ Firebase ออกให้เอง: เปลี่ยนรหัส / token ถูกเพิกถอน) = ไม่จำ
        uid เปลี่ยน (อีกแท็บล็อกอินบัญชีอื่น) ไม่ลบ — flag นั้นเป็นของการล็อกอินรอบใหม่ */
     if(!user) clearRememberLogin();
     clearTimeout(saveTimer);
@@ -15183,7 +15184,7 @@ function handleAuthChange(user){
   detachListeners();
   stopPresenceHeartbeat();
   if(!user){
-    /* v5.1.15 F3 — ตัวล้างกลาง · null ตอนเปิดหน้าเกิดก่อน doLogin เสมอ (doLogin เขียน flag ทีหลัง จึงไม่ถูกลบ) */
+    /* v6.1.0 F3 — ตัวล้างกลาง · null ตอนเปิดหน้าเกิดก่อน doLogin เสมอ (doLogin เขียน flag ทีหลัง จึงไม่ถูกลบ) */
     clearRememberLogin();
     currentUser = null;
     dataReady = false;
@@ -15211,7 +15212,7 @@ function handleAuthChange(user){
           pageLock = { uid: user.uid, branch: r.branch };
           view.authError = null;
           view.branchMissing = null;
-          view.loginDraft = null;   // v5.1.15 — เข้าแอปแล้ว ไม่ต้องคงฟอร์มล็อกอิน
+          view.loginDraft = null;   // v6.1.0 — เข้าแอปแล้ว ไม่ต้องคงฟอร์มล็อกอิน
           const isAll = user.uid === ALL_BRANCH_UID;
           currentUser = {
             uid: user.uid,
@@ -15222,7 +15223,7 @@ function handleAuthChange(user){
             // Kept in memory only.  The rules independently check the same profile field.
             allowedBranches: uidCanAccessAllBranches(user.uid) ? null : (r.allowedBranches || [r.branch])
           };
-          // S-7 · v5.1.15 — ลดเป็น SESSION เฉพาะเมื่อเครื่องนี้ไม่ได้เลือก "จำการเข้าสู่ระบบ" (ทุกรอบที่โหลดหน้า)
+          // S-7 · v6.1.0 — ลดเป็น SESSION เฉพาะเมื่อเครื่องนี้ไม่ได้เลือก "จำการเข้าสู่ระบบ" (ทุกรอบที่โหลดหน้า)
           if(isAll && !rememberLoginOn()){ try { auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(() => {}); } catch(e){} }
           // First ever login by the bootstrap admin: write their own users/ entry so the
           // account shows up in the user list like everyone else.
@@ -15252,7 +15253,7 @@ function doLogin(){
   view.authError = null;
   const email = (document.getElementById('login-email') || {}).value || '';
   const pass  = (document.getElementById('login-pass')  || {}).value || '';
-  /* v5.1.15 remember-login — อ่านช่องติ๊กตอนกด (F1 ไม่อ่านค่าที่จำไว้)
+  /* v6.1.0 remember-login — อ่านช่องติ๊กตอนกด (F1 ไม่อ่านค่าที่จำไว้)
      ฟอร์มที่คงไว้หลังรหัสผิด/กรอกไม่ครบ = อีเมล + สถานะติ๊ก เท่านั้น (F4 ห้ามมีรหัสผ่าน) */
   const box = document.getElementById('login-remember');
   const remember = !!(box && box.checked);
@@ -15295,7 +15296,7 @@ function doLogin(){
 }
 
 function doLogout(){
-  // v5.1.15 U-6 — เครื่องที่จำการเข้าสู่ระบบไว้ บอกก่อนว่าครั้งหน้าต้องใส่รหัสใหม่ (เจ้าของอาจไม่ได้พิมพ์รหัสมานาน)
+  // v6.1.0 U-6 — เครื่องที่จำการเข้าสู่ระบบไว้ บอกก่อนว่าครั้งหน้าต้องใส่รหัสใหม่ (เจ้าของอาจไม่ได้พิมพ์รหัสมานาน)
   const msg = rememberLoginOn() ? 'ออกจากระบบ?\nครั้งหน้าต้องใส่รหัสผ่านใหม่' : 'ออกจากระบบ?';
   uiConfirm(msg, () => { logoutSequence(); }, 'ออกจากระบบ');
 }
@@ -15344,7 +15345,7 @@ async function logoutFinish(who, synced){
      ทำให้กด "รอก่อน" แล้วยังล็อกอินอยู่แต่ไม่ได้รับแจ้งเตือน) ตอนนี้ทุกทางที่ออกจริงผ่านตรงนี้ รวมทาง !synced ที่ออกโดยไม่ถาม
      เดิม token ถูกถอนก่อน waitForPendingWrites จึงถูกรอไปด้วย -> ออนไลน์ (synced) รอให้ถึงเซิร์ฟเวอร์ไม่เกิน 3 วิ ก่อน terminate/signOut
      ออฟไลน์ (!synced) ส่งแบบไม่รอเหมือนเดิม (ค้างในคิวของ SDK) */
-  // v5.1.15 remember-login — ทุกทางที่ออกจริงผ่านตรงนี้ (ปกติ / !synced / ออกเลย / ปุ่มจอ E7) ลบ flag ก่อน signOut
+  // v6.1.0 remember-login — ทุกทางที่ออกจริงผ่านตรงนี้ (ปกติ / !synced / ออกเลย / ปุ่มจอ E7) ลบ flag ก่อน signOut
   //   ลบตั้งแต่ต้น: ขั้นข้างล่างพังกลางทาง = บัญชีรวมกลับเป็น SESSION (ปลอดภัยกว่า) · gsms.loginEmail ไม่ลบ
   clearRememberLogin();
   if(pushLocallyOn()){
@@ -34958,7 +34959,7 @@ function renderLogin(errorMsg, showUid){
   const app = document.getElementById('app');
   if(!errorMsg && view.authError){ errorMsg = view.authError.msg; showUid = view.authError.uid; }
   const uidToOwner = !!(view.authError && view.authError.owner);   // E2/E3 แอดมินดอนเมืองแก้ไม่ได้
-  /* v5.1.15 remember-login — ลำดับค่าในฟอร์ม: view.loginDraft (หลังรหัสผิด/กรอกไม่ครบ/ถูกปฏิเสธ) → อีเมลที่เครื่องจำไว้ → ว่าง
+  /* v6.1.0 remember-login — ลำดับค่าในฟอร์ม: view.loginDraft (หลังรหัสผิด/กรอกไม่ครบ/ถูกปฏิเสธ) → อีเมลที่เครื่องจำไว้ → ว่าง
      ติ๊กไว้ให้เฉพาะเมื่อเครื่องจำอีเมลไว้ (หรือผู้ใช้ติ๊กไว้ในรอบก่อน) · อีเมลตั้งด้วย .value หลังวาด ไม่ต่อสตริงลง HTML (F4) */
   const draft = view.loginDraft || null;
   const savedEmail = rememberedLoginEmail();
